@@ -1,0 +1,25 @@
+# Build output
+build/bin/
+*.exe
+
+# Dependencies
+node_modules/
+
+# Frontend build artifacts
+frontend/dist/
+
+# User data (DB, config, logs)
+build/bin/data/
+
+# IDE / editor
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Claude Code
+.claude/
+
+# OS files
+.DS_Store
+Thumbs.db
