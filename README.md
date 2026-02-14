@@ -51,7 +51,7 @@ Built with Go on the backend and Svelte on the frontend, delivered as a single e
 
 ```bash
 # Clone the repo
-git clone https://github.com/yourusername/GoVault.git
+git clone https://github.com/ShaeOJ/GoVault.git
 cd GoVault
 
 # Build the desktop app
