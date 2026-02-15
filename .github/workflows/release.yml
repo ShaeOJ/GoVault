@@ -26,6 +26,9 @@ jobs:
           - platform: linux/amd64
             os: ubuntu-22.04
             asset_name: GoVault-linux-amd64
+          - platform: linux/arm64
+            os: ubuntu-22.04
+            asset_name: GoVault-linux-arm64
 
     runs-on: ${{ matrix.os }}
 
