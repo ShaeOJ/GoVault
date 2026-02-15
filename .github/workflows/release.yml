@@ -10,7 +10,60 @@ permissions:
   contents: write
 
 jobs:
+  create-release:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Create release
+        uses: softprops/action-gh-release@v2
+        with:
+          body: |
+            ## Setup Instructions
+
+            ### Windows (`GoVault-windows-amd64.exe`)
+            1. Download `GoVault-windows-amd64.exe`
+            2. Double-click to run — no installation needed
+            3. Windows 10/11 includes WebView2 by default. If you get a WebView2 error, install it from [Microsoft](https://developer.microsoft.com/en-us/microsoft-edge/webview2/)
+
+            ### macOS — Apple Silicon (`GoVault-macos-arm64.zip`)
+            For M1/M2/M3/M4 Macs.
+            1. Download and unzip `GoVault-macos-arm64.zip`
+            2. Right-click `GoVault.app` → **Open** (bypasses Gatekeeper since the app is unsigned)
+            3. After the first launch, you can open it normally
+
+            ### macOS — Intel (`GoVault-macos-amd64.zip`)
+            For older Intel-based Macs.
+            1. Download and unzip `GoVault-macos-amd64.zip`
+            2. Right-click `GoVault.app` → **Open** (bypasses Gatekeeper since the app is unsigned)
+            3. After the first launch, you can open it normally
+
+            ### Linux x64 (`GoVault-linux-amd64`)
+            1. Install required dependencies:
+               ```bash
+               sudo apt install libgtk-3-0 libwebkit2gtk-4.0-37
+               ```
+            2. Download and make executable:
+               ```bash
+               chmod +x GoVault-linux-amd64
+               ./GoVault-linux-amd64
+               ```
+
+            ### Linux ARM64 / Raspberry Pi (`GoVault-linux-arm64`)
+            For Raspberry Pi 4, Pi 5, and other ARM64 boards running 64-bit OS.
+            1. Install required dependencies:
+               ```bash
+               sudo apt install libgtk-3-0 libwebkit2gtk-4.0-37
+               ```
+            2. Download and make executable:
+               ```bash
+               chmod +x GoVault-linux-arm64
+               ./GoVault-linux-arm64
+               ```
+
+            ---
+            **Requirements:** GoVault connects to a Bitcoin Core (or compatible) node via RPC. Make sure your node is running and RPC is enabled before starting.
+
   build:
+    needs: create-release
     strategy:
       matrix:
         include:
