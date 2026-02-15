@@ -51,6 +51,9 @@ jobs:
             For Raspberry Pi 4, Pi 5, and other ARM64 boards running 64-bit OS.
             1. Install required dependencies:
                ```bash
+               # Ubuntu 24.04+ / Raspberry Pi OS Bookworm+
+               sudo apt install libgtk-3-0 libwebkit2gtk-4.1-0
+               # Ubuntu 22.04 / older Raspberry Pi OS
                sudo apt install libgtk-3-0 libwebkit2gtk-4.0-37
                ```
             2. Download and make executable:
@@ -80,9 +83,11 @@ jobs:
           - platform: linux/amd64
             os: ubuntu-22.04
             asset_name: GoVault-linux-amd64
+            tags: ""
           - platform: linux/arm64
             os: ubuntu-24.04-arm
             asset_name: GoVault-linux-arm64
+            tags: webkit2_41
 
     runs-on: ${{ matrix.os }}
 
@@ -108,10 +113,14 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y libgtk-3-dev
-          sudo apt-get install -y libwebkit2gtk-4.0-dev || sudo apt-get install -y libwebkit2gtk-4.1-dev
+          if [ "${{ matrix.tags }}" = "webkit2_41" ]; then
+            sudo apt-get install -y libwebkit2gtk-4.1-dev
+          else
+            sudo apt-get install -y libwebkit2gtk-4.0-dev
+          fi
 
       - name: Build
-        run: wails build -platform ${{ matrix.platform }}
+        run: wails build -platform ${{ matrix.platform }} ${{ matrix.tags && format('-tags {0}', matrix.tags) || '' }}
 
       - name: Package Windows
         if: startsWith(matrix.platform, 'windows')
