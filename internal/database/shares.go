@@ -2,6 +2,7 @@ package database
 
 import (
 	"fmt"
+	"math"
 	"strings"
 	"time"
 )
@@ -17,8 +18,8 @@ func (db *DB) InsertShares(shares []ShareEntry) error {
 		return fmt.Errorf("begin tx: %w", err)
 	}
 
-	stmt, err := tx.Prepare(`INSERT INTO shares (timestamp, miner_id, worker, difficulty, accepted, reject_reason)
-		VALUES (?, ?, ?, ?, ?, ?)`)
+	stmt, err := tx.Prepare(`INSERT INTO shares (timestamp, miner_id, worker, difficulty, accepted, reject_reason, session_diff)
+		VALUES (?, ?, ?, ?, ?, ?, ?)`)
 	if err != nil {
 		tx.Rollback()
 		return fmt.Errorf("prepare: %w", err)
@@ -30,7 +31,7 @@ func (db *DB) InsertShares(shares []ShareEntry) error {
 		if s.Accepted {
 			accepted = 1
 		}
-		if _, err := stmt.Exec(s.Timestamp, s.MinerID, s.Worker, s.Difficulty, accepted, s.RejectReason); err != nil {
+		if _, err := stmt.Exec(s.Timestamp, s.MinerID, s.Worker, s.Difficulty, accepted, s.RejectReason, s.SessionDiff); err != nil {
 			tx.Rollback()
 			return fmt.Errorf("exec: %w", err)
 		}
@@ -129,6 +130,70 @@ func (db *DB) ShareCountByMiner() (map[string][2]uint64, error) {
 		result[id] = [2]uint64{acc, rej}
 	}
 	return result, rows.Err()
+}
+
+// MinerHashrateHistory computes per-miner hashrate over time buckets from the
+// shares table. Only rows with session_diff > 0 are included, so pre-migration
+// data is excluded gracefully.
+func (db *DB) MinerHashrateHistory(minerID string, since int64, bucketSec int64) ([]HashrateEntry, error) {
+	rows, err := db.conn.Query(
+		`SELECT timestamp, session_diff FROM shares
+		 WHERE miner_id = ? AND timestamp >= ? AND accepted = 1 AND session_diff > 0
+		 ORDER BY timestamp`, minerID, since)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	type bucket struct {
+		sumDiff float64
+	}
+	buckets := make(map[int64]*bucket)
+
+	for rows.Next() {
+		var ts int64
+		var sd float64
+		if err := rows.Scan(&ts, &sd); err != nil {
+			return nil, err
+		}
+		key := (ts / bucketSec) * bucketSec
+		b, ok := buckets[key]
+		if !ok {
+			b = &bucket{}
+			buckets[key] = b
+		}
+		b.sumDiff += sd
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+
+	if len(buckets) == 0 {
+		return nil, nil
+	}
+
+	// Collect and sort bucket keys
+	keys := make([]int64, 0, len(buckets))
+	for k := range buckets {
+		keys = append(keys, k)
+	}
+	// Simple insertion sort (small slice)
+	for i := 1; i < len(keys); i++ {
+		for j := i; j > 0 && keys[j] < keys[j-1]; j-- {
+			keys[j], keys[j-1] = keys[j-1], keys[j]
+		}
+	}
+
+	result := make([]HashrateEntry, 0, len(keys))
+	for _, k := range keys {
+		hashrate := buckets[k].sumDiff * math.Pow(2, 32) / float64(bucketSec)
+		result = append(result, HashrateEntry{
+			Timestamp: k,
+			Hashrate:  hashrate,
+		})
+	}
+
+	return result, nil
 }
 
 // buildPlaceholders builds "(?,?,?),(?,?,?),..." for batch inserts.

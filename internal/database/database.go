@@ -12,6 +12,7 @@ import (
 // DB wraps a SQLite connection and provides all persistence operations.
 type DB struct {
 	conn *sql.DB
+	path string
 }
 
 // Open creates or opens the SQLite database at the given path.
@@ -27,13 +28,29 @@ func Open(dbPath string) (*DB, error) {
 
 	conn.SetMaxOpenConns(1) // SQLite is single-writer
 
-	db := &DB{conn: conn}
+	db := &DB{conn: conn, path: dbPath}
 	if err := db.migrate(); err != nil {
 		conn.Close()
 		return nil, fmt.Errorf("migrate db: %w", err)
 	}
 
 	return db, nil
+}
+
+// Size returns the total disk usage in bytes (main DB + WAL + SHM files).
+func (db *DB) Size() int64 {
+	var total int64
+	for _, suffix := range []string{"", "-wal", "-shm"} {
+		if info, err := os.Stat(db.path + suffix); err == nil {
+			total += info.Size()
+		}
+	}
+	return total
+}
+
+// Path returns the database file path.
+func (db *DB) Path() string {
+	return db.path
 }
 
 // Close closes the database connection.
@@ -100,6 +117,22 @@ func (db *DB) migrate() error {
 
 		INSERT OR IGNORE INTO cumulative_stats (id, total_accepted, total_rejected, best_difficulty, blocks_found)
 		VALUES (1, 0, 0, 0, 0);
+
+		CREATE TABLE IF NOT EXISTS worker_diffs (
+			worker     TEXT PRIMARY KEY,
+			difficulty REAL NOT NULL,
+			updated_at INTEGER NOT NULL
+		);
 	`)
-	return err
+	if err != nil {
+		return err
+	}
+
+	// Add session_diff column (safe for existing DBs — ignores "duplicate column" error)
+	db.conn.Exec(`ALTER TABLE shares ADD COLUMN session_diff REAL NOT NULL DEFAULT 0`)
+
+	// Composite index for per-miner hashrate history queries
+	db.conn.Exec(`CREATE INDEX IF NOT EXISTS idx_shares_miner_ts ON shares(miner_id, timestamp)`)
+
+	return nil
 }

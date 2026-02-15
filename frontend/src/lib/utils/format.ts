@@ -42,6 +42,30 @@ export function formatNumber(n: number): string {
   return n.toLocaleString();
 }
 
+export function formatChance(pct: number): string {
+  if (pct <= 0) return 'N/A';
+  if (pct >= 1) return `${pct.toFixed(2)}%`;
+  if (pct >= 0.01) return `${pct.toFixed(2)}%`;
+  // < 0.01% — show as "1 in X"
+  const oneIn = 100 / pct;
+  if (oneIn >= 1e12) return `1 in ${(oneIn / 1e12).toFixed(2)}T`;
+  if (oneIn >= 1e9) return `1 in ${(oneIn / 1e9).toFixed(2)}B`;
+  if (oneIn >= 1e6) return `1 in ${(oneIn / 1e6).toFixed(2)}M`;
+  if (oneIn >= 1e3) return `1 in ${(oneIn / 1e3).toFixed(2)}K`;
+  return `1 in ${oneIn.toFixed(0)}`;
+}
+
+export function formatRatio(ratio: number): string {
+  if (ratio <= 0) return 'N/A';
+  if (ratio >= 1e15) return `${(ratio / 1e15).toFixed(2)}P`;
+  if (ratio >= 1e12) return `${(ratio / 1e12).toFixed(2)}T`;
+  if (ratio >= 1e9) return `${(ratio / 1e9).toFixed(2)}G`;
+  if (ratio >= 1e6) return `${(ratio / 1e6).toFixed(2)}M`;
+  if (ratio >= 1e3) return `${(ratio / 1e3).toFixed(2)}K`;
+  if (ratio >= 1) return ratio.toFixed(2);
+  return ratio.toFixed(6);
+}
+
 export function timeAgo(dateStr: string): string {
   if (!dateStr) return 'never';
   const now = Date.now();

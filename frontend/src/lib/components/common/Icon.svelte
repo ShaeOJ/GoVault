@@ -108,6 +108,26 @@
         'M20 6l-8 4',
       ],
     },
+    // Block Chance — Dice: die face with dots
+    dice: {
+      paths: [
+        'M4 4h16v16H4z',
+      ],
+      filled: [
+        'M8 8a1 1 0 1 0 0-2 1 1 0 0 0 0 2z',
+        'M12 13a1 1 0 1 0 0-2 1 1 0 0 0 0 2z',
+        'M16 18a1 1 0 1 0 0-2 1 1 0 0 0 0 2z',
+      ],
+    },
+    // Reconnect — Refresh: circular arrows
+    refresh: {
+      paths: [
+        'M1 4v6h6',
+        'M23 20v-6h-6',
+        'M20.49 9A9 9 0 0 0 5.64 5.64L1 10',
+        'M23 14l-4.64 4.36A9 9 0 0 1 3.51 15',
+      ],
+    },
     // Signal/Active miners — Waves: concentric arcs
     waves: {
       paths: [

@@ -1,19 +1,14 @@
 <script lang="ts">
-  import { theme } from './lib/stores/theme';
+  import './lib/stores/theme';  // ensure theme class applied early
   import Sidebar from './lib/components/layout/Sidebar.svelte';
   import Dashboard from './pages/Dashboard.svelte';
   import Miners from './pages/Miners.svelte';
   import Node from './pages/Node.svelte';
   import Settings from './pages/Settings.svelte';
   import Logs from './pages/Logs.svelte';
+  import EventFlash from './lib/components/common/EventFlash.svelte';
 
   let currentPage = 'dashboard';
-
-  // Ensure theme class is applied on mount
-  $: if ($theme) {
-    document.documentElement.classList.remove('theme-nuclear', 'theme-tron', 'theme-vault-tec');
-    document.documentElement.classList.add(`theme-${$theme}`);
-  }
 </script>
 
 <div class="flex h-screen overflow-hidden" style="background-color: var(--bg-primary); color: var(--text-primary);">
@@ -34,4 +29,6 @@
       {/if}
     </div>
   </main>
+
+  <EventFlash />
 </div>

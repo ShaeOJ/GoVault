@@ -37,6 +37,7 @@ type Session struct {
 	sharesRejected uint64
 	bestDifficulty float64
 
+	diffRestored  bool    // true if difficulty was restored from DB (skip warmup gate)
 	suggestedDiff float64 // from mining.suggest_difficulty (miner's threshold)
 	minShareDiff  float64 // lowest observed share difficulty (ASIC floor estimate)
 
@@ -74,10 +75,37 @@ func (s *Session) Handle() {
 	s.vardiffState = s.server.vardiffMgr.NewState()
 
 	for {
-		s.conn.SetReadDeadline(time.Now().Add(5 * time.Minute))
+		// Use retarget interval as read deadline so idle sessions get
+		// periodic vardiff checks (halving difficulty when no shares arrive).
+		retargetInterval := s.server.vardiffMgr.RetargetInterval()
+		s.conn.SetReadDeadline(time.Now().Add(retargetInterval))
+
 		line, err := s.reader.ReadBytes('\n')
 		if err != nil {
-			return
+			// Timeout → idle vardiff check (don't disconnect yet)
+			if netErr, ok := err.(net.Error); ok && netErr.Timeout() {
+				// True inactivity (no data at all for 5 min) → disconnect
+				if time.Since(s.lastActivity) > 5*time.Minute {
+					return
+				}
+				// Idle vardiff: halve difficulty if no qualifying shares arrived
+				if s.authorized && s.vardiffState != nil {
+					if newDiff, changed := s.server.vardiffMgr.CheckRetarget(s.vardiffState, s.currentDiff, s.suggestedDiff); changed {
+						s.oldDiff = s.currentDiff
+						if curJob := s.server.currentJob(); curJob != nil {
+							s.diffChangeJobID = curJob.ID
+						}
+						s.currentDiff = newDiff
+						s.sendSetDifficulty(newDiff)
+						s.server.log.Infof("stratum", "idle vardiff: %s difficulty -> %.6f", s.workerName, newDiff)
+						if s.server.OnDiffChanged != nil && s.workerName != "" {
+							s.server.OnDiffChanged(s.workerName, newDiff)
+						}
+					}
+				}
+				continue
+			}
+			return // real error → disconnect
 		}
 
 		s.lastActivity = time.Now()
@@ -200,6 +228,16 @@ func (s *Session) handleSubscribe(req *Request) {
 		}
 	}
 
+	// Auto-detect start difficulty from miner type (only if no explicit
+	// mining.suggest_difficulty was received, which takes priority)
+	if s.userAgent != "" && s.suggestedDiff == 0 {
+		uaDiff := s.server.vardiffMgr.StartDiffForUA(s.userAgent)
+		if uaDiff != s.currentDiff {
+			s.currentDiff = uaDiff
+			s.server.log.Infof("stratum", "UA auto-detect: %s start difficulty -> %.6f", s.userAgent, uaDiff)
+		}
+	}
+
 	// Response: [[["mining.set_difficulty", sub_id], ["mining.notify", sub_id]], extranonce1, extranonce2_size]
 	subscriptions := [][]string{
 		{"mining.set_difficulty", s.ID},
@@ -237,6 +275,25 @@ func (s *Session) handleAuthorize(req *Request) {
 
 	s.sendResponse(req.ID, true, nil)
 	s.server.log.Infof("stratum", "miner %s authorized as %s", s.conn.RemoteAddr(), workerName)
+
+	// Restore last known difficulty for this worker (skip if mining.configure already changed it)
+	if s.server.LookupWorkerDiff != nil && s.currentDiff == s.server.vardiffMgr.StartDiff() {
+		if stored := s.server.LookupWorkerDiff(workerName); stored > 0 {
+			// Clamp to pool bounds
+			minDiff := s.server.vardiffMgr.config.MinDiff
+			maxDiff := s.server.vardiffMgr.config.MaxDiff
+			if stored < minDiff {
+				stored = minDiff
+			}
+			if maxDiff > 0 && stored > maxDiff {
+				stored = maxDiff
+			}
+			s.currentDiff = stored
+			s.diffRestored = true
+			s.sendSetDifficulty(stored)
+			s.server.log.Infof("stratum", "restored difficulty %.6f for %s", stored, workerName)
+		}
+	}
 
 	// Notify callbacks
 	if s.server.OnMinerConnected != nil {
@@ -342,13 +399,16 @@ func (s *Session) handleSubmit(req *Request) {
 		s.currentDiff = newDiff
 		s.sendSetDifficulty(newDiff)
 		s.server.log.Infof("stratum", "vardiff: %s difficulty -> %.6f", s.workerName, newDiff)
+		if s.server.OnDiffChanged != nil && s.workerName != "" {
+			s.server.OnDiffChanged(s.workerName, newDiff)
+		}
 	}
 
 	// Hashrate: only qualifying shares (>= session difficulty) contribute,
 	// and only after vardiff has completed at least one retarget cycle.
 	// Before that, shares at the initial difficulty inflate hashrate estimates.
 	var hashrateDiff float64
-	if meetsTarget && s.vardiffState.RetargetCount >= 1 {
+	if meetsTarget && (s.diffRestored || s.vardiffState.RetargetCount >= 2) {
 		hashrateDiff = s.currentDiff
 	}
 
@@ -439,6 +499,13 @@ func (s *Session) sendNotify(job *Job, cleanJobs bool) {
 func (s *Session) sendSetDifficulty(diff float64) {
 	params := []interface{}{diff}
 	s.send(EncodeNotification("mining.set_difficulty", params))
+}
+
+// sendReconnect tells the miner to disconnect and reconnect after waitSec.
+// Supports cgminer, BFGminer, and many firmware variants.
+func (s *Session) sendReconnect(waitSec int) {
+	params := []interface{}{"", 0, waitSec}
+	s.send(EncodeNotification("client.reconnect", params))
 }
 
 func (s *Session) sendResponse(id interface{}, result interface{}, stratumErr *StratumError) {

@@ -24,6 +24,7 @@ type DashboardStats struct {
 	NetworkDifficulty   float64 `json:"networkDifficulty"`
 	NetworkHashrate     float64 `json:"networkHashrate"`
 	EstTimeToBlock      float64 `json:"estTimeToBlock"`
+	BlockChance         float64 `json:"blockChance"`
 	StratumRunning      bool    `json:"stratumRunning"`
 	BlockHeight         int64   `json:"blockHeight"`
 }
@@ -90,6 +91,16 @@ func (s *StatsAggregator) GetCumulativeStats() (accepted, rejected, blocks uint6
 func (s *StatsAggregator) ResetRejected() {
 	s.mu.Lock()
 	s.totalRejected = 0
+	s.mu.Unlock()
+}
+
+// ClearShareRecords wipes the windowed share records used for hashrate
+// estimation. Call this when the stratum server stops so that stale records
+// (which reference now-dead session IDs) don't pollute hashrate estimates
+// after restart.
+func (s *StatsAggregator) ClearShareRecords() {
+	s.mu.Lock()
+	s.shareRecords = s.shareRecords[:0]
 	s.mu.Unlock()
 }
 
@@ -219,6 +230,12 @@ func (s *StatsAggregator) GetDashboardStats(activeMiners int, networkDiff, netwo
 	totalHashrate := s.estimateHashrateAdaptive(hashrateWindow, "")
 	estTimeToBlock := EstimateTimeToBlock(totalHashrate, networkDiff)
 
+	// P(24h) = (1 - e^(-86400 / estTimeToBlock)) * 100
+	var blockChance float64
+	if estTimeToBlock > 0 {
+		blockChance = (1 - math.Exp(-86400/estTimeToBlock)) * 100
+	}
+
 	return DashboardStats{
 		TotalHashrate:     totalHashrate,
 		ActiveMiners:      activeMiners,
@@ -230,6 +247,7 @@ func (s *StatsAggregator) GetDashboardStats(activeMiners int, networkDiff, netwo
 		NetworkDifficulty: networkDiff,
 		NetworkHashrate:   networkHashrate,
 		EstTimeToBlock:    estTimeToBlock,
+		BlockChance:       blockChance,
 		StratumRunning:    stratumRunning,
 		BlockHeight:       blockHeight,
 	}

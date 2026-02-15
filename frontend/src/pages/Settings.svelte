@@ -23,6 +23,8 @@
   let addressType = '';
   let stratumURL = '';
   let coinList: Array<{id: string; name: string; symbol: string; defaultRPCPort: number; defaultRPCUser: string; segwit: boolean}> = [];
+  let dbPath = '';
+  let dbSize = 0;
 
   // Theme options
   const themes: { id: ThemeName; label: string; accent: string; desc: string }[] = [
@@ -45,7 +47,7 @@
 
   onMount(async () => {
     try {
-      const { GetConfig, GetStratumURL, GetCoinList } = await import('../../wailsjs/go/main/App');
+      const { GetConfig, GetStratumURL, GetCoinList, GetDatabaseInfo } = await import('../../wailsjs/go/main/App');
       coinList = await GetCoinList() || [];
       const cfg = await GetConfig();
       if (cfg) {
@@ -63,6 +65,11 @@
         logLevel = cfg.app?.logLevel || 'info';
       }
       stratumURL = await GetStratumURL();
+      const dbInfo = await GetDatabaseInfo();
+      if (dbInfo) {
+        dbPath = dbInfo.path || '';
+        dbSize = dbInfo.size || 0;
+      }
     } catch {}
 
     if (payoutAddress) validateAddress();
@@ -112,6 +119,14 @@
 
   function selectTheme(t: ThemeName) {
     theme.set(t);
+  }
+
+  function formatBytes(bytes: number): string {
+    if (bytes === 0) return '0 B';
+    const units = ['B', 'KB', 'MB', 'GB'];
+    const i = Math.min(Math.floor(Math.log(bytes) / Math.log(1024)), units.length - 1);
+    const val = bytes / Math.pow(1024, i);
+    return `${val < 10 ? val.toFixed(2) : val < 100 ? val.toFixed(1) : val.toFixed(0)} ${units[i]}`;
   }
 
   $: currentCoinName = coinList.find(c => c.id === selectedCoin)?.name || 'Bitcoin';
@@ -287,6 +302,18 @@
               <option value="error">Error</option>
             </select>
           </div>
+          {#if dbPath}
+            <div>
+              <label class="block text-xs mb-1.5" style="color: var(--text-secondary);">Database</label>
+              <div class="rounded-lg p-3" style="background-color: var(--bg-secondary);">
+                <div class="flex items-center justify-between mb-1">
+                  <span class="text-xs" style="color: var(--text-secondary);">Disk Usage</span>
+                  <span class="text-sm font-data" style="color: var(--accent);">{formatBytes(dbSize)}</span>
+                </div>
+                <div class="text-xs break-all" style="color: var(--text-secondary); opacity: 0.7;">{dbPath}</div>
+              </div>
+            </div>
+          {/if}
         </div>
       </div>
     </div>

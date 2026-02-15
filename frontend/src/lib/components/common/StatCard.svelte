@@ -46,7 +46,11 @@
   <div class="text-2xl font-bold data-readout truncate pl-2" style="color: {barColor}; text-shadow: 0 0 4px {barColor}40;">
     {value}
   </div>
-  {#if subtext}
+  {#if $$slots.subtext}
+    <div class="text-xs mt-1 pl-2" style="color: var(--text-secondary);">
+      <slot name="subtext" />
+    </div>
+  {:else if subtext}
     <div class="text-xs mt-1 pl-2" style="color: var(--text-secondary);">{subtext}</div>
   {/if}
 </div>

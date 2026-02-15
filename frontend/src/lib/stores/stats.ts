@@ -11,6 +11,7 @@ export interface DashboardStats {
   networkDifficulty: number;
   networkHashrate: number;
   estTimeToBlock: number;
+  blockChance: number;
   stratumRunning: boolean;
   blockHeight: number;
 }
@@ -31,6 +32,7 @@ export const dashboardStats = writable<DashboardStats>({
   networkDifficulty: 0,
   networkHashrate: 0,
   estTimeToBlock: 0,
+  blockChance: 0,
   stratumRunning: false,
   blockHeight: 0,
 });

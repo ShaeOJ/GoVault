@@ -3,6 +3,8 @@ package main
 import (
 	"context"
 	"fmt"
+	"net"
+	"sync"
 	"time"
 
 	"govault/internal/coin"
@@ -210,10 +212,11 @@ func (a *App) StartStratum() error {
 		a.stats.RecordBestDifficulty(actualDiff)                // actual diff for global bestDiff
 		if a.buffer != nil {
 			a.buffer.AddShare(database.ShareEntry{
-				Timestamp:  time.Now().Unix(),
-				MinerID:    minerID,
-				Difficulty: actualDiff,
-				Accepted:   true,
+				Timestamp:   time.Now().Unix(),
+				MinerID:     minerID,
+				Difficulty:  actualDiff,
+				SessionDiff: sessionDiff,
+				Accepted:    true,
 			})
 		}
 		runtime.EventsEmit(a.ctx, "stratum:share-accepted", map[string]interface{}{
@@ -255,11 +258,36 @@ func (a *App) StartStratum() error {
 		a.log.Infof("app", "BLOCK FOUND! Hash: %s Height: %d", hash, height)
 	}
 
+	a.stratum.LookupWorkerDiff = func(workerName string) float64 {
+		if a.db != nil {
+			diff, _ := a.db.GetWorkerDiff(workerName)
+			return diff
+		}
+		return 0
+	}
+	a.stratum.OnDiffChanged = func(workerName string, diff float64) {
+		if a.db != nil && workerName != "" {
+			a.db.SaveWorkerDiff(workerName, diff)
+		}
+	}
+
+	// Pre-fetch the first block template BEFORE accepting miners so the
+	// first reconnecting device gets work immediately (no "waiting for
+	// block template" gap).
+	tmpl, err := a.nodeClient.GetBlockTemplate(coinDef.GBTRules)
+	if err != nil {
+		a.log.Errorf("app", "initial block template fetch failed: %v (miners will wait for next poll)", err)
+	} else {
+		a.stratum.NewBlockTemplate(tmpl)
+		a.blockHeight = tmpl.Height
+		a.log.Infof("app", "initial block template ready: height=%d", tmpl.Height)
+	}
+
 	if err := a.stratum.Start(); err != nil {
 		return err
 	}
 
-	// Start chain monitor
+	// Start chain monitor for ongoing block updates
 	a.monitor = node.NewChainMonitor(a.nodeClient, 500*time.Millisecond, coinDef.GBTRules)
 	a.monitor.SetRefreshInterval(10 * time.Second) // Refresh template for miners that don't roll ntime/en2 (e.g. BG01 cycles ~7s)
 	a.monitor.OnNewBlock = func(tmpl *node.BlockTemplate) {
@@ -290,6 +318,12 @@ func (a *App) StopStratum() error {
 	if a.stratum != nil {
 		a.stratum.Stop()
 	}
+
+	// Clear stale state so restart doesn't misattribute hashrate.
+	// Share records reference session IDs that no longer exist.
+	a.stats.ClearShareRecords()
+	a.registry.Clear()
+
 	a.log.Info("app", "stratum server stopped")
 	return nil
 }
@@ -317,6 +351,29 @@ func (a *App) GetDashboardStats() miner.DashboardStats {
 
 func (a *App) GetHashrateHistory(period string) []miner.HashratePoint {
 	return a.stats.GetHashrateHistory(period)
+}
+
+// GetMinerHashrateHistory returns per-miner hashrate sparkline data (1h window, 2min buckets).
+func (a *App) GetMinerHashrateHistory(minerID string) []miner.HashratePoint {
+	if a.db == nil {
+		return nil
+	}
+	since := time.Now().Add(-1 * time.Hour).Unix()
+	entries, err := a.db.MinerHashrateHistory(minerID, since, 120) // 2-minute buckets
+	if err != nil {
+		if a.log != nil {
+			a.log.Errorf("app", "miner hashrate history: %v", err)
+		}
+		return nil
+	}
+	points := make([]miner.HashratePoint, len(entries))
+	for i, e := range entries {
+		points[i] = miner.HashratePoint{
+			Timestamp: e.Timestamp,
+			Hashrate:  e.Hashrate,
+		}
+	}
+	return points
 }
 
 // ClearRejectedShares removes all rejected share records from the database
@@ -567,9 +624,105 @@ func (a *App) ConfigureMiner(ip string) error {
 	return a.discovery.ConfigureMiner(ip, stratumURL, stratumPort, stratumUser)
 }
 
+// ReconnectMiners nudges disconnected AxeOS miners by PATCHing their
+// stratum settings via HTTP, causing them to reconnect immediately.
+func (a *App) ReconnectMiners() map[string]interface{} {
+	if !a.IsStratumRunning() {
+		return map[string]interface{}{
+			"error": "stratum server is not running",
+		}
+	}
+
+	if a.db == nil {
+		return map[string]interface{}{
+			"error": "database not available",
+		}
+	}
+
+	// Get IPs that connected in the last 24h
+	recentIPs, err := a.db.RecentMinerIPs()
+	if err != nil {
+		a.log.Errorf("app", "ReconnectMiners: failed to get recent IPs: %v", err)
+		return map[string]interface{}{
+			"error": fmt.Sprintf("failed to get recent miners: %v", err),
+		}
+	}
+
+	// Build set of currently-connected IPs (strip port from session IP)
+	connectedIPs := make(map[string]bool)
+	if a.stratum != nil {
+		for _, s := range a.stratum.GetSessions() {
+			host, _, err := net.SplitHostPort(s.IPAddress)
+			if err != nil {
+				host = s.IPAddress // fallback if no port
+			}
+			connectedIPs[host] = true
+		}
+	}
+
+	// Filter to only disconnected IPs
+	var targets []string
+	for _, ip := range recentIPs {
+		if !connectedIPs[ip] {
+			targets = append(targets, ip)
+		}
+	}
+
+	if len(targets) == 0 {
+		return map[string]interface{}{
+			"attempted": 0,
+			"success":   0,
+			"message":   "all recent miners are already connected",
+		}
+	}
+
+	// PATCH each disconnected miner concurrently
+	localIP := miner.GetLocalIP()
+	stratumPort := a.config.Stratum.Port
+	stratumUser := a.config.Mining.PayoutAddress
+
+	var mu sync.Mutex
+	var wg sync.WaitGroup
+	success := 0
+
+	for _, ip := range targets {
+		wg.Add(1)
+		go func(ip string) {
+			defer wg.Done()
+			if err := a.discovery.ConfigureMiner(ip, localIP, stratumPort, stratumUser); err == nil {
+				mu.Lock()
+				success++
+				mu.Unlock()
+				a.log.Infof("app", "reconnect nudge sent to %s", ip)
+			}
+		}(ip)
+	}
+	wg.Wait()
+
+	a.log.Infof("app", "reconnect miners: %d/%d succeeded", success, len(targets))
+
+	return map[string]interface{}{
+		"attempted": len(targets),
+		"success":   success,
+	}
+}
+
 func (a *App) GetStratumURL() string {
 	localIP := miner.GetLocalIP()
 	return fmt.Sprintf("stratum+tcp://%s:%d", localIP, a.config.Stratum.Port)
+}
+
+// === Database ===
+
+// GetDatabaseInfo returns the database file path and total disk usage in bytes.
+func (a *App) GetDatabaseInfo() map[string]interface{} {
+	if a.db == nil {
+		return map[string]interface{}{"path": "", "size": 0}
+	}
+	return map[string]interface{}{
+		"path": a.db.Path(),
+		"size": a.db.Size(),
+	}
 }
 
 // === Logs ===

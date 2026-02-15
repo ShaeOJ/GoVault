@@ -26,8 +26,16 @@ export function GetDashboardStats() {
   return window['go']['main']['App']['GetDashboardStats']();
 }
 
+export function GetDatabaseInfo() {
+  return window['go']['main']['App']['GetDatabaseInfo']();
+}
+
 export function GetHashrateHistory(arg1) {
   return window['go']['main']['App']['GetHashrateHistory'](arg1);
+}
+
+export function GetMinerHashrateHistory(arg1) {
+  return window['go']['main']['App']['GetMinerHashrateHistory'](arg1);
 }
 
 export function GetMiners() {
@@ -48,6 +56,10 @@ export function GetStratumURL() {
 
 export function IsStratumRunning() {
   return window['go']['main']['App']['IsStratumRunning']();
+}
+
+export function ReconnectMiners() {
+  return window['go']['main']['App']['ReconnectMiners']();
 }
 
 export function ScanForMiners() {

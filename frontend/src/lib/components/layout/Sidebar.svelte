@@ -18,13 +18,8 @@
   style="background-color: var(--bg-secondary); border-right: 1px solid var(--accent); box-shadow: 1px 0 8px var(--accent-glow);"
 >
   <!-- Logo / Brand -->
-  <div class="h-16 flex items-center px-3 lg:px-4 wails-drag" style="border-bottom: 1px solid var(--border);">
-    <div class="flex items-center gap-2 flex-shrink-0">
-      <img src={logoUrl} alt="GoVault" class="w-7 h-7" />
-      <span class="hidden lg:block font-tech text-sm uppercase tracking-widest glow-text" style="color: var(--accent);">
-        GOVAULT
-      </span>
-    </div>
+  <div class="h-16 flex items-center justify-center wails-drag" style="border-bottom: 1px solid var(--border);">
+    <img src={logoUrl} alt="GoVault" class="w-10 h-10 lg:w-11 lg:h-11" />
   </div>
 
   <!-- Navigation -->
@@ -61,7 +56,7 @@
         class="w-2 h-2 rounded-full status-pulse"
         style="background-color: var(--accent); box-shadow: 0 0 6px var(--accent-glow);"
       ></div>
-      <span class="ml-2 text-xs font-data hidden lg:block" style="color: var(--text-secondary);">v0.1.0</span>
+      <span class="ml-2 text-xs font-data hidden lg:block" style="color: var(--text-secondary);">v0.2.0-beta.2</span>
     </div>
   </div>
 </aside>

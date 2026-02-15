@@ -44,6 +44,13 @@ func (r *Registry) Unregister(id string) {
 	r.mu.Unlock()
 }
 
+// Clear removes all miners from the registry.
+func (r *Registry) Clear() {
+	r.mu.Lock()
+	r.miners = make(map[string]*MinerInfo)
+	r.mu.Unlock()
+}
+
 func (r *Registry) Get(id string) *MinerInfo {
 	r.mu.RLock()
 	defer r.mu.RUnlock()

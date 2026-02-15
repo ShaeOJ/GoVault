@@ -5,6 +5,9 @@
   import type { MinerInfo, DiscoveredMiner } from '../lib/stores/miners';
   import { EventsOn } from '../../wailsjs/runtime/runtime';
   import Icon from '../lib/components/common/Icon.svelte';
+  import ThemedSpinner from '../lib/components/common/ThemedSpinner.svelte';
+
+  interface SparkPoint { t: number; h: number; }
 
   let minerList: MinerInfo[] = [];
   let showPanel = false;
@@ -14,12 +17,54 @@
   let showDiscovery = false;
   let unsubs: (() => void)[] = [];
   let refreshInterval: ReturnType<typeof setInterval>;
+  let sparklineInterval: ReturnType<typeof setInterval>;
+
+  // Per-miner sparkline data cache
+  let minerSparklines: Record<string, SparkPoint[]> = {};
 
   const unsubMiners = miners.subscribe(m => {
     minerList = [...m].sort((a, b) => a.connectedAt.localeCompare(b.connectedAt) || a.id.localeCompare(b.id));
   });
   const unsubSelected = selectedMiner.subscribe(m => selected = m);
   const unsubDiscovered = discoveredMiners.subscribe(d => discovered = d);
+
+  // SVG sparkline helpers (no Chart.js)
+  function sparklinePath(points: SparkPoint[], width: number, height: number): string {
+    if (points.length < 2) return '';
+    const maxH = Math.max(...points.map(p => p.h));
+    if (maxH <= 0) return '';
+    const step = width / (points.length - 1);
+    return points.map((p, i) => {
+      const x = i * step;
+      const y = height - (p.h / maxH) * height * 0.85 - height * 0.05;
+      return `${x},${y}`;
+    }).join(' ');
+  }
+
+  function sparklineArea(points: SparkPoint[], width: number, height: number): string {
+    if (points.length < 2) return '';
+    const line = sparklinePath(points, width, height);
+    if (!line) return '';
+    return `0,${height} ${line} ${width},${height}`;
+  }
+
+  async function refreshSparklines() {
+    if (minerList.length === 0) return;
+    try {
+      const { GetMinerHashrateHistory } = await import('../../wailsjs/go/main/App');
+      const results = await Promise.all(
+        minerList.map(async (m) => {
+          const pts = await GetMinerHashrateHistory(m.id);
+          return { id: m.id, pts: pts || [] };
+        })
+      );
+      const next: Record<string, SparkPoint[]> = {};
+      for (const r of results) {
+        next[r.id] = r.pts;
+      }
+      minerSparklines = next;
+    } catch {}
+  }
 
   onMount(async () => {
     unsubs.push(EventsOn('stratum:miner-connected', (info: MinerInfo) => {
@@ -42,11 +87,11 @@
       ));
     }));
 
-    // Load existing miners
     await refreshMiners();
+    await refreshSparklines();
 
-    // Refresh miner data every 5 seconds to pick up share counts + hashrate
     refreshInterval = setInterval(refreshMiners, 5000);
+    sparklineInterval = setInterval(refreshSparklines, 30000);
   });
 
   async function refreshMiners() {
@@ -63,6 +108,7 @@
     unsubDiscovered();
     unsubs.forEach(fn => fn());
     if (refreshInterval) clearInterval(refreshInterval);
+    if (sparklineInterval) clearInterval(sparklineInterval);
   });
 
   function selectMiner(m: MinerInfo) {
@@ -103,20 +149,27 @@
     }
     const elapsed = (Date.now() - new Date(m.lastShareTime).getTime()) / 1000;
 
-    // Dynamic stale threshold: scale with difficulty and hashrate.
-    // expectedTime = diff * 2^32 / hashrate. Use 3x expected time or 120s minimum.
     let staleThreshold = 120;
     if (m.hashrate > 0 && m.currentDiff > 0) {
       const expectedTime = (m.currentDiff * 4294967296) / m.hashrate;
       staleThreshold = Math.max(120, expectedTime * 3);
     } else {
-      staleThreshold = 180; // generous default when no hashrate data yet
+      staleThreshold = 180;
     }
     const deadThreshold = staleThreshold * 3;
 
     if (elapsed < staleThreshold) return { color: 'var(--success)', label: 'Active', glow: true };
     if (elapsed < deadThreshold) return { color: 'var(--warning)', label: 'Stale', glow: false };
     return { color: 'var(--error)', label: 'Dead', glow: false };
+  }
+
+  function getUptime(connectedAt: string): string {
+    if (!connectedAt) return '';
+    const diff = Math.floor((Date.now() - new Date(connectedAt).getTime()) / 1000);
+    if (diff < 60) return `${diff}s`;
+    if (diff < 3600) return `${Math.floor(diff / 60)}m`;
+    if (diff < 86400) return `${Math.floor(diff / 3600)}h ${Math.floor((diff % 3600) / 60)}m`;
+    return `${Math.floor(diff / 86400)}d ${Math.floor((diff % 86400) / 3600)}h`;
   }
 </script>
 
@@ -133,10 +186,7 @@
       disabled={scanning}
     >
       {#if scanning}
-        <svg class="w-4 h-4 animate-spin" fill="none" viewBox="0 0 24 24">
-          <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
-          <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path>
-        </svg>
+        <ThemedSpinner size={16} />
         Scanning...
       {:else}
         <Icon name="waves" size={16} />
@@ -190,30 +240,59 @@
     <div class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
       {#each minerList as m (m.id)}
         {@const status = getMinerStatus(m)}
+        {@const points = minerSparklines[m.id] || []}
         <button
-          class="rounded-xl p-4 card-glow text-left w-full"
+          class="rounded-xl card-glow text-left w-full overflow-hidden"
           style="background-color: var(--bg-card);"
           on:click={() => selectMiner(m)}
         >
-          <div class="flex items-center justify-between mb-3">
-            <div class="flex items-center gap-2">
+          <!-- Header -->
+          <div class="flex items-center justify-between px-4 pt-4 pb-2">
+            <div class="flex items-center gap-2 min-w-0">
               <div
-                class="w-2.5 h-2.5 rounded-full {status.glow ? 'status-pulse' : ''}"
+                class="w-2.5 h-2.5 rounded-full flex-shrink-0 {status.glow ? 'status-pulse' : ''}"
                 style="background-color: {status.color}; {status.glow ? `box-shadow: 0 0 6px ${status.color};` : ''}"
               ></div>
-              <span class="text-sm font-medium truncate max-w-[180px]" style="color: var(--text-primary);">{m.workerName || m.id}</span>
+              <span class="text-sm font-bold truncate" style="color: var(--text-primary);">{m.workerName || m.id}</span>
             </div>
-            <span class="text-xs font-data glow-text" style="color: {status.color}; text-shadow: 0 0 4px {status.color}40;">{status.label}</span>
+            <span class="text-xs font-data glow-text flex-shrink-0 ml-2" style="color: {status.color}; text-shadow: 0 0 4px {status.color}40;">{status.label}</span>
           </div>
 
-          <div class="grid grid-cols-2 gap-3">
-            <div>
-              <div class="text-xs" style="color: var(--text-secondary);">Hashrate</div>
-              <div class="text-sm font-medium data-readout">{formatHashrate(m.hashrate)}</div>
+          <!-- Hero Hashrate with Sparkline -->
+          <div class="relative px-4 py-3">
+            <!-- Sparkline background -->
+            {#if points.length >= 2}
+              <svg
+                class="absolute inset-0 w-full h-full"
+                preserveAspectRatio="none"
+                viewBox="0 0 200 60"
+              >
+                <polygon
+                  points={sparklineArea(points, 200, 60)}
+                  fill="var(--accent)"
+                  opacity="0.03"
+                />
+                <polyline
+                  points={sparklinePath(points, 200, 60)}
+                  fill="none"
+                  stroke="var(--accent)"
+                  stroke-width="1"
+                  opacity="0.12"
+                />
+              </svg>
+            {/if}
+            <!-- Hashrate readout -->
+            <div class="relative flex items-center gap-2">
+              <span style="color: var(--accent); opacity: 0.6;"><Icon name="bolt" size={20} /></span>
+              <span class="text-2xl font-bold data-readout">{formatHashrate(m.hashrate)}</span>
             </div>
+          </div>
+
+          <!-- Stats Row -->
+          <div class="grid grid-cols-3 gap-2 px-4 pb-3">
             <div>
-              <div class="text-xs" style="color: var(--text-secondary);">Difficulty</div>
-              <div class="text-sm font-medium font-data" style="color: var(--text-primary);">{formatDifficulty(m.currentDiff)}</div>
+              <div class="text-xs" style="color: var(--text-secondary);">Best Diff</div>
+              <div class="text-sm font-medium font-data" style="color: var(--warning);">{formatDifficulty(m.bestDifficulty)}</div>
             </div>
             <div>
               <div class="text-xs" style="color: var(--text-secondary);">Accepted</div>
@@ -221,13 +300,14 @@
             </div>
             <div>
               <div class="text-xs" style="color: var(--text-secondary);">Rejected</div>
-              <div class="text-sm font-medium font-data" style="color: var(--error);">{m.sharesRejected}</div>
+              <div class="text-sm font-medium font-data" style="color: {m.sharesRejected > 0 ? 'var(--error)' : 'var(--text-secondary)'};">{m.sharesRejected}</div>
             </div>
           </div>
 
-          <div class="mt-3 pt-3 flex justify-between text-xs" style="border-top: 1px solid var(--border); color: var(--text-secondary);">
+          <!-- Footer -->
+          <div class="flex justify-between text-xs px-4 py-2.5" style="border-top: 1px solid var(--border); color: var(--text-secondary);">
             <span>{m.ipAddress}</span>
-            <span>Last share: {timeAgo(m.lastShareTime)}</span>
+            <span>{getUptime(m.connectedAt)}</span>
           </div>
         </button>
       {/each}

@@ -16,7 +16,11 @@ export function GetConfig():Promise<config.Config>;
 
 export function GetDashboardStats():Promise<miner.DashboardStats>;
 
+export function GetDatabaseInfo():Promise<Record<string, any>>;
+
 export function GetHashrateHistory(arg1:string):Promise<Array<miner.HashratePoint>>;
+
+export function GetMinerHashrateHistory(arg1:string):Promise<Array<miner.HashratePoint>>;
 
 export function GetMiners():Promise<Array<miner.MinerInfo>>;
 
@@ -27,6 +31,8 @@ export function GetRecentLogs(arg1:number):Promise<Array<logger.LogEntry>>;
 export function GetStratumURL():Promise<string>;
 
 export function IsStratumRunning():Promise<boolean>;
+
+export function ReconnectMiners():Promise<Record<string, any>>;
 
 export function ScanForMiners():Promise<Array<miner.DiscoveredMiner>>;
 

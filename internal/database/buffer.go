@@ -16,6 +16,7 @@ type ShareEntry struct {
 	MinerID      string
 	Worker       string
 	Difficulty   float64
+	SessionDiff  float64
 	Accepted     bool
 	RejectReason string
 }

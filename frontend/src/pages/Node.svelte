@@ -1,6 +1,7 @@
 <script lang="ts">
   import { onMount } from 'svelte';
   import Toggle from '../lib/components/common/Toggle.svelte';
+  import ThemedSpinner from '../lib/components/common/ThemedSpinner.svelte';
   import { formatNumber, formatDifficulty, formatHashrate } from '../lib/utils/format';
 
   let host = '127.0.0.1';
@@ -186,10 +187,7 @@
             disabled={testing || saving}
           >
             {#if testing}
-              <svg class="w-4 h-4 animate-spin" fill="none" viewBox="0 0 24 24">
-                <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
-                <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path>
-              </svg>
+              <ThemedSpinner size={16} />
               Testing...
             {:else}
               Test Connection
@@ -202,10 +200,7 @@
             disabled={saving || testing}
           >
             {#if saving}
-              <svg class="w-4 h-4 animate-spin" fill="none" viewBox="0 0 24 24">
-                <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
-                <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path>
-              </svg>
+              <ThemedSpinner size={16} />
               {savingStep === 'connecting' ? 'Connecting...' : 'Saving...'}
             {:else}
               Save & Connect
@@ -241,10 +236,9 @@
 
         {#if saving && savingStep === 'connecting'}
           <div class="text-center py-8">
-            <svg class="w-8 h-8 animate-spin mx-auto mb-3" style="color: var(--accent);" fill="none" viewBox="0 0 24 24">
-              <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
-              <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path>
-            </svg>
+            <div class="mb-3" style="color: var(--accent);">
+              <ThemedSpinner size={32} mode="block" />
+            </div>
             <div class="text-sm font-medium" style="color: var(--accent);">Connecting to node...</div>
             <div class="text-xs mt-1" style="color: var(--text-secondary); opacity: 0.7;">{host}:{port}</div>
           </div>

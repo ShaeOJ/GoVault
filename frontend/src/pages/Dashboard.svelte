@@ -4,10 +4,11 @@
   import 'chartjs-adapter-date-fns';
   import StatCard from '../lib/components/common/StatCard.svelte';
   import Icon from '../lib/components/common/Icon.svelte';
+  import ThemedSpinner from '../lib/components/common/ThemedSpinner.svelte';
   import { dashboardStats, blockFound } from '../lib/stores/stats';
   import { miners } from '../lib/stores/miners';
   import type { MinerInfo } from '../lib/stores/miners';
-  import { formatHashrate, formatDifficulty, formatDuration, formatNumber } from '../lib/utils/format';
+  import { formatHashrate, formatDifficulty, formatDuration, formatNumber, formatChance, formatRatio } from '../lib/utils/format';
   import type { DashboardStats, HashratePoint } from '../lib/stores/stats';
   import { EventsOn } from '../../wailsjs/runtime/runtime';
 
@@ -28,6 +29,8 @@
   let stratumToggling = false;
   let stratumError = '';
   let clearingRejects = false;
+  let reconnecting = false;
+  let reconnectResult = '';
 
   // Subscribe to store
   const unsub = dashboardStats.subscribe(s => stats = s);
@@ -219,6 +222,27 @@
     clearingRejects = false;
   }
 
+  async function reconnectMiners() {
+    reconnecting = true;
+    reconnectResult = '';
+    try {
+      const { ReconnectMiners } = await import('../../wailsjs/go/main/App');
+      const result = await ReconnectMiners();
+      if (result.error) {
+        reconnectResult = result.error;
+      } else if (result.attempted === 0) {
+        reconnectResult = 'All recent miners already connected';
+      } else {
+        reconnectResult = `Nudged ${result.success}/${result.attempted} miners`;
+      }
+      setTimeout(() => reconnectResult = '', 5000);
+    } catch (e: any) {
+      reconnectResult = e?.message || String(e);
+      setTimeout(() => reconnectResult = '', 5000);
+    }
+    reconnecting = false;
+  }
+
   function selectPeriod(period: string) {
     selectedPeriod = period;
     if (chart) { chart.destroy(); chart = null; }
@@ -228,8 +252,7 @@
 
 <!-- Block Found Banner -->
 {#if showBlockBanner}
-  <div class="fixed top-0 left-0 right-0 z-50 p-4 text-center animate-slide-in-up shadow-2xl"
-    style="background: linear-gradient(90deg, var(--accent), var(--accent-secondary), var(--accent));">
+  <div class="block-banner fixed top-0 left-0 right-0 z-50 p-4 text-center animate-slide-in-up shadow-2xl">
     <div class="font-bold text-lg font-tech" style="color: var(--bg-primary);">BLOCK FOUND!</div>
     {#if blockInfo}
       <div class="text-sm" style="color: var(--bg-primary); opacity: 0.8;">Height: {blockInfo.height} | Hash: {blockInfo.hash?.substring(0, 16)}...</div>
@@ -249,25 +272,44 @@
       <h1 class="text-2xl font-bold font-tech uppercase tracking-wide" style="color: var(--text-primary);">Dashboard</h1>
       <p class="text-sm" style="color: var(--text-secondary);">Solo mining {coinSymbol}</p>
     </div>
-    <button
-      class="px-4 py-2 rounded-lg font-medium text-sm font-tech uppercase tracking-wider transition-all duration-200 glow-border-hover flex items-center gap-2"
-      style={stats?.stratumRunning
-        ? `background: rgba(var(--accent-rgb), 0.05); color: var(--error); border: 1px solid var(--error);`
-        : `background: rgba(var(--accent-rgb), 0.05); color: var(--accent); border: 1px solid var(--accent);`}
-      style:opacity={stratumToggling ? '0.7' : '1'}
-      on:click={toggleStratum}
-      disabled={stratumToggling}
-    >
-      {#if stratumToggling}
-        <svg class="w-4 h-4 animate-spin" fill="none" viewBox="0 0 24 24">
-          <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
-          <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path>
-        </svg>
-        {stats?.stratumRunning ? 'Stopping...' : 'Starting...'}
-      {:else}
-        {stats?.stratumRunning ? 'Stop Server' : 'Start Server'}
+    <div class="flex items-center gap-2">
+      {#if reconnectResult}
+        <span class="text-xs font-data" style="color: var(--text-secondary);">{reconnectResult}</span>
       {/if}
-    </button>
+      {#if stats?.stratumRunning}
+        <button
+          class="px-3 py-2 rounded-lg font-medium text-sm font-tech uppercase tracking-wider transition-all duration-200 glow-border-hover flex items-center gap-2"
+          style="background: rgba(var(--accent-rgb), 0.05); color: var(--text-secondary); border: 1px solid var(--border);"
+          style:opacity={reconnecting ? '0.7' : '1'}
+          on:click={reconnectMiners}
+          disabled={reconnecting}
+          title="Nudge disconnected AxeOS miners to reconnect"
+        >
+          {#if reconnecting}
+            <ThemedSpinner size={16} />
+          {:else}
+            <Icon name="refresh" size={16} />
+          {/if}
+          Reconnect
+        </button>
+      {/if}
+      <button
+        class="px-4 py-2 rounded-lg font-medium text-sm font-tech uppercase tracking-wider transition-all duration-200 glow-border-hover flex items-center gap-2"
+        style={stats?.stratumRunning
+          ? `background: rgba(var(--accent-rgb), 0.05); color: var(--error); border: 1px solid var(--error);`
+          : `background: rgba(var(--accent-rgb), 0.05); color: var(--accent); border: 1px solid var(--accent);`}
+        style:opacity={stratumToggling ? '0.7' : '1'}
+        on:click={toggleStratum}
+        disabled={stratumToggling}
+      >
+        {#if stratumToggling}
+          <ThemedSpinner size={16} />
+          {stats?.stratumRunning ? 'Stopping...' : 'Starting...'}
+        {:else}
+          {stats?.stratumRunning ? 'Stop Server' : 'Start Server'}
+        {/if}
+      </button>
+    </div>
   </div>
 
   {#if stratumError}
@@ -294,6 +336,9 @@
     <StatCard
       label="Best Difficulty"
       value={formatDifficulty(stats?.bestDifficulty || 0)}
+      subtext={stats?.bestDifficulty > 0 && stats?.networkDifficulty > 0
+        ? `1 in ${formatRatio(stats.networkDifficulty / stats.bestDifficulty)} vs network`
+        : ''}
       iconName="hexshield"
       color="gold"
     />
@@ -306,21 +351,33 @@
   </div>
 
   <!-- Second Row -->
-  <div class="grid grid-cols-3 gap-4">
+  <div class="grid grid-cols-2 lg:grid-cols-4 gap-4">
+    <StatCard
+      label="Blocks Found"
+      value={String(stats?.blocksFound || 0)}
+      subtext="solo blocks discovered"
+      iconName="cube"
+      color="accent"
+    />
+    <StatCard
+      label="Block Chance"
+      value={formatChance(stats?.blockChance || 0)}
+      subtext="per day"
+      iconName="dice"
+      color="gold"
+    />
     <StatCard
       label="Pool Shares"
       value={formatNumber(stats?.poolShares || 0)}
-      subtext="{formatNumber(stats?.sharesAccepted || 0)} total"
+      iconName="nodes"
       color="green"
-    />
-    <div class="rounded-xl p-4 card-glow relative overflow-hidden" style="background-color: var(--bg-card);">
-      <div class="absolute left-0 top-0 bottom-0 w-[3px]" style="background: var(--error); box-shadow: 0 0 6px var(--error)40;"></div>
-      <div class="flex items-center justify-between mb-2 pl-2">
-        <span class="text-xs font-medium uppercase tracking-wider" style="color: var(--text-secondary);">Shares Rejected</span>
+    >
+      <svelte:fragment slot="subtext">
+        {formatNumber(stats?.sharesAccepted || 0)} accepted · {formatNumber(stats?.sharesRejected || 0)} rejected
         {#if (stats?.sharesRejected || 0) > 0}
           <button
-            class="text-xs px-1.5 py-0.5 rounded transition-colors"
-            style="color: var(--text-secondary); background: rgba(255,255,255,0.05);"
+            class="ml-1 px-1 py-0 rounded text-[10px] transition-colors"
+            style="color: var(--text-secondary); background: rgba(255,255,255,0.08);"
             style:opacity={clearingRejects ? '0.5' : '1'}
             on:click={clearRejectedShares}
             disabled={clearingRejects}
@@ -329,15 +386,13 @@
             {clearingRejects ? '...' : 'Clear'}
           </button>
         {/if}
-      </div>
-      <div class="text-2xl font-bold data-readout truncate pl-2" style="color: var(--error); text-shadow: 0 0 4px var(--error)40;">
-        {formatNumber(stats?.sharesRejected || 0)}
-      </div>
-    </div>
+      </svelte:fragment>
+    </StatCard>
     <StatCard
       label="Network Difficulty"
       value={formatDifficulty(stats?.networkDifficulty || 0)}
-      subtext="Block Height: {formatNumber(stats?.blockHeight || 0)}"
+      subtext="Height: {formatNumber(stats?.blockHeight || 0)}"
+      iconName="gauge"
       color="gray"
     />
   </div>
@@ -393,20 +448,4 @@
     {/if}
   {/if}
 
-  <!-- Blocks Found -->
-  {#if stats?.blocksFound > 0}
-    <div class="rounded-xl p-5 card-glow"
-      style="background: linear-gradient(135deg, rgba(var(--accent-rgb), 0.08), transparent); border-color: rgba(var(--accent-rgb), 0.2);">
-      <div class="flex items-center gap-3">
-        <div class="w-10 h-10 rounded-full flex items-center justify-center"
-          style="background: rgba(var(--accent-rgb), 0.15); color: var(--accent);">
-          <Icon name="cube" size={20} />
-        </div>
-        <div>
-          <div class="font-bold text-lg font-tech glow-text" style="color: var(--accent);">{stats.blocksFound} Block{stats.blocksFound > 1 ? 's' : ''} Found!</div>
-          <div class="text-sm" style="color: var(--text-secondary);">Congratulations on your solo mining success</div>
-        </div>
-      </div>
-    </div>
-  {/if}
 </div>

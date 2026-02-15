@@ -2,6 +2,7 @@ package stratum
 
 import (
 	"math"
+	"strings"
 	"time"
 
 	"govault/internal/config"
@@ -21,6 +22,26 @@ type VardiffManager struct {
 
 func NewVardiffManager(cfg *config.VardiffConfig) *VardiffManager {
 	return &VardiffManager{config: cfg}
+}
+
+// RetargetInterval returns the retarget period as a time.Duration.
+func (v *VardiffManager) RetargetInterval() time.Duration {
+	return time.Duration(v.config.RetargetTimeSec) * time.Second
+}
+
+// StartDiffForUA returns an appropriate start difficulty based on the miner's
+// user-agent string. Known low-hashrate miners get a lower start difficulty
+// so they don't sit idle waiting for vardiff to ramp down.
+func (v *VardiffManager) StartDiffForUA(userAgent string) float64 {
+	ua := strings.ToLower(userAgent)
+	switch {
+	case strings.Contains(ua, "nerdminer"):
+		return v.config.MinDiff // ~500 H/s, needs absolute minimum
+	case strings.Contains(ua, "nerdaxe"), strings.Contains(ua, "nerdqaxe"):
+		return 0.1 // ~500 KH/s–5 MH/s
+	default:
+		return v.StartDiff()
+	}
 }
 
 // StartDiff returns the initial difficulty for new sessions.
@@ -108,19 +129,34 @@ func (v *VardiffManager) CheckRetarget(state *VardiffState, currentDiff, floorDi
 		}
 	}
 
-	// Calculate new difficulty with damping.
-	// Cap ratio to max 2x change per retarget to prevent oscillation.
+	// Calculate new difficulty.
+	// During warmup (first 3 retargets), allow uncapped ratio and aggressive
+	// weighting so high-hashrate miners converge in 1-2 retargets instead of 10+.
+	// After warmup, cap ratio to 2x with 50/50 damping to prevent oscillation.
 	ratio := targetTime / actualTimePerShare
-	if ratio > 2 {
-		ratio = 2
-	}
-	if ratio < 0.5 {
-		ratio = 0.5
+	warmup := state.RetargetCount < 3
+	if warmup {
+		// Uncapped ratio — let it jump straight to where it needs to be
+		if ratio < 0.25 {
+			ratio = 0.25
+		}
+	} else {
+		if ratio > 2 {
+			ratio = 2
+		}
+		if ratio < 0.5 {
+			ratio = 0.5
+		}
 	}
 	idealDiff := currentDiff * ratio
 
-	// Exponential damping: blend 50% current + 50% calculated to smooth convergence
-	newDiff := 0.5*currentDiff + 0.5*idealDiff
+	// Damping: warmup uses 25/75 (aggressive), steady-state uses 50/50 (smooth)
+	var newDiff float64
+	if warmup {
+		newDiff = 0.25*currentDiff + 0.75*idealDiff
+	} else {
+		newDiff = 0.5*currentDiff + 0.5*idealDiff
+	}
 
 	// Clamp to bounds
 	newDiff = math.Max(newDiff, floor)

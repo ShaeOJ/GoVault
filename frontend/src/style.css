@@ -48,6 +48,16 @@
   --success: #39ff14;
   --warning: #ffe600;
   --error: #ff3333;
+  /* Animation vars */
+  --anim-hover-duration: 200ms;
+  --anim-hover-glow-spread: 12px;
+  --anim-hover-scale: 1;
+  --anim-pulse-duration: 1.6s;
+  --anim-pulse-timing: ease-in-out;
+  --anim-pulse-min-opacity: 0.3;
+  --anim-spinner-duration: 1.2s;
+  --anim-spinner-timing: linear;
+  --anim-event-duration: 500ms;
 }
 
 /* ── TRON Theme ──────────────────────────────────── */
@@ -66,6 +76,16 @@
   --success: #00d4ff;
   --warning: #ff6600;
   --error: #ff3355;
+  /* Animation vars */
+  --anim-hover-duration: 300ms;
+  --anim-hover-glow-spread: 15px;
+  --anim-hover-scale: 1;
+  --anim-pulse-duration: 1.2s;
+  --anim-pulse-timing: step-end;
+  --anim-pulse-min-opacity: 0.1;
+  --anim-spinner-duration: 1.5s;
+  --anim-spinner-timing: linear;
+  --anim-event-duration: 600ms;
 }
 
 /* ── Vault-Tec Theme ─────────────────────────────── */
@@ -84,6 +104,16 @@
   --success: #00ff41;
   --warning: #f5a623;
   --error: #ff3333;
+  /* Animation vars */
+  --anim-hover-duration: 250ms;
+  --anim-hover-glow-spread: 10px;
+  --anim-hover-scale: 1;
+  --anim-pulse-duration: 3s;
+  --anim-pulse-timing: ease-in-out;
+  --anim-pulse-min-opacity: 0.5;
+  --anim-spinner-duration: 1.8s;
+  --anim-spinner-timing: steps(12);
+  --anim-event-duration: 800ms;
 }
 
 /* ── Crimson Theme ───────────────────────────────── */
@@ -102,6 +132,16 @@
   --success: #22cc55;
   --warning: #ff8800;
   --error: #ff2244;
+  /* Animation vars */
+  --anim-hover-duration: 150ms;
+  --anim-hover-glow-spread: 18px;
+  --anim-hover-scale: 1.005;
+  --anim-pulse-duration: 1.4s;
+  --anim-pulse-timing: ease-in-out;
+  --anim-pulse-min-opacity: 0.2;
+  --anim-spinner-duration: 0.8s;
+  --anim-spinner-timing: linear;
+  --anim-event-duration: 400ms;
 }
 
 /* ── Ultraviolet Theme ──────────────────────────── */
@@ -120,6 +160,16 @@
   --success: #00e5ff;
   --warning: #ffaa00;
   --error: #ff3355;
+  /* Animation vars */
+  --anim-hover-duration: 400ms;
+  --anim-hover-glow-spread: 20px;
+  --anim-hover-scale: 1;
+  --anim-pulse-duration: 2.5s;
+  --anim-pulse-timing: ease-in-out;
+  --anim-pulse-min-opacity: 0.4;
+  --anim-spinner-duration: 2s;
+  --anim-spinner-timing: linear;
+  --anim-event-duration: 700ms;
 }
 
 /* ── Plasma Theme ───────────────────────────────── */
@@ -138,6 +188,16 @@
   --success: #00ffcc;
   --warning: #ffcc00;
   --error: #ff2222;
+  /* Animation vars */
+  --anim-hover-duration: 150ms;
+  --anim-hover-glow-spread: 14px;
+  --anim-hover-scale: 1;
+  --anim-pulse-duration: 1.5s;
+  --anim-pulse-timing: ease-in-out;
+  --anim-pulse-min-opacity: 0.6;
+  --anim-spinner-duration: 1s;
+  --anim-spinner-timing: linear;
+  --anim-event-duration: 400ms;
 }
 
 /* ── Base Styles ─────────────────────────────────── */
@@ -181,20 +241,129 @@ html, body {
 }
 
 .glow-border-hover {
-  transition: box-shadow 200ms ease;
+  transition: box-shadow var(--anim-hover-duration) ease;
 }
 .glow-border-hover:hover {
   box-shadow: 0 0 8px var(--accent-glow), inset 0 0 1px var(--accent-glow);
 }
 
-/* ── Card Glow (replaces card-hover) ─────────────── */
+/* ── Card Glow (parameterized per theme) ─────────── */
 .card-glow {
+  position: relative;
   border: 1px solid var(--border);
-  transition: border-color 200ms ease, box-shadow 200ms ease;
+  transition: border-color var(--anim-hover-duration) ease,
+              box-shadow var(--anim-hover-duration) ease,
+              transform var(--anim-hover-duration) ease;
 }
 .card-glow:hover {
   border-color: rgba(var(--accent-rgb), 0.25);
-  box-shadow: 0 0 12px rgba(var(--accent-rgb), 0.08);
+  box-shadow: 0 0 var(--anim-hover-glow-spread) rgba(var(--accent-rgb), 0.08);
+  transform: scale(var(--anim-hover-scale));
+}
+
+/* Card hover overlay (base — hidden) */
+.card-glow::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity var(--anim-hover-duration) ease;
+  z-index: 1;
+}
+
+/* ── Per-Theme Hover Overlays ────────────────────── */
+
+/* Nuclear: Geiger-counter flicker (irregular glow spikes) */
+@keyframes nuclearFlicker {
+  0%   { box-shadow: inset 0 0 8px rgba(57, 255, 20, 0.15); }
+  15%  { box-shadow: inset 0 0 20px rgba(57, 255, 20, 0.35); }
+  25%  { box-shadow: inset 0 0 6px rgba(57, 255, 20, 0.1); }
+  50%  { box-shadow: inset 0 0 25px rgba(57, 255, 20, 0.4); }
+  65%  { box-shadow: inset 0 0 10px rgba(57, 255, 20, 0.12); }
+  80%  { box-shadow: inset 0 0 18px rgba(57, 255, 20, 0.3); }
+  100% { box-shadow: inset 0 0 8px rgba(57, 255, 20, 0.15); }
+}
+.theme-nuclear .card-glow::after {
+  background: transparent;
+}
+.theme-nuclear .card-glow:hover::after {
+  opacity: 1;
+  animation: nuclearFlicker 300ms ease 1;
+}
+
+/* Tron: Rotating light-trace border sweep */
+@keyframes tronTrace {
+  0%   { background: conic-gradient(from 0deg, transparent 0%, rgba(0, 212, 255, 0.15) 10%, transparent 20%); }
+  100% { background: conic-gradient(from 360deg, transparent 0%, rgba(0, 212, 255, 0.15) 10%, transparent 20%); }
+}
+.theme-tron .card-glow::after {
+  inset: -1px;
+  mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+  mask-composite: exclude;
+  -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+  -webkit-mask-composite: xor;
+  padding: 1px;
+}
+.theme-tron .card-glow:hover::after {
+  opacity: 1;
+  animation: tronTrace 1.5s linear infinite;
+}
+
+/* Vault-Tec: CRT scan-line flicker overlay */
+@keyframes vaultFlicker {
+  0%   { opacity: 0.06; }
+  50%  { opacity: 0.02; }
+  100% { opacity: 0.06; }
+}
+.theme-vault-tec .card-glow::after {
+  background: repeating-linear-gradient(
+    0deg,
+    transparent,
+    transparent 2px,
+    rgba(245, 166, 35, 0.04) 2px,
+    rgba(245, 166, 35, 0.04) 4px
+  );
+}
+.theme-vault-tec .card-glow:hover::after {
+  opacity: 1;
+  animation: vaultFlicker 150ms steps(2) 3;
+}
+
+/* Crimson: Heat shimmer — intense bottom glow with secondary bleed (static) */
+.theme-crimson .card-glow::after {
+  background: linear-gradient(to top,
+    rgba(255, 34, 68, 0.08) 0%,
+    rgba(255, 136, 0, 0.03) 30%,
+    transparent 60%);
+}
+.theme-crimson .card-glow:hover::after {
+  opacity: 1;
+}
+
+/* Ultraviolet: Nebula bloom — multi-layer expanding glow (static) */
+.theme-ultraviolet .card-glow:hover::after {
+  opacity: 1;
+  box-shadow:
+    inset 0 0 15px rgba(180, 74, 255, 0.08),
+    inset 0 0 30px rgba(180, 74, 255, 0.04),
+    inset 0 0 50px rgba(0, 229, 255, 0.02);
+}
+
+/* Plasma: Neon crackle (fast 3-frame flicker) */
+@keyframes plasmaFlicker {
+  0%   { box-shadow: inset 0 0 12px rgba(255, 0, 128, 0.3); }
+  33%  { box-shadow: inset 0 0 4px rgba(255, 0, 128, 0.08); }
+  66%  { box-shadow: inset 0 0 18px rgba(255, 0, 128, 0.35); }
+  100% { box-shadow: inset 0 0 8px rgba(255, 0, 128, 0.15); }
+}
+.theme-plasma .card-glow::after {
+  background: transparent;
+}
+.theme-plasma .card-glow:hover::after {
+  opacity: 1;
+  animation: plasmaFlicker 200ms steps(3) 1;
 }
 
 /* ── Grid Overlay ────────────────────────────────── */
@@ -265,18 +434,159 @@ html, body {
   box-shadow: 0 8px 25px rgba(0, 0, 0, 0.3);
 }
 
-/* ── Status pulse animation ──────────────────────── */
+/* ── Status Pulse Animation (parameterized) ──────── */
 @keyframes statusPulse {
   0%, 100% { opacity: 1; }
-  50% { opacity: 0.5; }
+  50% { opacity: var(--anim-pulse-min-opacity); }
 }
 .status-pulse {
-  animation: statusPulse 2s ease-in-out infinite;
+  animation: statusPulse var(--anim-pulse-duration) var(--anim-pulse-timing) infinite;
+}
+
+/* Nuclear: Double-tap pulse (two quick beats) */
+@keyframes nuclearPulse {
+  0%, 100% { opacity: 1; }
+  20% { opacity: 0.3; }
+  30% { opacity: 1; }
+  50% { opacity: 0.3; }
+  60% { opacity: 1; }
+}
+.theme-nuclear .status-pulse {
+  animation: nuclearPulse var(--anim-pulse-duration) ease-in-out infinite;
+}
+
+/* Tron: Sharp digital blink */
+@keyframes tronBlink {
+  0%, 100% { opacity: 1; }
+  49% { opacity: 1; }
+  50% { opacity: 0.1; }
+  65% { opacity: 0.1; }
+  66% { opacity: 1; }
+}
+.theme-tron .status-pulse {
+  animation: tronBlink var(--anim-pulse-duration) step-end infinite;
+}
+
+/* Plasma: Neon sign flicker (mostly on, brief dips) */
+@keyframes plasmaSignPulse {
+  0%, 100% { opacity: 1; }
+  30% { opacity: 1; }
+  32% { opacity: 0.4; }
+  34% { opacity: 1; }
+  70% { opacity: 1; }
+  72% { opacity: 0.3; }
+  75% { opacity: 1; }
+}
+.theme-plasma .status-pulse {
+  animation: plasmaSignPulse var(--anim-pulse-duration) ease-in-out infinite;
 }
 
 /* ── Accent glow ring (for status dots) ──────────── */
 .glow-ring {
   box-shadow: 0 0 6px rgba(var(--accent-rgb), 0.5);
+}
+
+/* ── Themed Spinner ─────────────────────────────── */
+.themed-spinner {
+  animation: spin var(--anim-spinner-duration) var(--anim-spinner-timing) infinite;
+}
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+/* Crimson spinner: add opacity pulse during rotation */
+.theme-crimson .themed-spinner {
+  animation: spin var(--anim-spinner-duration) linear infinite,
+             crimsonEmber var(--anim-spinner-duration) ease-in-out infinite;
+}
+@keyframes crimsonEmber {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.6; }
+}
+
+/* ── Event Flash Overlay ────────────────────────── */
+@keyframes shareFlash {
+  0%   { box-shadow: inset 0 0 30px rgba(var(--accent-rgb), 0.3); }
+  100% { box-shadow: inset 0 0 0 rgba(var(--accent-rgb), 0); }
+}
+@keyframes blockFlash {
+  0%   { background: rgba(var(--accent-rgb), 0.15); box-shadow: inset 0 0 80px rgba(var(--accent-rgb), 0.4); }
+  50%  { background: rgba(var(--accent-rgb), 0.05); box-shadow: inset 0 0 40px rgba(var(--accent-rgb), 0.2); }
+  100% { background: transparent; box-shadow: inset 0 0 0 rgba(var(--accent-rgb), 0); }
+}
+
+.event-flash--share {
+  animation: shareFlash var(--anim-event-duration) ease-out forwards;
+}
+.event-flash--block {
+  animation: blockFlash 2s ease-out forwards;
+}
+
+/* Nuclear: wider radiation burst */
+.theme-nuclear .event-flash--share {
+  animation: nuclearShareFlash var(--anim-event-duration) ease-out forwards;
+}
+@keyframes nuclearShareFlash {
+  0%   { box-shadow: inset 0 0 50px rgba(57, 255, 20, 0.35); }
+  100% { box-shadow: inset 0 0 0 rgba(57, 255, 20, 0); }
+}
+
+/* Tron: horizontal scan-line sweep */
+.theme-tron .event-flash--share {
+  animation: tronShareFlash var(--anim-event-duration) ease-out forwards;
+}
+@keyframes tronShareFlash {
+  0%   { background: linear-gradient(180deg, rgba(0, 212, 255, 0.2) 0%, transparent 3%); background-size: 100% 100%; }
+  100% { background: linear-gradient(180deg, rgba(0, 212, 255, 0) 97%, transparent 100%); background-size: 100% 100%; }
+}
+
+/* Vault-Tec: phosphor screen brighten */
+.theme-vault-tec .event-flash--share {
+  animation: vaultShareFlash var(--anim-event-duration) ease-out forwards;
+}
+@keyframes vaultShareFlash {
+  0%   { background: rgba(245, 166, 35, 0.06); }
+  100% { background: transparent; }
+}
+
+/* Plasma: pink spark flash */
+.theme-plasma .event-flash--share {
+  animation: plasmaShareFlash var(--anim-event-duration) ease-out forwards;
+}
+@keyframes plasmaShareFlash {
+  0%   { box-shadow: inset 0 0 40px rgba(255, 0, 128, 0.4); }
+  30%  { box-shadow: inset 0 0 10px rgba(255, 0, 128, 0.1); }
+  50%  { box-shadow: inset 0 0 25px rgba(255, 0, 128, 0.25); }
+  100% { box-shadow: inset 0 0 0 rgba(255, 0, 128, 0); }
+}
+
+/* ── Block Found Banner (per-theme) ──────────────── */
+.block-banner {
+  background: linear-gradient(90deg, var(--accent), var(--accent-secondary), var(--accent));
+}
+.theme-nuclear .block-banner {
+  background: linear-gradient(90deg, #39ff14, #ffe600, #39ff14);
+  box-shadow: 0 0 30px rgba(57, 255, 20, 0.5);
+}
+.theme-tron .block-banner {
+  background: linear-gradient(90deg, #00d4ff, #ff6600, #00d4ff);
+  box-shadow: 0 0 30px rgba(0, 212, 255, 0.5);
+}
+.theme-vault-tec .block-banner {
+  background: linear-gradient(90deg, #f5a623, #00ff41, #f5a623);
+  box-shadow: 0 0 20px rgba(245, 166, 35, 0.4);
+}
+.theme-crimson .block-banner {
+  background: linear-gradient(90deg, #ff2244, #ff8800, #ff2244);
+  box-shadow: 0 0 30px rgba(255, 34, 68, 0.5);
+}
+.theme-ultraviolet .block-banner {
+  background: linear-gradient(90deg, #b44aff, #00e5ff, #b44aff);
+  box-shadow: 0 0 30px rgba(180, 74, 255, 0.5);
+}
+.theme-plasma .block-banner {
+  background: linear-gradient(90deg, #ff0080, #00ffcc, #ff0080);
+  box-shadow: 0 0 30px rgba(255, 0, 128, 0.5);
 }
 
 /* ── Toggle switch ───────────────────────────────── */

@@ -10,6 +10,7 @@ import (
 	"sync"
 	"sync/atomic"
 	"time"
+	"math/rand"
 )
 
 // Server is the Stratum V1 TCP server.
@@ -42,6 +43,8 @@ type Server struct {
 	OnShareAccepted     func(string, float64, float64) // minerID, sessionDiff, actualDiff
 	OnShareRejected     func(string, string)
 	OnBlockFound        func(string, int64)
+	LookupWorkerDiff    func(workerName string) float64
+	OnDiffChanged       func(workerName string, diff float64)
 }
 
 func NewServer(
@@ -57,7 +60,7 @@ func NewServer(
 	sv := NewShareValidator(jm)
 	vm := NewVardiffManager(vardiffCfg)
 
-	return &Server{
+	s := &Server{
 		sessions:        make(map[string]*Session),
 		jobManager:      jm,
 		shareValidator:  sv,
@@ -68,6 +71,13 @@ func NewServer(
 		log:             log,
 		config:          cfg,
 	}
+
+	// Seed EN1 counter with random upper 16 bits so session IDs don't
+	// recycle across stop/start cycles. Lower 16 bits = counter space
+	// for 65536 connections per server instance (more than enough).
+	s.nextEN1.Store(rand.Uint32() & 0xFFFF0000)
+
+	return s
 }
 
 // Start begins listening for miner connections.
@@ -98,6 +108,21 @@ func (s *Server) Stop() {
 	if s.listener != nil {
 		s.listener.Close()
 	}
+
+	// Tell miners to reconnect before we close their connections.
+	// cgminer/S9 and other firmware use this to reconnect quickly
+	// instead of entering a long exponential backoff.
+	s.sessionMu.RLock()
+	for _, session := range s.sessions {
+		if session.authorized {
+			session.sendReconnect(3)
+		}
+	}
+	s.sessionMu.RUnlock()
+
+	// Brief pause so miners receive the reconnect notification
+	// before we tear down their TCP connections.
+	time.Sleep(200 * time.Millisecond)
 
 	// Close all sessions
 	s.sessionMu.Lock()
@@ -160,6 +185,9 @@ func (s *Server) removeSession(session *Session) {
 
 	s.log.Infof("stratum", "session %s disconnected (%s)", session.ID, session.workerName)
 
+	if s.OnDiffChanged != nil && session.authorized && session.workerName != "" {
+		s.OnDiffChanged(session.workerName, session.currentDiff)
+	}
 	if s.OnMinerDisconnected != nil && session.authorized {
 		s.OnMinerDisconnected(session.ID)
 	}

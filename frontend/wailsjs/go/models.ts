@@ -168,6 +168,7 @@ export namespace miner {
 	    networkDifficulty: number;
 	    networkHashrate: number;
 	    estTimeToBlock: number;
+	    blockChance: number;
 	    stratumRunning: boolean;
 	    blockHeight: number;
 	
@@ -187,6 +188,7 @@ export namespace miner {
 	        this.networkDifficulty = source["networkDifficulty"];
 	        this.networkHashrate = source["networkHashrate"];
 	        this.estTimeToBlock = source["estTimeToBlock"];
+	        this.blockChance = source["blockChance"];
 	        this.stratumRunning = source["stratumRunning"];
 	        this.blockHeight = source["blockHeight"];
 	    }
