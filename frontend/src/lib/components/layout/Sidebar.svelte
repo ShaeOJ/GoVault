@@ -1,5 +1,6 @@
 <script lang="ts">
   import Icon from '../common/Icon.svelte';
+  import BlockchainAnimation from '../common/BlockchainAnimation.svelte';
   import logoUrl from '../../../assets/images/logo.png';
 
   export let currentPage: string = 'dashboard';
@@ -19,11 +20,11 @@
 >
   <!-- Logo / Brand -->
   <div class="h-16 flex items-center justify-center wails-drag" style="border-bottom: 1px solid var(--border);">
-    <img src={logoUrl} alt="GoVault" class="w-10 h-10 lg:w-11 lg:h-11" />
+    <img src={logoUrl} alt="GoVault" class="w-10 h-10 lg:w-11 lg:h-11 logo-tint" />
   </div>
 
   <!-- Navigation -->
-  <nav class="flex-1 py-4 px-2 space-y-1">
+  <nav class="py-4 px-2 space-y-1">
     {#each navItems as item}
       <button
         class="w-full flex items-center px-3 py-2.5 rounded-lg text-sm font-medium transition-all duration-200 relative"
@@ -48,6 +49,9 @@
       </button>
     {/each}
   </nav>
+
+  <!-- Blockchain animation fills gap between nav and footer -->
+  <BlockchainAnimation />
 
   <!-- Status indicator at bottom -->
   <div class="p-3" style="border-top: 1px solid var(--border);">

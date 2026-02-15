@@ -5,6 +5,7 @@
   import type { MinerInfo, DiscoveredMiner } from '../lib/stores/miners';
   import { EventsOn } from '../../wailsjs/runtime/runtime';
   import Icon from '../lib/components/common/Icon.svelte';
+  import Info from '../lib/components/common/Info.svelte';
   import ThemedSpinner from '../lib/components/common/ThemedSpinner.svelte';
 
   interface SparkPoint { t: number; h: number; }
@@ -255,7 +256,7 @@
               ></div>
               <span class="text-sm font-bold truncate" style="color: var(--text-primary);">{m.workerName || m.id}</span>
             </div>
-            <span class="text-xs font-data glow-text flex-shrink-0 ml-2" style="color: {status.color}; text-shadow: 0 0 4px {status.color}40;">{status.label}</span>
+            <span class="text-xs font-data glow-text flex-shrink-0 ml-2 inline-flex items-center gap-1" style="color: {status.color}; text-shadow: 0 0 4px {status.color}40;">{status.label} <Info tip="Active: recent shares. Stale: no shares for extended period. Dead: connection likely lost" size={11} /></span>
           </div>
 
           <!-- Hero Hashrate with Sparkline -->
@@ -291,15 +292,15 @@
           <!-- Stats Row -->
           <div class="grid grid-cols-3 gap-2 px-4 pb-3">
             <div>
-              <div class="text-xs" style="color: var(--text-secondary);">Best Diff</div>
+              <div class="text-xs inline-flex items-center gap-0.5" style="color: var(--text-secondary);">Best Diff <Info tip="Highest difficulty share submitted by this miner" size={10} /></div>
               <div class="text-sm font-medium font-data" style="color: var(--warning);">{formatDifficulty(m.bestDifficulty)}</div>
             </div>
             <div>
-              <div class="text-xs" style="color: var(--text-secondary);">Accepted</div>
+              <div class="text-xs inline-flex items-center gap-0.5" style="color: var(--text-secondary);">Accepted <Info tip="Valid shares accepted by the server" size={10} /></div>
               <div class="text-sm font-medium font-data" style="color: var(--success);">{m.sharesAccepted}</div>
             </div>
             <div>
-              <div class="text-xs" style="color: var(--text-secondary);">Rejected</div>
+              <div class="text-xs inline-flex items-center gap-0.5" style="color: var(--text-secondary);">Rejected <Info tip="Invalid or stale shares rejected" size={10} /></div>
               <div class="text-sm font-medium font-data" style="color: {m.sharesRejected > 0 ? 'var(--error)' : 'var(--text-secondary)'};">{m.sharesRejected}</div>
             </div>
           </div>
@@ -346,31 +347,31 @@
 
       <div class="space-y-4">
         <div class="rounded-lg p-4" style="background-color: var(--bg-card);">
-          <div class="text-xs mb-1" style="color: var(--text-secondary);">Worker Name</div>
+          <div class="text-xs mb-1 inline-flex items-center gap-1" style="color: var(--text-secondary);">Worker Name <Info tip="Identifier set by the miner firmware" size={11} /></div>
           <div class="text-sm font-medium font-data break-all" style="color: var(--text-primary);">{selected.workerName}</div>
         </div>
 
         <div class="grid grid-cols-2 gap-3">
           <div class="rounded-lg p-3" style="background-color: var(--bg-card);">
-            <div class="text-xs mb-1" style="color: var(--text-secondary);">Hashrate</div>
+            <div class="text-xs mb-1 inline-flex items-center gap-1" style="color: var(--text-secondary);">Hashrate <Info tip="Estimated from share submission rate and difficulty" size={11} /></div>
             <div class="text-sm font-medium data-readout">{formatHashrate(selected.hashrate)}</div>
           </div>
           <div class="rounded-lg p-3" style="background-color: var(--bg-card);">
-            <div class="text-xs mb-1" style="color: var(--text-secondary);">Difficulty</div>
+            <div class="text-xs mb-1 inline-flex items-center gap-1" style="color: var(--text-secondary);">Difficulty <Info tip="Current assigned difficulty, adjusted by vardiff" size={11} /></div>
             <div class="text-sm font-medium font-data" style="color: var(--text-primary);">{formatDifficulty(selected.currentDiff)}</div>
           </div>
           <div class="rounded-lg p-3" style="background-color: var(--bg-card);">
-            <div class="text-xs mb-1" style="color: var(--text-secondary);">Accepted</div>
+            <div class="text-xs mb-1 inline-flex items-center gap-1" style="color: var(--text-secondary);">Accepted <Info tip="Valid shares accepted by the server" size={11} /></div>
             <div class="text-sm font-medium font-data" style="color: var(--success);">{selected.sharesAccepted}</div>
           </div>
           <div class="rounded-lg p-3" style="background-color: var(--bg-card);">
-            <div class="text-xs mb-1" style="color: var(--text-secondary);">Rejected</div>
+            <div class="text-xs mb-1 inline-flex items-center gap-1" style="color: var(--text-secondary);">Rejected <Info tip="Invalid or stale shares rejected" size={11} /></div>
             <div class="text-sm font-medium font-data" style="color: var(--error);">{selected.sharesRejected}</div>
           </div>
         </div>
 
         <div class="rounded-lg p-4" style="background-color: var(--bg-card);">
-          <div class="text-xs mb-1" style="color: var(--text-secondary);">Best Difficulty</div>
+          <div class="text-xs mb-1 inline-flex items-center gap-1" style="color: var(--text-secondary);">Best Difficulty <Info tip="Highest difficulty share submitted by this miner" size={11} /></div>
           <div class="text-sm font-medium data-readout" style="color: var(--warning);">{formatDifficulty(selected.bestDifficulty)}</div>
         </div>
 
@@ -381,16 +382,16 @@
           </div>
           {#if selected.userAgent}
           <div>
-            <div class="text-xs" style="color: var(--text-secondary);">User Agent</div>
+            <div class="text-xs inline-flex items-center gap-1" style="color: var(--text-secondary);">User Agent <Info tip="Mining software/firmware identifier" size={11} /></div>
             <div class="text-sm font-data" style="color: var(--text-primary);">{selected.userAgent}</div>
           </div>
           {/if}
           <div>
-            <div class="text-xs" style="color: var(--text-secondary);">Connected</div>
+            <div class="text-xs inline-flex items-center gap-1" style="color: var(--text-secondary);">Connected <Info tip="Time since this miner first connected" size={11} /></div>
             <div class="text-sm font-data" style="color: var(--text-primary);">{timeAgo(selected.connectedAt)}</div>
           </div>
           <div>
-            <div class="text-xs" style="color: var(--text-secondary);">Last Share</div>
+            <div class="text-xs inline-flex items-center gap-1" style="color: var(--text-secondary);">Last Share <Info tip="Time since most recent share submission" size={11} /></div>
             <div class="text-sm font-data" style="color: var(--text-primary);">{timeAgo(selected.lastShareTime)}</div>
           </div>
         </div>

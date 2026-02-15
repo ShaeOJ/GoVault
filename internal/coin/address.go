@@ -48,23 +48,17 @@ func ValidateAddress(coinDef *CoinDef, addr string) (bool, string) {
 		hrpPrefix := coinDef.Bech32HRP + "1"
 		lowerAddr := strings.ToLower(addr)
 		if strings.HasPrefix(lowerAddr, hrpPrefix) {
-			// P2WPKH (42 chars for 20-byte program)
-			if len(addr) == len(hrpPrefix)+38 && lowerAddr[len(hrpPrefix)] == 'q' {
-				_, err := Bech32Decode(coinDef.Bech32HRP, addr)
-				if err == nil {
+			program, err := Bech32Decode(coinDef.Bech32HRP, addr)
+			if err == nil {
+				witnessVersion := lowerAddr[len(hrpPrefix)]
+				switch {
+				case witnessVersion == 'q' && len(program) == 20:
 					return true, "P2WPKH (SegWit)"
-				}
-			}
-			// P2WSH (62 chars for 32-byte program) or P2TR
-			if len(addr) == len(hrpPrefix)+58 {
-				_, err := Bech32Decode(coinDef.Bech32HRP, addr)
-				if err == nil {
-					if lowerAddr[len(hrpPrefix)] == 'q' {
-						return true, "P2WSH (SegWit)"
-					}
-					if lowerAddr[len(hrpPrefix)] == 'p' {
-						return true, "P2TR (Taproot)"
-					}
+				case witnessVersion == 'q' && len(program) == 32:
+					return true, "P2WSH (SegWit)"
+				case witnessVersion == 'p' && len(program) == 32:
+					return true, "P2TR (Taproot)"
+				default:
 					return true, "Bech32 SegWit"
 				}
 			}
@@ -100,15 +94,19 @@ func ValidateAddress(coinDef *CoinDef, addr string) (bool, string) {
 			}
 		}
 		if strings.HasPrefix(strings.ToLower(addr), "tb1") {
-			_, err := Bech32Decode("tb", addr)
+			program, err := Bech32Decode("tb", addr)
 			if err == nil {
-				if len(addr) == 42 {
+				witnessVersion := strings.ToLower(addr)[3]
+				switch {
+				case witnessVersion == 'q' && len(program) == 20:
 					return true, "P2WPKH (Testnet SegWit)"
-				}
-				if len(addr) == 62 {
+				case witnessVersion == 'q' && len(program) == 32:
+					return true, "P2WSH (Testnet SegWit)"
+				case witnessVersion == 'p' && len(program) == 32:
 					return true, "P2TR (Testnet Taproot)"
+				default:
+					return true, "Bech32 (Testnet)"
 				}
-				return true, "Bech32 (Testnet)"
 			}
 		}
 	}

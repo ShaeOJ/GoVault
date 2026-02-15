@@ -1,6 +1,7 @@
 <script lang="ts">
   import { onMount } from 'svelte';
   import Toggle from '../lib/components/common/Toggle.svelte';
+  import Info from '../lib/components/common/Info.svelte';
   import { theme } from '../lib/stores/theme';
   import type { ThemeName } from '../lib/stores/theme';
 
@@ -31,9 +32,9 @@
     { id: 'nuclear', label: 'NUCLEAR', accent: '#39ff14', desc: 'Radioactive green' },
     { id: 'tron', label: 'TRON', accent: '#00d4ff', desc: 'Neon cyan' },
     { id: 'vault-tec', label: 'VAULT-TEC', accent: '#f5a623', desc: 'Retro amber' },
-    { id: 'crimson', label: 'CRIMSON', accent: '#ff2244', desc: 'Blood red' },
-    { id: 'ultraviolet', label: 'ULTRAVIOLET', accent: '#b44aff', desc: 'Deep purple' },
-    { id: 'plasma', label: 'PLASMA', accent: '#ff0080', desc: 'Hot pink' },
+    { id: 'bitcoin', label: 'BITCOIN', accent: '#f7931a', desc: 'Bitcoin orange' },
+    { id: 'monochrome', label: 'MONO', accent: '#cccccc', desc: 'CRT terminal' },
+    { id: 'steampunk', label: 'STEAMPUNK', accent: '#cd7f32', desc: 'Brass & iron' },
   ];
 
   // Address placeholder map per coin
@@ -160,7 +161,7 @@
       <h3 class="text-sm font-medium font-tech uppercase tracking-wider mb-4" style="color: var(--text-secondary);">Mining</h3>
       <div class="space-y-4">
         <div>
-          <label class="block text-xs mb-1.5" style="color: var(--text-secondary);" for="coin">Blockchain</label>
+          <label class="block text-xs mb-1.5 inline-flex items-center gap-1" style="color: var(--text-secondary);" for="coin">Blockchain <Info tip="Select which cryptocurrency to solo mine" size={12} /></label>
           <select
             id="coin"
             bind:value={selectedCoin}
@@ -177,7 +178,7 @@
           <div class="text-xs mt-1" style="color: var(--text-secondary); opacity: 0.7;">Select which coin to solo mine</div>
         </div>
         <div>
-          <label class="block text-xs mb-1.5" style="color: var(--text-secondary);" for="payout">{currentCoinSymbol} Payout Address</label>
+          <label class="block text-xs mb-1.5 inline-flex items-center gap-1" style="color: var(--text-secondary);" for="payout">{currentCoinSymbol} Payout Address <Info tip="Wallet address for block rewards. Must match selected blockchain" size={12} /></label>
           <input
             id="payout"
             bind:value={payoutAddress}
@@ -193,7 +194,7 @@
           {/if}
         </div>
         <div>
-          <label class="block text-xs mb-1.5" style="color: var(--text-secondary);" for="tag">Coinbase Tag</label>
+          <label class="block text-xs mb-1.5 inline-flex items-center gap-1" style="color: var(--text-secondary);" for="tag">Coinbase Tag <Info tip="Custom text embedded in mined blocks, visible on-chain" size={12} /></label>
           <input
             id="tag"
             bind:value={coinbaseTag}
@@ -210,7 +211,7 @@
       <h3 class="text-sm font-medium font-tech uppercase tracking-wider mb-4" style="color: var(--text-secondary);">Stratum Server</h3>
       <div class="space-y-4">
         <div>
-          <label class="block text-xs mb-1.5" style="color: var(--text-secondary);" for="sport">Port</label>
+          <label class="block text-xs mb-1.5 inline-flex items-center gap-1" style="color: var(--text-secondary);" for="sport">Port <Info tip="TCP port miners connect to. Restart server after changing" size={12} /></label>
           <input
             id="sport"
             bind:value={stratumPort}
@@ -219,7 +220,7 @@
           />
         </div>
         <div>
-          <label class="block text-xs mb-1.5" style="color: var(--text-secondary);" for="maxc">Max Connections</label>
+          <label class="block text-xs mb-1.5 inline-flex items-center gap-1" style="color: var(--text-secondary);" for="maxc">Max Connections <Info tip="Maximum simultaneous miner connections" size={12} /></label>
           <input
             id="maxc"
             bind:value={maxConn}
@@ -227,7 +228,10 @@
             class="w-full rounded-lg px-3 py-2 text-sm input-themed"
           />
         </div>
-        <Toggle bind:checked={autoStart} label="Auto-start on launch" />
+        <div class="inline-flex items-center gap-1">
+          <Toggle bind:checked={autoStart} label="Auto-start on launch" />
+          <Info tip="Start stratum server automatically when GoVault launches" size={12} />
+        </div>
         {#if stratumURL}
           <div class="rounded-lg p-3" style="background-color: var(--bg-secondary);">
             <div class="text-xs mb-1" style="color: var(--text-secondary);">Your Stratum URL</div>
@@ -243,27 +247,27 @@
       <div class="space-y-4">
         <div class="grid grid-cols-2 gap-3">
           <div>
-            <label class="block text-xs mb-1.5" style="color: var(--text-secondary);">Min Difficulty</label>
+            <label class="block text-xs mb-1.5 inline-flex items-center gap-1" style="color: var(--text-secondary);">Min Difficulty <Info tip="Difficulty floor. Set to 0.001 for low-hashrate devices like NerdMiner" size={12} /></label>
             <input bind:value={minDiff} type="number" step="0.001" class="w-full rounded-lg px-3 py-2 text-sm input-themed" />
           </div>
           <div>
-            <label class="block text-xs mb-1.5" style="color: var(--text-secondary);">Max Difficulty</label>
+            <label class="block text-xs mb-1.5 inline-flex items-center gap-1" style="color: var(--text-secondary);">Max Difficulty <Info tip="Difficulty ceiling. 0 = use network difficulty" size={12} /></label>
             <input bind:value={maxDiff} type="number" class="w-full rounded-lg px-3 py-2 text-sm input-themed" />
             <div class="text-xs mt-1" style="color: var(--text-secondary); opacity: 0.7;">0 = network diff</div>
           </div>
         </div>
         <div class="grid grid-cols-2 gap-3">
           <div>
-            <label class="block text-xs mb-1.5" style="color: var(--text-secondary);">Target Time (sec)</label>
+            <label class="block text-xs mb-1.5 inline-flex items-center gap-1" style="color: var(--text-secondary);">Target Time (sec) <Info tip="Desired seconds between share submissions per miner" size={12} /></label>
             <input bind:value={targetTimeSec} type="number" class="w-full rounded-lg px-3 py-2 text-sm input-themed" />
           </div>
           <div>
-            <label class="block text-xs mb-1.5" style="color: var(--text-secondary);">Retarget Time (sec)</label>
+            <label class="block text-xs mb-1.5 inline-flex items-center gap-1" style="color: var(--text-secondary);">Retarget Time (sec) <Info tip="How often to recalculate each miner's difficulty" size={12} /></label>
             <input bind:value={retargetTimeSec} type="number" class="w-full rounded-lg px-3 py-2 text-sm input-themed" />
           </div>
         </div>
         <div>
-          <label class="block text-xs mb-1.5" style="color: var(--text-secondary);">Variance %</label>
+          <label class="block text-xs mb-1.5 inline-flex items-center gap-1" style="color: var(--text-secondary);">Variance % <Info tip="Tolerance before triggering a difficulty adjustment" size={12} /></label>
           <input bind:value={variancePct} type="number" class="w-full rounded-lg px-3 py-2 text-sm input-themed" />
         </div>
       </div>
@@ -294,7 +298,7 @@
         <h3 class="text-sm font-medium font-tech uppercase tracking-wider mb-4" style="color: var(--text-secondary);">Application</h3>
         <div class="space-y-4">
           <div>
-            <label class="block text-xs mb-1.5" style="color: var(--text-secondary);">Log Level</label>
+            <label class="block text-xs mb-1.5 inline-flex items-center gap-1" style="color: var(--text-secondary);">Log Level <Info tip="Log verbosity. Debug = all events, Error = problems only" size={12} /></label>
             <select bind:value={logLevel} class="w-full rounded-lg px-3 py-2 text-sm select-themed">
               <option value="debug">Debug</option>
               <option value="info">Info</option>
@@ -304,7 +308,7 @@
           </div>
           {#if dbPath}
             <div>
-              <label class="block text-xs mb-1.5" style="color: var(--text-secondary);">Database</label>
+              <label class="block text-xs mb-1.5 inline-flex items-center gap-1" style="color: var(--text-secondary);">Database <Info tip="SQLite storage including WAL and SHM files" size={12} /></label>
               <div class="rounded-lg p-3" style="background-color: var(--bg-secondary);">
                 <div class="flex items-center justify-between mb-1">
                   <span class="text-xs" style="color: var(--text-secondary);">Disk Usage</span>

@@ -1,6 +1,7 @@
 <script lang="ts">
   import { onMount } from 'svelte';
   import Toggle from '../lib/components/common/Toggle.svelte';
+  import Info from '../lib/components/common/Info.svelte';
   import ThemedSpinner from '../lib/components/common/ThemedSpinner.svelte';
   import { formatNumber, formatDifficulty, formatHashrate } from '../lib/utils/format';
 
@@ -136,7 +137,7 @@
 
       <div class="space-y-4">
         <div>
-          <label class="block text-xs mb-1.5" style="color: var(--text-secondary);" for="host">RPC Host</label>
+          <label class="block text-xs mb-1.5 inline-flex items-center gap-1" style="color: var(--text-secondary);" for="host">RPC Host <Info tip="Bitcoin node IP or hostname (usually 127.0.0.1 for local)" size={12} /></label>
           <input
             id="host"
             bind:value={host}
@@ -146,7 +147,7 @@
         </div>
 
         <div>
-          <label class="block text-xs mb-1.5" style="color: var(--text-secondary);" for="port">RPC Port</label>
+          <label class="block text-xs mb-1.5 inline-flex items-center gap-1" style="color: var(--text-secondary);" for="port">RPC Port <Info tip="Node RPC port (default: 8332 mainnet, 18332 testnet)" size={12} /></label>
           <input
             id="port"
             bind:value={port}
@@ -157,7 +158,7 @@
         </div>
 
         <div>
-          <label class="block text-xs mb-1.5" style="color: var(--text-secondary);" for="user">RPC Username</label>
+          <label class="block text-xs mb-1.5 inline-flex items-center gap-1" style="color: var(--text-secondary);" for="user">RPC Username <Info tip="From bitcoin.conf rpcuser setting" size={12} /></label>
           <input
             id="user"
             bind:value={username}
@@ -167,7 +168,7 @@
         </div>
 
         <div>
-          <label class="block text-xs mb-1.5" style="color: var(--text-secondary);" for="pass">RPC Password</label>
+          <label class="block text-xs mb-1.5 inline-flex items-center gap-1" style="color: var(--text-secondary);" for="pass">RPC Password <Info tip="From bitcoin.conf rpcpassword setting" size={12} /></label>
           <input
             id="pass"
             bind:value={password}
@@ -177,7 +178,10 @@
           />
         </div>
 
-        <Toggle bind:checked={useSSL} label="Use SSL/TLS" />
+        <div class="inline-flex items-center gap-1">
+          <Toggle bind:checked={useSSL} label="Use SSL/TLS" />
+          <Info tip="Encrypted RPC connection. Rarely needed locally" size={12} />
+        </div>
 
         <div class="flex gap-3 pt-2">
           <button
@@ -257,30 +261,30 @@
 
             <div class="grid grid-cols-2 gap-3">
               <div class="rounded-lg p-3" style="background-color: var(--bg-secondary);">
-                <div class="text-xs" style="color: var(--text-secondary);">Block Height</div>
+                <div class="text-xs inline-flex items-center gap-1" style="color: var(--text-secondary);">Block Height <Info tip="Current blockchain height synced by your node" size={11} /></div>
                 <div class="text-sm font-medium data-readout">{formatNumber(nodeStatus.blocks || nodeStatus.blockHeight || 0)}</div>
               </div>
               <div class="rounded-lg p-3" style="background-color: var(--bg-secondary);">
-                <div class="text-xs" style="color: var(--text-secondary);">Chain</div>
+                <div class="text-xs inline-flex items-center gap-1" style="color: var(--text-secondary);">Chain <Info tip="Network: main (mainnet), test (testnet), or regtest" size={11} /></div>
                 <div class="text-sm font-medium font-data" style="color: var(--text-primary);">{nodeStatus.chain || 'main'}</div>
               </div>
               <div class="rounded-lg p-3" style="background-color: var(--bg-secondary);">
-                <div class="text-xs" style="color: var(--text-secondary);">Network Difficulty</div>
+                <div class="text-xs inline-flex items-center gap-1" style="color: var(--text-secondary);">Network Difficulty <Info tip="Global Bitcoin mining difficulty target" size={11} /></div>
                 <div class="text-sm font-medium font-data" style="color: var(--text-primary);">{formatDifficulty(nodeStatus.networkDifficulty || 0)}</div>
               </div>
               <div class="rounded-lg p-3" style="background-color: var(--bg-secondary);">
-                <div class="text-xs" style="color: var(--text-secondary);">Network Hashrate</div>
+                <div class="text-xs inline-flex items-center gap-1" style="color: var(--text-secondary);">Network Hashrate <Info tip="Estimated total global hash rate" size={11} /></div>
                 <div class="text-sm font-medium font-data" style="color: var(--text-primary);">{formatHashrate(nodeStatus.networkHashrate || 0)}</div>
               </div>
               {#if nodeStatus.connections !== undefined}
                 <div class="rounded-lg p-3" style="background-color: var(--bg-secondary);">
-                  <div class="text-xs" style="color: var(--text-secondary);">Peers</div>
+                  <div class="text-xs inline-flex items-center gap-1" style="color: var(--text-secondary);">Peers <Info tip="Bitcoin nodes connected for block propagation" size={11} /></div>
                   <div class="text-sm font-medium font-data" style="color: var(--text-primary);">{nodeStatus.connections}</div>
                 </div>
               {/if}
               {#if nodeStatus.syncPercent !== undefined}
                 <div class="rounded-lg p-3" style="background-color: var(--bg-secondary);">
-                  <div class="text-xs" style="color: var(--text-secondary);">Sync</div>
+                  <div class="text-xs inline-flex items-center gap-1" style="color: var(--text-secondary);">Sync <Info tip="Sync progress. Must reach 100% before mining works" size={11} /></div>
                   <div class="text-sm font-medium font-data" style="color: var(--text-primary);">{nodeStatus.syncPercent?.toFixed(2)}%</div>
                 </div>
               {/if}
@@ -307,7 +311,7 @@
       <!-- Config Generator -->
       <div class="rounded-xl p-6 card-glow" style="background-color: var(--bg-card);">
         <div class="flex items-center justify-between mb-3">
-          <h3 class="text-sm font-medium font-tech uppercase tracking-wider" style="color: var(--text-secondary);">{coinName}.conf</h3>
+          <h3 class="text-sm font-medium font-tech uppercase tracking-wider inline-flex items-center gap-1" style="color: var(--text-secondary);">{coinName}.conf <Info tip="Sample bitcoin.conf to enable RPC. Copy to your node's data directory" size={12} /></h3>
           <button
             class="px-3 py-1 text-xs rounded-lg font-tech uppercase tracking-wider transition-all glow-border-hover"
             style="background: rgba(var(--accent-rgb), 0.1); color: var(--accent); border: 1px solid rgba(var(--accent-rgb), 0.3);"

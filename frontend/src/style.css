@@ -116,22 +116,22 @@
   --anim-event-duration: 800ms;
 }
 
-/* ── Crimson Theme ───────────────────────────────── */
-.theme-crimson {
-  --bg-primary: #0f0808;
-  --bg-secondary: #1a0e0e;
-  --bg-card: #1f1212;
-  --bg-card-hover: #2f1a1a;
-  --accent: #ff2244;
-  --accent-rgb: 255, 34, 68;
-  --accent-glow: rgba(255, 34, 68, 0.3);
-  --accent-secondary: #ff8800;
-  --text-primary: #ffe0e0;
-  --text-secondary: #9f7a7a;
-  --border: rgba(255, 34, 68, 0.12);
+/* ── Bitcoin Theme ───────────────────────────────── */
+.theme-bitcoin {
+  --bg-primary: #0f0c08;
+  --bg-secondary: #1a1408;
+  --bg-card: #1f1a0f;
+  --bg-card-hover: #2f2518;
+  --accent: #f7931a;
+  --accent-rgb: 247, 147, 26;
+  --accent-glow: rgba(247, 147, 26, 0.3);
+  --accent-secondary: #ffd700;
+  --text-primary: #fff0d0;
+  --text-secondary: #9f8a60;
+  --border: rgba(247, 147, 26, 0.12);
   --success: #22cc55;
-  --warning: #ff8800;
-  --error: #ff2244;
+  --warning: #ffd700;
+  --error: #ff4444;
   /* Animation vars */
   --anim-hover-duration: 150ms;
   --anim-hover-glow-spread: 18px;
@@ -144,60 +144,60 @@
   --anim-event-duration: 400ms;
 }
 
-/* ── Ultraviolet Theme ──────────────────────────── */
-.theme-ultraviolet {
-  --bg-primary: #0a080f;
-  --bg-secondary: #120e1a;
-  --bg-card: #18121f;
-  --bg-card-hover: #221a2f;
-  --accent: #b44aff;
-  --accent-rgb: 180, 74, 255;
-  --accent-glow: rgba(180, 74, 255, 0.3);
-  --accent-secondary: #00e5ff;
-  --text-primary: #f0e0ff;
-  --text-secondary: #8a7a9f;
-  --border: rgba(180, 74, 255, 0.12);
-  --success: #00e5ff;
-  --warning: #ffaa00;
-  --error: #ff3355;
+/* ── Monochrome Theme ──────────────────────────── */
+.theme-monochrome {
+  --bg-primary: #080808;
+  --bg-secondary: #111111;
+  --bg-card: #161616;
+  --bg-card-hover: #1e1e1e;
+  --accent: #cccccc;
+  --accent-rgb: 204, 204, 204;
+  --accent-glow: rgba(204, 204, 204, 0.3);
+  --accent-secondary: #888888;
+  --text-primary: #e0e0e0;
+  --text-secondary: #707070;
+  --border: rgba(204, 204, 204, 0.12);
+  --success: #44cc66;
+  --warning: #ddaa00;
+  --error: #ee4444;
   /* Animation vars */
-  --anim-hover-duration: 400ms;
-  --anim-hover-glow-spread: 20px;
+  --anim-hover-duration: 200ms;
+  --anim-hover-glow-spread: 10px;
   --anim-hover-scale: 1;
-  --anim-pulse-duration: 2.5s;
-  --anim-pulse-timing: ease-in-out;
-  --anim-pulse-min-opacity: 0.4;
-  --anim-spinner-duration: 2s;
-  --anim-spinner-timing: linear;
-  --anim-event-duration: 700ms;
+  --anim-pulse-duration: 1.2s;
+  --anim-pulse-timing: step-end;
+  --anim-pulse-min-opacity: 0.1;
+  --anim-spinner-duration: 0.8s;
+  --anim-spinner-timing: steps(2);
+  --anim-event-duration: 400ms;
 }
 
-/* ── Plasma Theme ───────────────────────────────── */
-.theme-plasma {
-  --bg-primary: #0f080a;
-  --bg-secondary: #1a0e12;
-  --bg-card: #1f1218;
-  --bg-card-hover: #2f1a22;
-  --accent: #ff0080;
-  --accent-rgb: 255, 0, 128;
-  --accent-glow: rgba(255, 0, 128, 0.3);
-  --accent-secondary: #00ffcc;
-  --text-primary: #ffe0f0;
-  --text-secondary: #9f7a8a;
-  --border: rgba(255, 0, 128, 0.12);
-  --success: #00ffcc;
-  --warning: #ffcc00;
-  --error: #ff2222;
+/* ── Steampunk Theme ─────────────────────────────── */
+.theme-steampunk {
+  --bg-primary: #0c0a08;
+  --bg-secondary: #141210;
+  --bg-card: #1a1714;
+  --bg-card-hover: #252118;
+  --accent: #cd7f32;
+  --accent-rgb: 205, 127, 50;
+  --accent-glow: rgba(205, 127, 50, 0.3);
+  --accent-secondary: #708090;
+  --text-primary: #e8dcc8;
+  --text-secondary: #8a7e6a;
+  --border: rgba(205, 127, 50, 0.12);
+  --success: #5a9a6a;
+  --warning: #cd7f32;
+  --error: #a04030;
   /* Animation vars */
-  --anim-hover-duration: 150ms;
-  --anim-hover-glow-spread: 14px;
+  --anim-hover-duration: 250ms;
+  --anim-hover-glow-spread: 10px;
   --anim-hover-scale: 1;
-  --anim-pulse-duration: 1.5s;
-  --anim-pulse-timing: ease-in-out;
-  --anim-pulse-min-opacity: 0.6;
-  --anim-spinner-duration: 1s;
-  --anim-spinner-timing: linear;
-  --anim-event-duration: 400ms;
+  --anim-pulse-duration: 2s;
+  --anim-pulse-timing: ease;
+  --anim-pulse-min-opacity: 0.5;
+  --anim-spinner-duration: 1.8s;
+  --anim-spinner-timing: steps(8);
+  --anim-event-duration: 600ms;
 }
 
 /* ── Base Styles ─────────────────────────────────── */
@@ -331,39 +331,49 @@ html, body {
   animation: vaultFlicker 150ms steps(2) 3;
 }
 
-/* Crimson: Heat shimmer — intense bottom glow with secondary bleed (static) */
-.theme-crimson .card-glow::after {
+/* Bitcoin: Warm ember glow from bottom (orange gradient) */
+.theme-bitcoin .card-glow::after {
   background: linear-gradient(to top,
-    rgba(255, 34, 68, 0.08) 0%,
-    rgba(255, 136, 0, 0.03) 30%,
+    rgba(247, 147, 26, 0.08) 0%,
+    rgba(255, 215, 0, 0.03) 30%,
     transparent 60%);
 }
-.theme-crimson .card-glow:hover::after {
+.theme-bitcoin .card-glow:hover::after {
   opacity: 1;
 }
 
-/* Ultraviolet: Nebula bloom — multi-layer expanding glow (static) */
-.theme-ultraviolet .card-glow:hover::after {
+/* Monochrome: CRT scanline flicker + brightness pulse */
+@keyframes monoFlicker {
+  0%   { opacity: 0.04; }
+  50%  { opacity: 0.08; }
+  100% { opacity: 0.04; }
+}
+.theme-monochrome .card-glow::after {
+  background: repeating-linear-gradient(
+    0deg,
+    transparent,
+    transparent 2px,
+    rgba(204, 204, 204, 0.03) 2px,
+    rgba(204, 204, 204, 0.03) 4px
+  );
+}
+.theme-monochrome .card-glow:hover::after {
   opacity: 1;
-  box-shadow:
-    inset 0 0 15px rgba(180, 74, 255, 0.08),
-    inset 0 0 30px rgba(180, 74, 255, 0.04),
-    inset 0 0 50px rgba(0, 229, 255, 0.02);
+  animation: monoFlicker 150ms steps(2) 3;
 }
 
-/* Plasma: Neon crackle (fast 3-frame flicker) */
-@keyframes plasmaFlicker {
-  0%   { box-shadow: inset 0 0 12px rgba(255, 0, 128, 0.3); }
-  33%  { box-shadow: inset 0 0 4px rgba(255, 0, 128, 0.08); }
-  66%  { box-shadow: inset 0 0 18px rgba(255, 0, 128, 0.35); }
-  100% { box-shadow: inset 0 0 8px rgba(255, 0, 128, 0.15); }
+/* Steampunk: Brief warm brass glow pulse */
+@keyframes steamGlow {
+  0%   { box-shadow: inset 0 0 8px rgba(205, 127, 50, 0.1); }
+  50%  { box-shadow: inset 0 0 20px rgba(205, 127, 50, 0.2); }
+  100% { box-shadow: inset 0 0 8px rgba(205, 127, 50, 0.1); }
 }
-.theme-plasma .card-glow::after {
+.theme-steampunk .card-glow::after {
   background: transparent;
 }
-.theme-plasma .card-glow:hover::after {
+.theme-steampunk .card-glow:hover::after {
   opacity: 1;
-  animation: plasmaFlicker 200ms steps(3) 1;
+  animation: steamGlow 400ms ease 1;
 }
 
 /* ── Grid Overlay ────────────────────────────────── */
@@ -467,18 +477,37 @@ html, body {
   animation: tronBlink var(--anim-pulse-duration) step-end infinite;
 }
 
-/* Plasma: Neon sign flicker (mostly on, brief dips) */
-@keyframes plasmaSignPulse {
+/* Bitcoin: Ember pulse (warm fade) */
+@keyframes bitcoinEmberPulse {
   0%, 100% { opacity: 1; }
-  30% { opacity: 1; }
-  32% { opacity: 0.4; }
-  34% { opacity: 1; }
-  70% { opacity: 1; }
-  72% { opacity: 0.3; }
-  75% { opacity: 1; }
+  25% { opacity: 0.4; }
+  35% { opacity: 0.9; }
+  50% { opacity: 0.2; }
+  65% { opacity: 1; }
 }
-.theme-plasma .status-pulse {
-  animation: plasmaSignPulse var(--anim-pulse-duration) ease-in-out infinite;
+.theme-bitcoin .status-pulse {
+  animation: bitcoinEmberPulse var(--anim-pulse-duration) ease-in-out infinite;
+}
+
+/* Monochrome: Terminal cursor blink (sharp on/off) */
+@keyframes monoBlink {
+  0%, 100% { opacity: 1; }
+  49% { opacity: 1; }
+  50% { opacity: 0.1; }
+  65% { opacity: 0.1; }
+  66% { opacity: 1; }
+}
+.theme-monochrome .status-pulse {
+  animation: monoBlink var(--anim-pulse-duration) step-end infinite;
+}
+
+/* Steampunk: Mechanical tick (steady ease) */
+@keyframes steamTick {
+  0%, 100% { opacity: 1; }
+  50% { opacity: var(--anim-pulse-min-opacity); }
+}
+.theme-steampunk .status-pulse {
+  animation: steamTick var(--anim-pulse-duration) ease infinite;
 }
 
 /* ── Accent glow ring (for status dots) ──────────── */
@@ -494,70 +523,48 @@ html, body {
   to { transform: rotate(360deg); }
 }
 
-/* Crimson spinner: add opacity pulse during rotation */
-.theme-crimson .themed-spinner {
+/* Bitcoin spinner: add opacity pulse during rotation (ember glow) */
+.theme-bitcoin .themed-spinner {
   animation: spin var(--anim-spinner-duration) linear infinite,
-             crimsonEmber var(--anim-spinner-duration) ease-in-out infinite;
+             bitcoinCoinGlow var(--anim-spinner-duration) ease-in-out infinite;
 }
-@keyframes crimsonEmber {
+@keyframes bitcoinCoinGlow {
   0%, 100% { opacity: 1; }
   50% { opacity: 0.6; }
 }
 
-/* ── Event Flash Overlay ────────────────────────── */
-@keyframes shareFlash {
-  0%   { box-shadow: inset 0 0 30px rgba(var(--accent-rgb), 0.3); }
-  100% { box-shadow: inset 0 0 0 rgba(var(--accent-rgb), 0); }
+/* Monochrome spinner: sharp blink (cursor-like) */
+.theme-monochrome .themed-spinner {
+  animation: monoCursorBlink 0.8s steps(2) infinite;
 }
-@keyframes blockFlash {
-  0%   { background: rgba(var(--accent-rgb), 0.15); box-shadow: inset 0 0 80px rgba(var(--accent-rgb), 0.4); }
-  50%  { background: rgba(var(--accent-rgb), 0.05); box-shadow: inset 0 0 40px rgba(var(--accent-rgb), 0.2); }
-  100% { background: transparent; box-shadow: inset 0 0 0 rgba(var(--accent-rgb), 0); }
+@keyframes monoCursorBlink {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0; }
+}
+
+/* Steampunk spinner: stepped rotation (mechanical gear feel) */
+.theme-steampunk .themed-spinner {
+  animation: spin var(--anim-spinner-duration) var(--anim-spinner-timing) infinite;
+}
+
+/* ── Event Flash Overlay (subtle edge glow) ──────── */
+/* Share: thin border glow that fades */
+@keyframes edgeFlash {
+  0%   { box-shadow: inset 0 0 0 1px rgba(var(--accent-rgb), 0.4), inset 0 0 12px rgba(var(--accent-rgb), 0.12); }
+  100% { box-shadow: inset 0 0 0 1px rgba(var(--accent-rgb), 0), inset 0 0 0 rgba(var(--accent-rgb), 0); }
+}
+/* Block: stronger edge pulse */
+@keyframes edgeBlockFlash {
+  0%   { box-shadow: inset 0 0 0 2px rgba(var(--accent-rgb), 0.6), inset 0 0 20px rgba(var(--accent-rgb), 0.15); }
+  50%  { box-shadow: inset 0 0 0 1px rgba(var(--accent-rgb), 0.3), inset 0 0 10px rgba(var(--accent-rgb), 0.08); }
+  100% { box-shadow: inset 0 0 0 0px rgba(var(--accent-rgb), 0), inset 0 0 0 rgba(var(--accent-rgb), 0); }
 }
 
 .event-flash--share {
-  animation: shareFlash var(--anim-event-duration) ease-out forwards;
+  animation: edgeFlash var(--anim-event-duration) ease-out forwards;
 }
 .event-flash--block {
-  animation: blockFlash 2s ease-out forwards;
-}
-
-/* Nuclear: wider radiation burst */
-.theme-nuclear .event-flash--share {
-  animation: nuclearShareFlash var(--anim-event-duration) ease-out forwards;
-}
-@keyframes nuclearShareFlash {
-  0%   { box-shadow: inset 0 0 50px rgba(57, 255, 20, 0.35); }
-  100% { box-shadow: inset 0 0 0 rgba(57, 255, 20, 0); }
-}
-
-/* Tron: horizontal scan-line sweep */
-.theme-tron .event-flash--share {
-  animation: tronShareFlash var(--anim-event-duration) ease-out forwards;
-}
-@keyframes tronShareFlash {
-  0%   { background: linear-gradient(180deg, rgba(0, 212, 255, 0.2) 0%, transparent 3%); background-size: 100% 100%; }
-  100% { background: linear-gradient(180deg, rgba(0, 212, 255, 0) 97%, transparent 100%); background-size: 100% 100%; }
-}
-
-/* Vault-Tec: phosphor screen brighten */
-.theme-vault-tec .event-flash--share {
-  animation: vaultShareFlash var(--anim-event-duration) ease-out forwards;
-}
-@keyframes vaultShareFlash {
-  0%   { background: rgba(245, 166, 35, 0.06); }
-  100% { background: transparent; }
-}
-
-/* Plasma: pink spark flash */
-.theme-plasma .event-flash--share {
-  animation: plasmaShareFlash var(--anim-event-duration) ease-out forwards;
-}
-@keyframes plasmaShareFlash {
-  0%   { box-shadow: inset 0 0 40px rgba(255, 0, 128, 0.4); }
-  30%  { box-shadow: inset 0 0 10px rgba(255, 0, 128, 0.1); }
-  50%  { box-shadow: inset 0 0 25px rgba(255, 0, 128, 0.25); }
-  100% { box-shadow: inset 0 0 0 rgba(255, 0, 128, 0); }
+  animation: edgeBlockFlash 2s ease-out forwards;
 }
 
 /* ── Block Found Banner (per-theme) ──────────────── */
@@ -576,17 +583,17 @@ html, body {
   background: linear-gradient(90deg, #f5a623, #00ff41, #f5a623);
   box-shadow: 0 0 20px rgba(245, 166, 35, 0.4);
 }
-.theme-crimson .block-banner {
-  background: linear-gradient(90deg, #ff2244, #ff8800, #ff2244);
-  box-shadow: 0 0 30px rgba(255, 34, 68, 0.5);
+.theme-bitcoin .block-banner {
+  background: linear-gradient(90deg, #f7931a, #ffd700, #f7931a);
+  box-shadow: 0 0 30px rgba(247, 147, 26, 0.5);
 }
-.theme-ultraviolet .block-banner {
-  background: linear-gradient(90deg, #b44aff, #00e5ff, #b44aff);
-  box-shadow: 0 0 30px rgba(180, 74, 255, 0.5);
+.theme-monochrome .block-banner {
+  background: linear-gradient(90deg, #cccccc, #888888, #cccccc);
+  box-shadow: 0 0 30px rgba(204, 204, 204, 0.4);
 }
-.theme-plasma .block-banner {
-  background: linear-gradient(90deg, #ff0080, #00ffcc, #ff0080);
-  box-shadow: 0 0 30px rgba(255, 0, 128, 0.5);
+.theme-steampunk .block-banner {
+  background: linear-gradient(90deg, #cd7f32, #708090, #cd7f32);
+  box-shadow: 0 0 25px rgba(205, 127, 50, 0.4);
 }
 
 /* ── Toggle switch ───────────────────────────────── */
@@ -654,6 +661,15 @@ html, body {
 /* ── Log Entry Hover ─────────────────────────────── */
 .log-entry-hover:hover {
   background-color: rgba(var(--accent-rgb), 0.03);
+}
+
+/* ── Logo Theme Tint ─────────────────────────────── */
+.logo-tint {
+  filter: drop-shadow(0 0 6px rgba(var(--accent-rgb), 0.5));
+  transition: filter 300ms ease;
+}
+.logo-tint:hover {
+  filter: drop-shadow(0 0 12px rgba(var(--accent-rgb), 0.8));
 }
 
 /* ── Wails window drag ───────────────────────────── */

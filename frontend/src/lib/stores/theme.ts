@@ -1,8 +1,8 @@
 import { writable } from 'svelte/store';
 
-export type ThemeName = 'nuclear' | 'tron' | 'vault-tec' | 'crimson' | 'ultraviolet' | 'plasma';
+export type ThemeName = 'nuclear' | 'tron' | 'vault-tec' | 'bitcoin' | 'monochrome' | 'steampunk';
 
-const VALID_THEMES: ThemeName[] = ['nuclear', 'tron', 'vault-tec', 'crimson', 'ultraviolet', 'plasma'];
+const VALID_THEMES: ThemeName[] = ['nuclear', 'tron', 'vault-tec', 'bitcoin', 'monochrome', 'steampunk'];
 const STORAGE_KEY = 'govault-theme';
 
 function getInitialTheme(): ThemeName {

@@ -416,20 +416,25 @@ func (s *Session) handleSubmit(req *Request) {
 		s.server.OnShareAccepted(s.ID, hashrateDiff, result.Difficulty)
 	}
 
-	// Block found!
+	// Block found — submit to node first, only notify UI on result
 	if result.BlockFound {
-		s.server.log.Infof("stratum", "BLOCK FOUND by %s! Hash: %s", s.workerName, result.BlockHash)
-		if s.server.OnBlockFound != nil {
-			s.server.OnBlockFound(result.BlockHash, s.server.currentJob().Template.Height)
-		}
+		height := s.server.currentJob().Template.Height
+		s.server.log.Infof("stratum", "BLOCK CANDIDATE by %s! Hash: %s — submitting to node...", s.workerName, result.BlockHash)
 
-		// Submit block to node
+		accepted := false
 		if result.BlockHex != "" && s.server.nodeClient != nil {
 			if err := s.server.nodeClient.SubmitBlock(result.BlockHex); err != nil {
-				s.server.log.Errorf("stratum", "block submission failed: %v", err)
+				s.server.log.Errorf("stratum", "block REJECTED by node: %v", err)
 			} else {
-				s.server.log.Infof("stratum", "block submitted successfully!")
+				s.server.log.Infof("stratum", "BLOCK ACCEPTED by node! Hash: %s Height: %d", result.BlockHash, height)
+				accepted = true
 			}
+		} else {
+			s.server.log.Errorf("stratum", "block candidate but no node client or block hex available")
+		}
+
+		if s.server.OnBlockFound != nil {
+			s.server.OnBlockFound(result.BlockHash, height, accepted)
 		}
 	}
 }

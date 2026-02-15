@@ -42,7 +42,7 @@ type Server struct {
 	OnMinerDisconnected func(string)
 	OnShareAccepted     func(string, float64, float64) // minerID, sessionDiff, actualDiff
 	OnShareRejected     func(string, string)
-	OnBlockFound        func(string, int64)
+	OnBlockFound        func(hash string, height int64, accepted bool)
 	LookupWorkerDiff    func(workerName string) float64
 	OnDiffChanged       func(workerName string, diff float64)
 }

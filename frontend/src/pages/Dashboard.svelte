@@ -4,6 +4,7 @@
   import 'chartjs-adapter-date-fns';
   import StatCard from '../lib/components/common/StatCard.svelte';
   import Icon from '../lib/components/common/Icon.svelte';
+  import Info from '../lib/components/common/Info.svelte';
   import ThemedSpinner from '../lib/components/common/ThemedSpinner.svelte';
   import { dashboardStats, blockFound } from '../lib/stores/stats';
   import { miners } from '../lib/stores/miners';
@@ -326,12 +327,14 @@
       value={formatHashrate(stats?.totalHashrate || 0)}
       iconName="bolt"
       color="accent"
+      tooltip="Combined hash rate of all connected miners"
     />
     <StatCard
       label="Active Miners"
       value={String(stats?.activeMiners || 0)}
       iconName="waves"
       color="green"
+      tooltip="Mining devices currently connected to your stratum server"
     />
     <StatCard
       label="Best Difficulty"
@@ -341,12 +344,14 @@
         : ''}
       iconName="hexshield"
       color="gold"
+      tooltip="Highest difficulty share ever submitted. Ratio shows proximity to network difficulty"
     />
     <StatCard
       label="Est. Time to Block"
       value={formatDuration(stats?.estTimeToBlock || 0)}
       iconName="gauge"
       color="gray"
+      tooltip="Statistical average based on your hashrate vs network difficulty. Solo mining is probabilistic"
     />
   </div>
 
@@ -358,6 +363,7 @@
       subtext="solo blocks discovered"
       iconName="cube"
       color="accent"
+      tooltip="Bitcoin blocks mined and submitted to the network by your pool"
     />
     <StatCard
       label="Block Chance"
@@ -365,12 +371,14 @@
       subtext="per day"
       iconName="dice"
       color="gold"
+      tooltip="Probability of finding at least one block in the next 24 hours"
     />
     <StatCard
       label="Pool Shares"
       value={formatNumber(stats?.poolShares || 0)}
       iconName="nodes"
       color="green"
+      tooltip="Accepted shares count toward hashrate. Rejected indicate stale or invalid work"
     >
       <svelte:fragment slot="subtext">
         {formatNumber(stats?.sharesAccepted || 0)} accepted · {formatNumber(stats?.sharesRejected || 0)} rejected
@@ -394,6 +402,7 @@
       subtext="Height: {formatNumber(stats?.blockHeight || 0)}"
       iconName="gauge"
       color="gray"
+      tooltip="Global Bitcoin mining difficulty, adjusted every ~2016 blocks"
     />
   </div>
 
@@ -432,7 +441,7 @@
     {@const topMiners = [...$miners].filter(m => m.bestDifficulty > 0).sort((a, b) => b.bestDifficulty - a.bestDifficulty).slice(0, 3)}
     {#if topMiners.length > 0}
       <div class="rounded-xl p-5 card-glow" style="background-color: var(--bg-card);">
-        <h3 class="text-sm font-medium font-tech uppercase tracking-wider mb-3" style="color: var(--text-secondary);">Top Share Difficulty</h3>
+        <h3 class="text-sm font-medium font-tech uppercase tracking-wider mb-3 inline-flex items-center gap-1" style="color: var(--text-secondary);">Top Share Difficulty <Info tip="Miners ranked by their highest difficulty share" size={13} /></h3>
         <div class="space-y-2">
           {#each topMiners as m, i}
             <div class="flex items-center gap-3 rounded-lg px-3 py-2" style="background-color: var(--bg-secondary);">

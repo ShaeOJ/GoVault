@@ -242,20 +242,24 @@ func (a *App) StartStratum() error {
 		})
 	}
 
-	a.stratum.OnBlockFound = func(hash string, height int64) {
-		a.stats.RecordBlock()
-		if a.db != nil {
-			a.db.InsertBlock(database.BlockEntry{
-				Timestamp: time.Now().Unix(),
-				Height:    height,
-				Hash:      hash,
+	a.stratum.OnBlockFound = func(hash string, height int64, accepted bool) {
+		if accepted {
+			a.stats.RecordBlock()
+			if a.db != nil {
+				a.db.InsertBlock(database.BlockEntry{
+					Timestamp: time.Now().Unix(),
+					Height:    height,
+					Hash:      hash,
+				})
+			}
+			runtime.EventsEmit(a.ctx, "stratum:block-found", map[string]interface{}{
+				"hash":   hash,
+				"height": height,
 			})
+			a.log.Infof("app", "BLOCK ACCEPTED! Hash: %s Height: %d", hash, height)
+		} else {
+			a.log.Warnf("app", "Block candidate rejected by node. Hash: %s Height: %d", hash, height)
 		}
-		runtime.EventsEmit(a.ctx, "stratum:block-found", map[string]interface{}{
-			"hash":   hash,
-			"height": height,
-		})
-		a.log.Infof("app", "BLOCK FOUND! Hash: %s Height: %d", hash, height)
 	}
 
 	a.stratum.LookupWorkerDiff = func(workerName string) float64 {

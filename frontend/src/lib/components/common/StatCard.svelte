@@ -1,5 +1,6 @@
 <script lang="ts">
   import Icon from './Icon.svelte';
+  import Info from './Info.svelte';
 
   export let label: string;
   export let value: string;
@@ -7,6 +8,7 @@
   export let icon: string = '';
   export let iconName: string = '';
   export let color: string = 'accent';
+  export let tooltip: string = '';
 
   // Map color prop to CSS for the left accent bar
   const barColors: Record<string, string> = {
@@ -32,7 +34,10 @@
   ></div>
 
   <div class="flex items-center justify-between mb-2 pl-2">
-    <span class="text-xs font-medium uppercase tracking-wider" style="color: var(--text-secondary);">{label}</span>
+    <span class="text-xs font-medium uppercase tracking-wider inline-flex items-center gap-1" style="color: var(--text-secondary);">
+      {label}
+      {#if tooltip}<Info tip={tooltip} size={12} />{/if}
+    </span>
     {#if iconName}
       <div style="color: {barColor}; opacity: 0.7;">
         <Icon name={iconName} size={16} />
