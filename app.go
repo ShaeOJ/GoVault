@@ -284,7 +284,8 @@ func (a *App) StartStratum() error {
 	} else {
 		a.stratum.NewBlockTemplate(tmpl)
 		a.blockHeight = tmpl.Height
-		a.log.Infof("app", "initial block template ready: height=%d", tmpl.Height)
+		a.updateDiffFromTemplate(tmpl)
+		a.log.Infof("app", "initial block template ready: height=%d diff=%.2f", tmpl.Height, a.networkDiff)
 	}
 
 	if err := a.stratum.Start(); err != nil {
@@ -298,6 +299,7 @@ func (a *App) StartStratum() error {
 		a.log.Infof("app", "new block template: height=%d txns=%d", tmpl.Height, len(tmpl.Transactions))
 		a.stratum.NewBlockTemplate(tmpl)
 		a.blockHeight = tmpl.Height
+		a.updateDiffFromTemplate(tmpl)
 		runtime.EventsEmit(a.ctx, "node:new-block", map[string]interface{}{
 			"height": tmpl.Height,
 		})
@@ -422,6 +424,45 @@ func (a *App) GetMiners() []miner.MinerInfo {
 }
 
 // === Node ===
+
+// DetectNode probes the local machine for a running node matching the given coin.
+// Tries saved credentials, cookie auth, config file auth, and default credentials.
+func (a *App) DetectNode(coinID string) map[string]interface{} {
+	if a.log != nil {
+		a.log.Infof("app", "detecting local node for coin: %s", coinID)
+	}
+
+	// Pass saved credentials so detection can verify the existing config first
+	savedHost := a.config.Node.Host
+	savedPort := a.config.Node.Port
+	savedUser := a.config.Node.Username
+	savedPass := a.config.Node.Password
+
+	result := node.DetectLocalNode(coinID, savedHost, savedPort, savedUser, savedPass)
+	if a.log != nil {
+		if result.Found {
+			a.log.Infof("app", "detected node: %s on %s:%d (auth: %s)", result.NodeVersion, result.Host, result.Port, result.AuthMethod)
+		} else {
+			for _, t := range result.Tried {
+				a.log.Info("app", "detect: "+t)
+			}
+			a.log.Info("app", "no local node detected")
+		}
+	}
+	return map[string]interface{}{
+		"found":       result.Found,
+		"host":        result.Host,
+		"port":        result.Port,
+		"username":    result.Username,
+		"password":    result.Password,
+		"authMethod":  result.AuthMethod,
+		"nodeVersion": result.NodeVersion,
+		"chain":       result.Chain,
+		"blockHeight": result.BlockHeight,
+		"syncPercent": result.SyncPercent,
+		"tried":       result.Tried,
+	}
+}
 
 func (a *App) TestNodeConnection(host string, port int, username, password string, useSSL bool) (map[string]interface{}, error) {
 	client := node.NewQuickClient(host, port, username, password, useSSL)
@@ -794,10 +835,28 @@ func (a *App) statsLoop() {
 
 func (a *App) refreshNodeInfo() {
 	if info, err := a.nodeClient.GetMiningInfo(); err == nil {
-		a.networkDiff = info.Difficulty
+		// Only use getmininginfo difficulty when stratum is NOT running.
+		// When stratum IS running, networkDiff is derived from the block
+		// template's nBits (the actual target for the algorithm being mined).
+		// For multi-algo coins like DigiByte, getmininginfo.difficulty may
+		// reflect a different algorithm than what miners are solving.
+		if a.stratum == nil || !a.stratum.IsRunning() {
+			a.networkDiff = info.Difficulty
+		}
 		a.networkHashrate = info.NetworkHashPS
 		a.blockHeight = info.Blocks
 	}
+}
+
+// updateDiffFromTemplate computes the actual mining difficulty from the block
+// template's compact target (nBits). This is the authoritative difficulty for
+// the algorithm being mined and is correct for both single-algo (BTC) and
+// multi-algo (DGB) coins.
+func (a *App) updateDiffFromTemplate(tmpl *node.BlockTemplate) {
+	if tmpl.Bits == "" {
+		return
+	}
+	a.networkDiff = stratum.DifficultyFromBits(tmpl.Bits)
 }
 
 func (a *App) loadStatsFromDB() {

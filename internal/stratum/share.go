@@ -289,6 +289,21 @@ func compactToBig(nbitsHex string) *big.Int {
 	return &target
 }
 
+// DifficultyFromBits computes the pool difficulty (pdiff) from a compact
+// nBits target. This gives the actual mining difficulty for the algorithm
+// in the block template, which may differ from getmininginfo on multi-algo
+// coins like DigiByte.
+func DifficultyFromBits(nbitsHex string) float64 {
+	target := compactToBig(nbitsHex)
+	if target.Sign() == 0 {
+		return 0
+	}
+	diff := new(big.Float).SetInt(pdiff1Target)
+	diff.Quo(diff, new(big.Float).SetInt(target))
+	result, _ := diff.Float64()
+	return result
+}
+
 // DifficultyToTarget converts a pool difficulty to a target big.Int.
 func DifficultyToTarget(diff float64) *big.Int {
 	if diff <= 0 {

@@ -14,6 +14,10 @@ export function ConnectNode() {
   return window['go']['main']['App']['ConnectNode']();
 }
 
+export function DetectNode(arg1) {
+  return window['go']['main']['App']['DetectNode'](arg1);
+}
+
 export function GetCoinList() {
   return window['go']['main']['App']['GetCoinList']();
 }

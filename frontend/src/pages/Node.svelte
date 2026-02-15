@@ -23,6 +23,10 @@
   let coinId = 'btc';
   let copied = false;
 
+  let detecting = false;
+  let detectResult: any = null;
+  let detectError = '';
+
   // Config file name and path per coin
   const configFiles: Record<string, { file: string; path: string }> = {
     btc: { file: 'bitcoin.conf', path: '%APPDATA%\\Bitcoin\\bitcoin.conf' },
@@ -54,6 +58,29 @@
       copied = true;
       setTimeout(() => copied = false, 2000);
     } catch {}
+  }
+
+  async function detectNode() {
+    detecting = true;
+    detectResult = null;
+    detectError = '';
+    try {
+      const { DetectNode } = await import('../../wailsjs/go/main/App');
+      const result = await DetectNode(coinId);
+      if (result?.found) {
+        detectResult = result;
+        host = result.host;
+        port = result.port;
+        username = result.username;
+        password = result.password;
+      } else {
+        const tried = result?.tried as string[] || [];
+        detectError = 'No local node detected.\n' + tried.join('\n');
+      }
+    } catch (e: any) {
+      detectError = e?.message || String(e);
+    }
+    detecting = false;
   }
 
   onMount(async () => {
@@ -133,11 +160,47 @@
   <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
     <!-- Connection Settings -->
     <div class="rounded-xl p-6 card-glow" style="background-color: var(--bg-card);">
-      <h3 class="text-sm font-medium font-tech uppercase tracking-wider mb-4" style="color: var(--text-secondary);">Connection Settings</h3>
+      <div class="flex items-center justify-between mb-4">
+        <h3 class="text-sm font-medium font-tech uppercase tracking-wider" style="color: var(--text-secondary);">Connection Settings</h3>
+        <button
+          class="px-3 py-1.5 text-xs rounded-lg font-tech uppercase tracking-wider transition-all glow-border-hover flex items-center gap-1.5"
+          style="background: rgba(var(--accent-rgb), 0.1); color: var(--accent); border: 1px solid rgba(var(--accent-rgb), 0.3); {detecting ? 'opacity: 0.7;' : ''}"
+          on:click={detectNode}
+          disabled={detecting || saving}
+        >
+          {#if detecting}
+            <ThemedSpinner size={12} />
+            Scanning...
+          {:else}
+            Detect Node
+          {/if}
+        </button>
+      </div>
+
+      {#if detectResult}
+        <div class="rounded-lg p-3 mb-4" style="background: rgba(var(--accent-rgb), 0.05); border: 1px solid rgba(var(--accent-rgb), 0.2);">
+          <div class="text-sm font-medium mb-1" style="color: var(--success);">Node Detected</div>
+          <div class="text-xs font-data space-y-0.5" style="color: var(--text-secondary);">
+            <div>{detectResult.nodeVersion} on {detectResult.host}:{detectResult.port}</div>
+            <div>Auth: {detectResult.authMethod} &middot; Chain: {detectResult.chain} &middot; Height: {formatNumber(detectResult.blockHeight)}</div>
+            {#if detectResult.syncPercent < 99.99}
+              <div>Sync: {detectResult.syncPercent?.toFixed(2)}%</div>
+            {/if}
+          </div>
+          <div class="text-xs mt-1.5" style="color: var(--text-secondary); opacity: 0.7;">Fields auto-filled. Click Save & Connect to apply.</div>
+        </div>
+      {/if}
+
+      {#if detectError}
+        <div class="rounded-lg p-3 mb-4" style="background: rgba(255,50,50,0.05); border: 1px solid rgba(255,50,50,0.2);">
+          <div class="text-sm font-medium mb-1" style="color: var(--error);">Detection Failed</div>
+          <div class="text-xs font-data" style="color: var(--text-secondary); white-space: pre-line;">{detectError}</div>
+        </div>
+      {/if}
 
       <div class="space-y-4">
         <div>
-          <label class="block text-xs mb-1.5 inline-flex items-center gap-1" style="color: var(--text-secondary);" for="host">RPC Host <Info tip="Bitcoin node IP or hostname (usually 127.0.0.1 for local)" size={12} /></label>
+          <label class="block text-xs mb-1.5 inline-flex items-center gap-1" style="color: var(--text-secondary);" for="host">RPC Host <Info tip="{coinName} node IP or hostname (usually 127.0.0.1 for local)" size={12} /></label>
           <input
             id="host"
             bind:value={host}
@@ -158,7 +221,7 @@
         </div>
 
         <div>
-          <label class="block text-xs mb-1.5 inline-flex items-center gap-1" style="color: var(--text-secondary);" for="user">RPC Username <Info tip="From bitcoin.conf rpcuser setting" size={12} /></label>
+          <label class="block text-xs mb-1.5 inline-flex items-center gap-1" style="color: var(--text-secondary);" for="user">RPC Username <Info tip="From {configFileName} rpcuser setting" size={12} /></label>
           <input
             id="user"
             bind:value={username}
@@ -168,7 +231,7 @@
         </div>
 
         <div>
-          <label class="block text-xs mb-1.5 inline-flex items-center gap-1" style="color: var(--text-secondary);" for="pass">RPC Password <Info tip="From bitcoin.conf rpcpassword setting" size={12} /></label>
+          <label class="block text-xs mb-1.5 inline-flex items-center gap-1" style="color: var(--text-secondary);" for="pass">RPC Password <Info tip="From {configFileName} rpcpassword setting" size={12} /></label>
           <input
             id="pass"
             bind:value={password}
@@ -269,16 +332,16 @@
                 <div class="text-sm font-medium font-data" style="color: var(--text-primary);">{nodeStatus.chain || 'main'}</div>
               </div>
               <div class="rounded-lg p-3" style="background-color: var(--bg-secondary);">
-                <div class="text-xs inline-flex items-center gap-1" style="color: var(--text-secondary);">Network Difficulty <Info tip="Global Bitcoin mining difficulty target" size={11} /></div>
+                <div class="text-xs inline-flex items-center gap-1" style="color: var(--text-secondary);">Network Difficulty <Info tip="Global {coinName} mining difficulty target" size={11} /></div>
                 <div class="text-sm font-medium font-data" style="color: var(--text-primary);">{formatDifficulty(nodeStatus.networkDifficulty || 0)}</div>
               </div>
               <div class="rounded-lg p-3" style="background-color: var(--bg-secondary);">
-                <div class="text-xs inline-flex items-center gap-1" style="color: var(--text-secondary);">Network Hashrate <Info tip="Estimated total global hash rate" size={11} /></div>
+                <div class="text-xs inline-flex items-center gap-1" style="color: var(--text-secondary);">Network Hashrate <Info tip="Estimated total {coinName} network hash rate" size={11} /></div>
                 <div class="text-sm font-medium font-data" style="color: var(--text-primary);">{formatHashrate(nodeStatus.networkHashrate || 0)}</div>
               </div>
               {#if nodeStatus.connections !== undefined}
                 <div class="rounded-lg p-3" style="background-color: var(--bg-secondary);">
-                  <div class="text-xs inline-flex items-center gap-1" style="color: var(--text-secondary);">Peers <Info tip="Bitcoin nodes connected for block propagation" size={11} /></div>
+                  <div class="text-xs inline-flex items-center gap-1" style="color: var(--text-secondary);">Peers <Info tip="{coinName} nodes connected for block propagation" size={11} /></div>
                   <div class="text-sm font-medium font-data" style="color: var(--text-primary);">{nodeStatus.connections}</div>
                 </div>
               {/if}
@@ -311,7 +374,7 @@
       <!-- Config Generator -->
       <div class="rounded-xl p-6 card-glow" style="background-color: var(--bg-card);">
         <div class="flex items-center justify-between mb-3">
-          <h3 class="text-sm font-medium font-tech uppercase tracking-wider inline-flex items-center gap-1" style="color: var(--text-secondary);">{coinName}.conf <Info tip="Sample bitcoin.conf to enable RPC. Copy to your node's data directory" size={12} /></h3>
+          <h3 class="text-sm font-medium font-tech uppercase tracking-wider inline-flex items-center gap-1" style="color: var(--text-secondary);">{coinName}.conf <Info tip="Sample {configFileName} to enable RPC. Copy to your node's data directory" size={12} /></h3>
           <button
             class="px-3 py-1 text-xs rounded-lg font-tech uppercase tracking-wider transition-all glow-border-hover"
             style="background: rgba(var(--accent-rgb), 0.1); color: var(--accent); border: 1px solid rgba(var(--accent-rgb), 0.3);"

@@ -363,7 +363,7 @@
       subtext="solo blocks discovered"
       iconName="cube"
       color="accent"
-      tooltip="Bitcoin blocks mined and submitted to the network by your pool"
+      tooltip="{coinName} blocks mined and submitted to the network by your pool"
     />
     <StatCard
       label="Block Chance"
@@ -402,7 +402,7 @@
       subtext="Height: {formatNumber(stats?.blockHeight || 0)}"
       iconName="gauge"
       color="gray"
-      tooltip="Global Bitcoin mining difficulty, adjusted every ~2016 blocks"
+      tooltip="Global {coinName} mining difficulty, adjusted every ~2016 blocks"
     />
   </div>
 

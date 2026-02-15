@@ -10,6 +10,8 @@ export function ConfigureMiner(arg1:string):Promise<void>;
 
 export function ConnectNode():Promise<Record<string, any>>;
 
+export function DetectNode(arg1:string):Promise<Record<string, any>>;
+
 export function GetCoinList():Promise<Array<Record<string, any>>>;
 
 export function GetConfig():Promise<config.Config>;
