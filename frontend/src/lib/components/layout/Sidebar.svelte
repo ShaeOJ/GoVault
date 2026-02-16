@@ -60,7 +60,7 @@
         class="w-2 h-2 rounded-full status-pulse"
         style="background-color: var(--accent); box-shadow: 0 0 6px var(--accent-glow);"
       ></div>
-      <span class="ml-2 text-xs font-data hidden lg:block" style="color: var(--text-secondary);">v0.2.0-beta.3</span>
+      <span class="ml-2 text-xs font-data hidden lg:block" style="color: var(--text-secondary);">v0.2.0-beta.4</span>
     </div>
   </div>
 </aside>

@@ -58,7 +58,13 @@ func NewShareValidator(jm *JobManager) *ShareValidator {
 func (sv *ShareValidator) ValidateShare(extranonce1 string, sub ShareSubmission) (*ShareResult, *StratumError) {
 	job := sv.jobManager.GetJob(sub.JobID)
 	if job == nil {
-		return nil, NewError(ErrStaleJob, "job not found")
+		// Include available job IDs in error for diagnostics
+		ids := sv.jobManager.ActiveJobIDs()
+		available := make([]string, 0, len(ids))
+		for id := range ids {
+			available = append(available, id)
+		}
+		return nil, NewError(ErrStaleJob, fmt.Sprintf("job not found: %q (available: %v)", sub.JobID, available))
 	}
 
 	// Check for duplicate (include version bits for version-rolling miners)
@@ -78,7 +84,8 @@ func (sv *ShareValidator) ValidateShare(extranonce1 string, sub ShareSubmission)
 	coinbaseHex := job.Coinbase1 + extranonce1 + sub.Extranonce2 + job.Coinbase2
 	coinbaseBytes, err := hex.DecodeString(coinbaseHex)
 	if err != nil {
-		return nil, NewError(ErrOther, "invalid coinbase hex")
+		return nil, NewError(ErrOther, fmt.Sprintf("invalid coinbase hex (cb1=%d en1=%d en2=%d cb2=%d total=%d): %v",
+			len(job.Coinbase1), len(extranonce1), len(sub.Extranonce2), len(job.Coinbase2), len(coinbaseHex), err))
 	}
 
 	// Double SHA256 the coinbase to get coinbase hash

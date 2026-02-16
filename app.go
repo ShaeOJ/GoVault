@@ -274,7 +274,15 @@ func (a *App) startProxy() error {
 	)
 
 	// Configure proxy mode on stratum server
-	a.stratum.SetProxyMode(uc.Extranonce1(), uc.LocalEN2Size())
+	// Parse upstream version-rolling mask so local miners are constrained to it.
+	var vMask uint32
+	if uc.VersionRolling() && uc.VersionMask() != "" {
+		maskBytes, err := hex.DecodeString(uc.VersionMask())
+		if err == nil && len(maskBytes) == 4 {
+			vMask = binary.BigEndian.Uint32(maskBytes)
+		}
+	}
+	a.stratum.SetProxyMode(uc.Extranonce1(), uc.LocalEN2Size(), vMask)
 	a.stratum.SetUpstreamDifficulty(uc.UpstreamDifficulty())
 
 	a.wireStratumCallbacks()
@@ -302,13 +310,26 @@ func (a *App) startProxy() error {
 
 	// Wire share forwarding: stratum → upstream
 	a.stratum.OnShareForward = func(workerName, jobID, fullEN2, ntime, nonce, versionBits string) (bool, string) {
-		return uc.SubmitShare(workerName, jobID, fullEN2, ntime, nonce, versionBits)
+		// Use upstream authorized worker name, not local miner name
+		return uc.SubmitShare(uc.WorkerName(), jobID, fullEN2, ntime, nonce, versionBits)
 	}
 
 	if err := a.stratum.Start(); err != nil {
 		uc.Stop()
 		a.upstream = nil
 		return err
+	}
+
+	// Replay any job notification received during the Connect() handshake
+	// (before OnJob was wired). Without this, the first job is lost and
+	// miners sit idle until the next upstream notification.
+	if earlyJob := uc.DrainEarlyJob(); earlyJob != nil {
+		a.log.Infof("app", "replaying early upstream job %s", earlyJob.JobID)
+		a.stratum.BroadcastUpstreamJob(earlyJob)
+		a.updateNetworkDiffFromNBits(earlyJob.NBits)
+		if earlyJob.CleanJobs {
+			a.blockHeight++
+		}
 	}
 
 	// Seed initial network diff from nBits if we already have a job

@@ -165,22 +165,38 @@ func (s *Session) handleConfigure(req *Request) {
 	for _, ext := range extensions {
 		switch ext {
 		case "version-rolling":
-			// Accept version rolling with the miner's requested mask
-			mask := uint32(0x1fffe000) // default safe mask
+			// In proxy mode, constrain to the upstream pool's mask so
+			// forwarded shares don't trigger "mask violation" rejections.
+			// In solo mode, use the standard safe mask.
+			poolMask := uint32(0x1fffe000)
+			if s.server.proxyMode && s.server.proxyVersionMask != 0 {
+				poolMask = s.server.proxyVersionMask
+			}
+
+			// Intersect with miner's requested mask
+			mask := poolMask
 			if raw, ok := extParams["version-rolling.mask"]; ok {
 				var maskHex string
 				if json.Unmarshal(raw, &maskHex) == nil {
 					maskBytes, err := hex.DecodeString(maskHex)
 					if err == nil && len(maskBytes) == 4 {
-						mask = binary.BigEndian.Uint32(maskBytes)
+						minerMask := binary.BigEndian.Uint32(maskBytes)
+						mask = poolMask & minerMask
 					}
 				}
 			}
-			s.versionRolling = true
-			s.versionMask = mask
-			result["version-rolling"] = true
-			result["version-rolling.mask"] = fmt.Sprintf("%08x", mask)
-			s.server.log.Infof("stratum", "session %s version-rolling enabled (mask=%08x)", s.ID, mask)
+
+			if s.server.proxyMode && s.server.proxyVersionMask == 0 {
+				// Upstream doesn't support version-rolling — reject
+				result["version-rolling"] = false
+				s.server.log.Infof("stratum", "session %s version-rolling denied (upstream doesn't support it)", s.ID)
+			} else {
+				s.versionRolling = true
+				s.versionMask = mask
+				result["version-rolling"] = true
+				result["version-rolling.mask"] = fmt.Sprintf("%08x", mask)
+				s.server.log.Infof("stratum", "session %s version-rolling enabled (mask=%08x)", s.ID, mask)
+			}
 		case "minimum-difficulty":
 			// Accept minimum difficulty from the miner
 			if raw, ok := extParams["minimum-difficulty.value"]; ok {
@@ -345,17 +361,28 @@ func (s *Session) handleSubmit(req *Request) {
 		VersionMask: s.versionMask,
 	}
 
-	s.server.log.Debugf("stratum", "share submit from %s: job=%s en2=%s ntime=%s nonce=%s vbits=%s", s.workerName, jobID, en2, ntime, nonce, versionBits)
+	s.server.log.Debugf("stratum", "share submit from %s: job=%q en1=%s en2=%s ntime=%s nonce=%s vbits=%s en2size=%d",
+		s.workerName, jobID, s.extranonce1, en2, ntime, nonce, versionBits, s.server.extranonce2Size)
 
 	result, stratumErr := s.server.shareValidator.ValidateShare(s.extranonce1, sub)
 	if stratumErr != nil {
-		s.sharesRejected++
 		s.sendResponse(req.ID, false, stratumErr)
+
+		// Duplicate shares are normal ASIC behavior (BM1366 result buffer
+		// re-reads) — don't count them as rejections or fire callbacks.
+		// Matches ckpool which silently drops duplicates.
+		if stratumErr.Code == ErrDuplicate {
+			s.server.log.Debugf("stratum", "duplicate share from %s (job=%q en2=%s nonce=%s vbits=%s)",
+				s.workerName, jobID, en2, nonce, versionBits)
+			return
+		}
+
+		s.sharesRejected++
 		if s.server.OnShareRejected != nil {
 			s.server.OnShareRejected(s.ID, stratumErr.Message)
 		}
-		s.server.log.Infof("stratum", "share REJECTED from %s: %s (job=%s en2=%s ntime=%s nonce=%s vbits=%s)",
-			s.workerName, stratumErr.Message, jobID, en2, ntime, nonce, versionBits)
+		s.server.log.Infof("stratum", "share REJECTED from %s: %s (job=%q en1=%s en2=%s ntime=%s nonce=%s vbits=%s)",
+			s.workerName, stratumErr.Message, jobID, s.extranonce1, en2, ntime, nonce, versionBits)
 		return
 	}
 

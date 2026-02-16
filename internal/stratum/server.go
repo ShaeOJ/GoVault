@@ -39,10 +39,11 @@ type Server struct {
 	currentJobVal *Job
 
 	// Proxy mode fields
-	proxyMode      bool
-	upstreamEN1    string
-	upstreamDiff   float64
-	upstreamDiffMu sync.RWMutex
+	proxyMode        bool
+	upstreamEN1      string
+	upstreamDiff     float64
+	upstreamDiffMu   sync.RWMutex
+	proxyVersionMask uint32 // version-rolling mask from upstream (0 = no rolling)
 
 	// Event callbacks
 	OnMinerConnected    func(MinerInfo)
@@ -212,10 +213,12 @@ func (s *Server) generateExtranonce1() string {
 }
 
 // SetProxyMode configures the server for proxy operation.
-func (s *Server) SetProxyMode(upstreamEN1 string, localEN2Size int) {
+// versionMask is the upstream pool's version-rolling mask (0 = no rolling).
+func (s *Server) SetProxyMode(upstreamEN1 string, localEN2Size int, versionMask uint32) {
 	s.proxyMode = true
 	s.upstreamEN1 = upstreamEN1
 	s.extranonce2Size = localEN2Size
+	s.proxyVersionMask = versionMask
 }
 
 // IsProxyMode returns true if the server is in proxy mode.
@@ -251,8 +254,11 @@ func (s *Server) BroadcastUpstreamJob(params *upstream.JobParams) {
 		params.CleanJobs,
 	)
 
+	activeIDs := s.jobManager.ActiveJobIDs()
+	s.log.Debugf("stratum", "registered upstream job %q (active jobs: %d)", job.ID, len(activeIDs))
+
 	// Always clean duplicate tracking for trimmed-out jobs (matches solo mode)
-	s.shareValidator.CleanDuplicates(s.jobManager.ActiveJobIDs())
+	s.shareValidator.CleanDuplicates(activeIDs)
 
 	s.BroadcastJob(job, params.CleanJobs)
 }

@@ -14,6 +14,13 @@ import (
 	"govault/internal/logger"
 )
 
+// pendingJob stores an early job notification received before the OnJob
+// callback is wired. This avoids losing the first job from the upstream.
+type pendingJob struct {
+	mu  sync.Mutex
+	job *JobParams
+}
+
 // JobParams holds the fields from a mining.notify message.
 type JobParams struct {
 	JobID          string
@@ -45,8 +52,10 @@ type Client struct {
 	upstreamDiff    float64
 	upstreamDiffMu  sync.RWMutex
 
-	lastNBits   string
-	lastNBitsMu sync.RWMutex
+	lastNBits      string
+	lastNBitsMu    sync.RWMutex
+	versionRolling bool   // true if upstream accepted version-rolling
+	versionMask    string // hex mask from upstream (e.g. "1fffe000")
 
 	connected  atomic.Bool
 	authorized atomic.Bool
@@ -63,6 +72,9 @@ type Client struct {
 	OnJob        func(*JobParams)
 	OnDifficulty func(float64)
 	OnDisconnect func(error)
+
+	// Buffer for early job notifications received before OnJob is wired.
+	earlyJob pendingJob
 }
 
 type rpcRequest struct {
@@ -113,6 +125,10 @@ func (c *Client) Connect() error {
 
 	go c.readLoop()
 
+	// Negotiate version-rolling with upstream so forwarded shares
+	// from version-rolling miners (Bitaxe, NerdAxe) validate correctly.
+	c.configure()
+
 	// Subscribe
 	if err := c.subscribe(); err != nil {
 		c.closeConn()
@@ -125,8 +141,8 @@ func (c *Client) Connect() error {
 		return fmt.Errorf("authorize: %w", err)
 	}
 
-	c.log.Infof("upstream", "connected to %s (en1=%s en2_size=%d local_en2=%d)",
-		addr, c.extranonce1, c.extranonce2Size, c.localEN2Size)
+	c.log.Infof("upstream", "connected to %s (en1=%s en2_size=%d local_en2=%d vroll=%v)",
+		addr, c.extranonce1, c.extranonce2Size, c.localEN2Size, c.versionRolling)
 
 	// Start reconnect watcher
 	go c.reconnectLoop()
@@ -147,9 +163,12 @@ func (c *Client) Stop() {
 func (c *Client) IsConnected() bool  { return c.connected.Load() }
 func (c *Client) IsAuthorized() bool { return c.authorized.Load() }
 
-func (c *Client) Extranonce1() string  { return c.extranonce1 }
-func (c *Client) Extranonce2Size() int { return c.extranonce2Size }
-func (c *Client) LocalEN2Size() int    { return c.localEN2Size }
+func (c *Client) Extranonce1() string    { return c.extranonce1 }
+func (c *Client) Extranonce2Size() int   { return c.extranonce2Size }
+func (c *Client) LocalEN2Size() int      { return c.localEN2Size }
+func (c *Client) WorkerName() string     { return c.workerName }
+func (c *Client) VersionRolling() bool   { return c.versionRolling }
+func (c *Client) VersionMask() string    { return c.versionMask }
 
 func (c *Client) UpstreamDifficulty() float64 {
 	c.upstreamDiffMu.RLock()
@@ -161,6 +180,16 @@ func (c *Client) LastNBits() string {
 	c.lastNBitsMu.RLock()
 	defer c.lastNBitsMu.RUnlock()
 	return c.lastNBits
+}
+
+// DrainEarlyJob returns (and clears) any job notification that arrived
+// before the OnJob callback was wired.
+func (c *Client) DrainEarlyJob() *JobParams {
+	c.earlyJob.mu.Lock()
+	defer c.earlyJob.mu.Unlock()
+	j := c.earlyJob.job
+	c.earlyJob.job = nil
+	return j
 }
 
 // AssignMinerPrefix allocates a 2-byte hex prefix for a local miner's EN2 space.
@@ -193,6 +222,48 @@ func (c *Client) SubmitShare(worker, jobID, fullEN2, ntime, nonce, versionBits s
 }
 
 // --- internal ---
+
+// configure sends mining.configure to negotiate version-rolling with
+// the upstream pool. Without this, forwarded shares from version-rolling
+// miners (Bitaxe, NerdAxe) produce wrong hashes on the upstream side.
+// Non-fatal: if the pool doesn't support it, we proceed without.
+func (c *Client) configure() {
+	extensions := []string{"version-rolling"}
+	extParams := map[string]interface{}{
+		"version-rolling.mask":    "1fffe000",
+		"version-rolling.min-bit-count": 2,
+	}
+
+	resp, err := c.call("mining.configure", []interface{}{extensions, extParams}, 10*time.Second)
+	if err != nil {
+		c.log.Infof("upstream", "mining.configure not supported: %v (version rolling disabled)", err)
+		return
+	}
+
+	var result map[string]json.RawMessage
+	if err := json.Unmarshal(resp, &result); err != nil {
+		c.log.Infof("upstream", "mining.configure parse error: %v (version rolling disabled)", err)
+		return
+	}
+
+	// Check if version-rolling was accepted
+	if raw, ok := result["version-rolling"]; ok {
+		var accepted bool
+		if json.Unmarshal(raw, &accepted) == nil && accepted {
+			c.versionRolling = true
+			if maskRaw, ok := result["version-rolling.mask"]; ok {
+				var mask string
+				json.Unmarshal(maskRaw, &mask)
+				c.versionMask = mask
+			}
+			c.log.Infof("upstream", "version-rolling enabled (mask=%s)", c.versionMask)
+		}
+	}
+
+	if !c.versionRolling {
+		c.log.Infof("upstream", "upstream did not accept version-rolling")
+	}
+}
 
 func (c *Client) subscribe() error {
 	resp, err := c.call("mining.subscribe", []interface{}{"GoVault/0.2.0"}, 10*time.Second)
@@ -265,8 +336,11 @@ func (c *Client) readLoop() {
 			return
 		}
 
+		c.log.Debugf("upstream", "recv: %s", strings.TrimSpace(string(line)))
+
 		var msg rpcResponse
 		if err := json.Unmarshal(line, &msg); err != nil {
+			c.log.Debugf("upstream", "unparseable message: %v", err)
 			continue
 		}
 
@@ -308,25 +382,73 @@ func (c *Client) handleNotification(method string, params json.RawMessage) {
 func (c *Client) handleJobNotify(params json.RawMessage) {
 	var raw []json.RawMessage
 	if err := json.Unmarshal(params, &raw); err != nil || len(raw) < 9 {
-		c.log.Errorf("upstream", "invalid mining.notify params")
+		c.log.Errorf("upstream", "invalid mining.notify params: %s", string(params))
 		return
 	}
 
-	var jobID, prevHash, cb1, cb2, version, nbits, ntime string
+	// Parse job ID — handle both string ("6b8d") and numeric (1234) formats.
+	// Some pools send job IDs as JSON numbers instead of strings.
+	// Also handle null → "null" so we always have a usable key.
+	var jobID string
+	if err := json.Unmarshal(raw[0], &jobID); err != nil || jobID == "" {
+		// Not a JSON string, or parsed as empty/null; use raw representation.
+		jobID = strings.Trim(string(raw[0]), " \t\n\r\"")
+		if jobID == "" || jobID == "null" {
+			jobID = "0" // fallback to a usable key
+		}
+		c.log.Debugf("upstream", "job ID parsed from raw: %q (raw=%s)", jobID, string(raw[0]))
+	}
+
+	var prevHash, cb1, cb2, version, nbits, ntime string
 	var branches []string
 	var cleanJobs bool
 
-	json.Unmarshal(raw[0], &jobID)
-	json.Unmarshal(raw[1], &prevHash)
-	json.Unmarshal(raw[2], &cb1)
-	json.Unmarshal(raw[3], &cb2)
-	json.Unmarshal(raw[4], &branches)
-	json.Unmarshal(raw[5], &version)
-	json.Unmarshal(raw[6], &nbits)
-	json.Unmarshal(raw[7], &ntime)
-	json.Unmarshal(raw[8], &cleanJobs)
+	if err := json.Unmarshal(raw[1], &prevHash); err != nil {
+		c.log.Errorf("upstream", "failed to parse prevHash: %v (raw=%s)", err, string(raw[1]))
+		return
+	}
+	if err := json.Unmarshal(raw[2], &cb1); err != nil {
+		c.log.Errorf("upstream", "failed to parse coinbase1: %v (raw=%s)", err, string(raw[2]))
+		return
+	}
+	if err := json.Unmarshal(raw[3], &cb2); err != nil {
+		c.log.Errorf("upstream", "failed to parse coinbase2: %v (raw=%s)", err, string(raw[3]))
+		return
+	}
+	json.Unmarshal(raw[4], &branches) // branches can be [] or null — both OK
+	if err := json.Unmarshal(raw[5], &version); err != nil {
+		c.log.Errorf("upstream", "failed to parse version: %v (raw=%s)", err, string(raw[5]))
+		return
+	}
+	if err := json.Unmarshal(raw[6], &nbits); err != nil {
+		c.log.Errorf("upstream", "failed to parse nbits: %v (raw=%s)", err, string(raw[6]))
+		return
+	}
+	if err := json.Unmarshal(raw[7], &ntime); err != nil {
+		c.log.Errorf("upstream", "failed to parse ntime: %v (raw=%s)", err, string(raw[7]))
+		return
+	}
+	json.Unmarshal(raw[8], &cleanJobs) // false on error is fine
 
-	// Ensure branches is non-nil
+	// Validate critical fields
+	if len(prevHash) != 64 {
+		c.log.Errorf("upstream", "invalid prevHash length %d (expected 64): %s", len(prevHash), prevHash)
+		return
+	}
+	if len(version) != 8 {
+		c.log.Errorf("upstream", "invalid version length %d (expected 8): %s", len(version), version)
+		return
+	}
+	if len(nbits) != 8 {
+		c.log.Errorf("upstream", "invalid nbits length %d (expected 8): %s", len(nbits), nbits)
+		return
+	}
+	if len(ntime) != 8 {
+		c.log.Errorf("upstream", "invalid ntime length %d (expected 8): %s", len(ntime), ntime)
+		return
+	}
+
+	// Ensure branches is non-nil for JSON serialization
 	if branches == nil {
 		branches = []string{}
 	}
@@ -347,10 +469,18 @@ func (c *Client) handleJobNotify(params json.RawMessage) {
 		CleanJobs:      cleanJobs,
 	}
 
-	c.log.Infof("upstream", "job %s prevhash=%s..%s clean=%v", jobID, prevHash[:8], prevHash[len(prevHash)-8:], cleanJobs)
+	c.log.Infof("upstream", "job %s prevhash=%s..%s version=%s nbits=%s clean=%v cb1=%d cb2=%d branches=%d",
+		jobID, prevHash[:8], prevHash[len(prevHash)-8:], version, nbits, cleanJobs,
+		len(cb1), len(cb2), len(branches))
 
 	if c.OnJob != nil {
 		c.OnJob(job)
+	} else {
+		// Buffer early job before OnJob is wired (race with Connect)
+		c.earlyJob.mu.Lock()
+		c.earlyJob.job = job
+		c.earlyJob.mu.Unlock()
+		c.log.Debugf("upstream", "buffered early job %s (OnJob not wired yet)", jobID)
 	}
 }
 
@@ -501,6 +631,9 @@ func (c *Client) reconnectLoop() {
 
 		go c.readLoop()
 
+		// Re-negotiate version-rolling before subscribe
+		c.configure()
+
 		if err := c.subscribe(); err != nil {
 			c.log.Errorf("upstream", "reconnect subscribe failed: %v", err)
 			c.closeConn()
@@ -513,7 +646,7 @@ func (c *Client) reconnectLoop() {
 			continue
 		}
 
-		c.log.Infof("upstream", "reconnected to %s", addr)
+		c.log.Infof("upstream", "reconnected to %s (vroll=%v)", addr, c.versionRolling)
 		backoff = time.Second
 	}
 }
