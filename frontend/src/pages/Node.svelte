@@ -238,7 +238,7 @@
     { name: 'CKPool Solo', url: 'solo.ckpool.org:3333', desc: 'Most popular solo pool, 2% fee' },
     { name: 'CKPool Solo (High Diff)', url: 'solo.ckpool.org:3334', desc: 'For high-hashrate setups' },
     { name: 'Public Pool', url: 'public-pool.io:21496', desc: 'Open source, no fee solo pool' },
-    { name: 'Firepool', url: 'btc.firepool.ca:4333', desc: 'Canadian solo pool' },
+    { name: 'Firepool', url: 'firepool.ca:4333', desc: 'Canadian solo pool' },
   ];
 
   function applyPreset(preset: typeof poolPresets[0]) {
