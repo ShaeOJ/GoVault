@@ -251,9 +251,8 @@ func (s *Server) BroadcastUpstreamJob(params *upstream.JobParams) {
 		params.CleanJobs,
 	)
 
-	if params.CleanJobs {
-		s.shareValidator.CleanDuplicates(s.jobManager.ActiveJobIDs())
-	}
+	// Always clean duplicate tracking for trimmed-out jobs (matches solo mode)
+	s.shareValidator.CleanDuplicates(s.jobManager.ActiveJobIDs())
 
 	s.BroadcastJob(job, params.CleanJobs)
 }

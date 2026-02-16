@@ -158,23 +158,23 @@ func (jm *JobManager) RegisterUpstreamJob(
 	}
 
 	jm.mu.Lock()
-	if cleanJobs {
-		jm.jobs = make(map[string]*Job)
-	}
+	// Note: do NOT wipe jobs on cleanJobs — the flag tells miners to abandon
+	// old work, but we must keep old jobs so in-flight ASIC shares (pipeline
+	// delay) still find their job data and get validated for hashrate tracking.
 	jm.jobs[jobID] = job
-	// Trim old jobs
+	// Trim old jobs (same as CreateJob)
 	if len(jm.jobs) > jm.maxJobs {
 		var oldest string
-		var oldestAge int
+		var oldestID uint64 = ^uint64(0)
 		for id := range jm.jobs {
-			// In proxy mode job IDs are opaque strings from upstream,
-			// so we just count backwards to find the oldest entry.
-			oldestAge++
-			if oldestAge == 1 || id < oldest {
+			var idNum uint64
+			fmt.Sscanf(id, "%x", &idNum)
+			if idNum < oldestID {
+				oldestID = idNum
 				oldest = id
 			}
 		}
-		if oldest != jobID {
+		if oldest != "" && oldest != jobID {
 			delete(jm.jobs, oldest)
 		}
 	}
