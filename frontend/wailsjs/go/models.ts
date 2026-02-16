@@ -14,6 +14,22 @@ export namespace config {
 	        this.logLevel = source["logLevel"];
 	    }
 	}
+	export class ProxyConfig {
+	    url: string;
+	    workerName: string;
+	    password: string;
+	
+	    static createFrom(source: any = {}) {
+	        return new ProxyConfig(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.url = source["url"];
+	        this.workerName = source["workerName"];
+	        this.password = source["password"];
+	    }
+	}
 	export class VardiffConfig {
 	    minDiff: number;
 	    startDiff: number;
@@ -94,6 +110,8 @@ export namespace config {
 	    mining: MiningConfig;
 	    vardiff: VardiffConfig;
 	    app: AppConfig;
+	    proxy: ProxyConfig;
+	    miningMode: string;
 	
 	    static createFrom(source: any = {}) {
 	        return new Config(source);
@@ -106,6 +124,8 @@ export namespace config {
 	        this.mining = this.convertValues(source["mining"], MiningConfig);
 	        this.vardiff = this.convertValues(source["vardiff"], VardiffConfig);
 	        this.app = this.convertValues(source["app"], AppConfig);
+	        this.proxy = this.convertValues(source["proxy"], ProxyConfig);
+	        this.miningMode = source["miningMode"];
 	    }
 	
 		convertValues(a: any, classs: any, asMap: boolean = false): any {
@@ -126,6 +146,7 @@ export namespace config {
 		    return a;
 		}
 	}
+	
 	
 	
 	

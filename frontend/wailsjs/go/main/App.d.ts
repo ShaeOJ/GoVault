@@ -26,11 +26,15 @@ export function GetMinerHashrateHistory(arg1:string):Promise<Array<miner.Hashrat
 
 export function GetMiners():Promise<Array<miner.MinerInfo>>;
 
+export function GetMiningMode():Promise<string>;
+
 export function GetNodeStatus():Promise<Record<string, any>>;
 
 export function GetRecentLogs(arg1:number):Promise<Array<logger.LogEntry>>;
 
 export function GetStratumURL():Promise<string>;
+
+export function GetUpstreamStatus():Promise<Record<string, any>>;
 
 export function IsStratumRunning():Promise<boolean>;
 
@@ -45,6 +49,8 @@ export function StartStratum():Promise<void>;
 export function StopStratum():Promise<void>;
 
 export function TestNodeConnection(arg1:string,arg2:number,arg3:string,arg4:string,arg5:boolean):Promise<Record<string, any>>;
+
+export function TestUpstreamConnection(arg1:string,arg2:string,arg3:string):Promise<Record<string, any>>;
 
 export function UpdateConfig(arg1:config.Config):Promise<void>;
 

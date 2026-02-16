@@ -416,25 +416,48 @@ func (s *Session) handleSubmit(req *Request) {
 		s.server.OnShareAccepted(s.ID, hashrateDiff, result.Difficulty)
 	}
 
-	// Block found — submit to node first, only notify UI on result
-	if result.BlockFound {
-		height := s.server.currentJob().Template.Height
-		s.server.log.Infof("stratum", "BLOCK CANDIDATE by %s! Hash: %s — submitting to node...", s.workerName, result.BlockHash)
-
-		accepted := false
-		if result.BlockHex != "" && s.server.nodeClient != nil {
-			if err := s.server.nodeClient.SubmitBlock(result.BlockHex); err != nil {
-				s.server.log.Errorf("stratum", "block REJECTED by node: %v", err)
+	// Proxy mode: forward qualifying shares upstream
+	if s.server.proxyMode && s.server.OnShareForward != nil {
+		if result.Difficulty >= s.server.UpstreamDifficulty() {
+			minerPrefix := s.extranonce1[len(s.server.upstreamEN1):]
+			fullEN2 := minerPrefix + en2
+			accepted, reason := s.server.OnShareForward(s.workerName, jobID, fullEN2, ntime, nonce, versionBits)
+			if accepted {
+				s.server.log.Debugf("stratum", "share forwarded upstream for %s (job=%s)", s.workerName, jobID)
 			} else {
-				s.server.log.Infof("stratum", "BLOCK ACCEPTED by node! Hash: %s Height: %d", result.BlockHash, height)
-				accepted = true
+				s.server.log.Infof("stratum", "upstream rejected share from %s: %s", s.workerName, reason)
+			}
+		}
+	}
+
+	// Block found
+	if result.BlockFound {
+		if s.server.proxyMode {
+			// In proxy mode, the share was already forwarded upstream
+			s.server.log.Infof("stratum", "BLOCK CANDIDATE by %s! Hash: %s (forwarded upstream)", s.workerName, result.BlockHash)
+			if s.server.OnBlockFound != nil {
+				s.server.OnBlockFound(result.BlockHash, 0, true)
 			}
 		} else {
-			s.server.log.Errorf("stratum", "block candidate but no node client or block hex available")
-		}
+			// Solo mode: submit to node
+			height := s.server.currentJob().Template.Height
+			s.server.log.Infof("stratum", "BLOCK CANDIDATE by %s! Hash: %s — submitting to node...", s.workerName, result.BlockHash)
 
-		if s.server.OnBlockFound != nil {
-			s.server.OnBlockFound(result.BlockHash, height, accepted)
+			accepted := false
+			if result.BlockHex != "" && s.server.nodeClient != nil {
+				if err := s.server.nodeClient.SubmitBlock(result.BlockHex); err != nil {
+					s.server.log.Errorf("stratum", "block REJECTED by node: %v", err)
+				} else {
+					s.server.log.Infof("stratum", "BLOCK ACCEPTED by node! Hash: %s Height: %d", result.BlockHash, height)
+					accepted = true
+				}
+			} else {
+				s.server.log.Errorf("stratum", "block candidate but no node client or block hex available")
+			}
+
+			if s.server.OnBlockFound != nil {
+				s.server.OnBlockFound(result.BlockHash, height, accepted)
+			}
 		}
 	}
 }

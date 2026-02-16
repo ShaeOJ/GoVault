@@ -28,6 +28,12 @@ type CoinDef struct {
 	// Block parameters
 	TargetBlockTimeSec int // 600 for most, 60 for DGB
 
+	// Multi-algo support (DigiByte)
+	// MiningAlgo is the proof-of-work algorithm this pool mines.
+	// Empty means single-algo coin (SHA-256d implied). For multi-algo coins
+	// like DGB, set to "sha256d" so templates for other algos are skipped.
+	MiningAlgo string
+
 	// XEC-specific mandatory coinbase outputs
 	HasMinerFund     bool // true only for XEC
 	HasStakingReward bool // true only for XEC

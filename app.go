@@ -2,7 +2,10 @@ package main
 
 import (
 	"context"
+	"encoding/binary"
+	"encoding/hex"
 	"fmt"
+	"math/big"
 	"net"
 	"sync"
 	"time"
@@ -14,6 +17,7 @@ import (
 	"govault/internal/miner"
 	"govault/internal/node"
 	"govault/internal/stratum"
+	"govault/internal/upstream"
 
 	"github.com/wailsapp/wails/v2/pkg/runtime"
 )
@@ -30,6 +34,8 @@ type App struct {
 	registry   *miner.Registry
 	stats      *miner.StatsAggregator
 	discovery  *miner.Discovery
+
+	upstream *upstream.Client
 
 	// Database persistence
 	db     *database.DB
@@ -107,7 +113,8 @@ func (a *App) startup(ctx context.Context) {
 	go a.statsLoop()
 
 	// Auto-start stratum if configured
-	if cfg.Stratum.AutoStart && cfg.Mining.PayoutAddress != "" {
+	canAutoStart := cfg.Mining.PayoutAddress != "" || cfg.MiningMode == "proxy"
+	if cfg.Stratum.AutoStart && canAutoStart {
 		go func() {
 			time.Sleep(1 * time.Second) // Wait for frontend to be ready
 			if err := a.StartStratum(); err != nil {
@@ -127,6 +134,9 @@ func (a *App) domReady(ctx context.Context) {
 func (a *App) shutdown(ctx context.Context) {
 	close(a.stopStats)
 
+	if a.upstream != nil {
+		a.upstream.Stop()
+	}
 	if a.stratum != nil && a.stratum.IsRunning() {
 		a.stratum.Stop()
 	}
@@ -161,12 +171,24 @@ func (a *App) StartStratum() error {
 		return fmt.Errorf("stratum server already running")
 	}
 
+	mode := a.config.MiningMode
+	if mode == "" {
+		mode = "solo"
+	}
+
+	if mode == "proxy" {
+		return a.startProxy()
+	}
+	return a.startSolo()
+}
+
+func (a *App) startSolo() error {
 	if a.config.Mining.PayoutAddress == "" {
 		return fmt.Errorf("payout address not configured")
 	}
 
 	coinDef := coin.Get(a.config.Mining.Coin)
-	a.log.Infof("app", "starting stratum for %s (%s)", coinDef.Name, coinDef.Symbol)
+	a.log.Infof("app", "starting stratum (solo) for %s (%s)", coinDef.Name, coinDef.Symbol)
 
 	a.stratum = stratum.NewServer(
 		&a.config.Stratum,
@@ -177,7 +199,129 @@ func (a *App) StartStratum() error {
 		coinDef,
 	)
 
-	// Wire up callbacks
+	a.wireStratumCallbacks()
+
+	// Pre-fetch the first block template BEFORE accepting miners so the
+	// first reconnecting device gets work immediately.
+	tmpl, err := a.nodeClient.GetBlockTemplate(coinDef.GBTRules)
+	if err != nil {
+		a.log.Errorf("app", "initial block template fetch failed: %v (miners will wait for next poll)", err)
+	} else {
+		a.stratum.NewBlockTemplate(tmpl)
+		a.blockHeight = tmpl.Height
+		a.log.Infof("app", "initial block template ready: height=%d", tmpl.Height)
+	}
+
+	if err := a.stratum.Start(); err != nil {
+		return err
+	}
+
+	// Start chain monitor for ongoing block updates
+	a.monitor = node.NewChainMonitor(a.nodeClient, 500*time.Millisecond, coinDef.GBTRules)
+	a.monitor.SetRefreshInterval(10 * time.Second)
+	a.monitor.OnNewBlock = func(tmpl *node.BlockTemplate) {
+		a.log.Infof("app", "new block template: height=%d txns=%d", tmpl.Height, len(tmpl.Transactions))
+		a.stratum.NewBlockTemplate(tmpl)
+		a.blockHeight = tmpl.Height
+		runtime.EventsEmit(a.ctx, "node:new-block", map[string]interface{}{
+			"height": tmpl.Height,
+		})
+	}
+	a.monitor.OnTemplateRefresh = func(tmpl *node.BlockTemplate) {
+		a.stratum.RefreshBlockTemplate(tmpl)
+	}
+	a.monitor.SetOnError(func(err error) {
+		a.log.Errorf("app", "chain monitor error: %v", err)
+	})
+	a.monitor.Start()
+
+	a.log.Info("app", "stratum server started (solo mode)")
+	return nil
+}
+
+func (a *App) startProxy() error {
+	proxyCfg := a.config.Proxy
+	if proxyCfg.URL == "" {
+		return fmt.Errorf("proxy URL not configured")
+	}
+	if proxyCfg.WorkerName == "" {
+		return fmt.Errorf("proxy worker name not configured")
+	}
+
+	password := proxyCfg.Password
+	if password == "" {
+		password = "x"
+	}
+
+	a.log.Infof("app", "starting stratum (proxy) → %s worker=%s", proxyCfg.URL, proxyCfg.WorkerName)
+
+	// Connect to upstream pool
+	uc := upstream.NewClient(proxyCfg.URL, proxyCfg.WorkerName, password, a.log)
+	if err := uc.Connect(); err != nil {
+		return fmt.Errorf("upstream connect: %w", err)
+	}
+	a.upstream = uc
+
+	// Create stratum server with nil nodeClient (proxy mode)
+	coinDef := coin.Get(a.config.Mining.Coin)
+	a.stratum = stratum.NewServer(
+		&a.config.Stratum,
+		&a.config.Mining,
+		&a.config.Vardiff,
+		nil, // no local node
+		a.log,
+		coinDef,
+	)
+
+	// Configure proxy mode on stratum server
+	a.stratum.SetProxyMode(uc.Extranonce1(), uc.LocalEN2Size())
+	a.stratum.SetUpstreamDifficulty(uc.UpstreamDifficulty())
+
+	a.wireStratumCallbacks()
+
+	// Wire upstream → stratum job relay
+	uc.OnJob = func(params *upstream.JobParams) {
+		a.stratum.BroadcastUpstreamJob(params)
+		a.updateNetworkDiffFromNBits(params.NBits)
+		if params.CleanJobs {
+			a.blockHeight++
+			runtime.EventsEmit(a.ctx, "node:new-block", map[string]interface{}{
+				"height": a.blockHeight,
+			})
+		}
+	}
+
+	uc.OnDifficulty = func(diff float64) {
+		a.stratum.SetUpstreamDifficulty(diff)
+		a.log.Infof("app", "upstream difficulty: %f", diff)
+	}
+
+	uc.OnDisconnect = func(err error) {
+		a.log.Errorf("app", "upstream disconnected: %v (reconnecting...)", err)
+	}
+
+	// Wire share forwarding: stratum → upstream
+	a.stratum.OnShareForward = func(workerName, jobID, fullEN2, ntime, nonce, versionBits string) (bool, string) {
+		return uc.SubmitShare(workerName, jobID, fullEN2, ntime, nonce, versionBits)
+	}
+
+	if err := a.stratum.Start(); err != nil {
+		uc.Stop()
+		a.upstream = nil
+		return err
+	}
+
+	// Seed initial network diff from nBits if we already have a job
+	if nbits := uc.LastNBits(); nbits != "" {
+		a.updateNetworkDiffFromNBits(nbits)
+	}
+
+	a.log.Info("app", "stratum server started (proxy mode)")
+	return nil
+}
+
+// wireStratumCallbacks sets up callbacks shared by both solo and proxy modes.
+func (a *App) wireStratumCallbacks() {
 	a.stratum.OnMinerConnected = func(info stratum.MinerInfo) {
 		a.registry.Register(miner.MinerInfo{
 			ID:          info.ID,
@@ -207,9 +351,9 @@ func (a *App) StartStratum() error {
 	}
 
 	a.stratum.OnShareAccepted = func(minerID string, sessionDiff, actualDiff float64) {
-		a.registry.RecordShare(minerID, actualDiff, true)       // actual diff for per-miner bestDiff
-		a.stats.RecordShare(minerID, sessionDiff, true)         // session diff for hashrate estimation
-		a.stats.RecordBestDifficulty(actualDiff)                // actual diff for global bestDiff
+		a.registry.RecordShare(minerID, actualDiff, true)
+		a.stats.RecordShare(minerID, sessionDiff, true)
+		a.stats.RecordBestDifficulty(actualDiff)
 		if a.buffer != nil {
 			a.buffer.AddShare(database.ShareEntry{
 				Timestamp:   time.Now().Unix(),
@@ -258,7 +402,7 @@ func (a *App) StartStratum() error {
 			})
 			a.log.Infof("app", "BLOCK ACCEPTED! Hash: %s Height: %d", hash, height)
 		} else {
-			a.log.Warnf("app", "Block candidate rejected by node. Hash: %s Height: %d", hash, height)
+			a.log.Warnf("app", "Block candidate rejected. Hash: %s Height: %d", hash, height)
 		}
 	}
 
@@ -274,49 +418,13 @@ func (a *App) StartStratum() error {
 			a.db.SaveWorkerDiff(workerName, diff)
 		}
 	}
-
-	// Pre-fetch the first block template BEFORE accepting miners so the
-	// first reconnecting device gets work immediately (no "waiting for
-	// block template" gap).
-	tmpl, err := a.nodeClient.GetBlockTemplate(coinDef.GBTRules)
-	if err != nil {
-		a.log.Errorf("app", "initial block template fetch failed: %v (miners will wait for next poll)", err)
-	} else {
-		a.stratum.NewBlockTemplate(tmpl)
-		a.blockHeight = tmpl.Height
-		a.updateDiffFromTemplate(tmpl)
-		a.log.Infof("app", "initial block template ready: height=%d diff=%.2f", tmpl.Height, a.networkDiff)
-	}
-
-	if err := a.stratum.Start(); err != nil {
-		return err
-	}
-
-	// Start chain monitor for ongoing block updates
-	a.monitor = node.NewChainMonitor(a.nodeClient, 500*time.Millisecond, coinDef.GBTRules)
-	a.monitor.SetRefreshInterval(10 * time.Second) // Refresh template for miners that don't roll ntime/en2 (e.g. BG01 cycles ~7s)
-	a.monitor.OnNewBlock = func(tmpl *node.BlockTemplate) {
-		a.log.Infof("app", "new block template: height=%d txns=%d", tmpl.Height, len(tmpl.Transactions))
-		a.stratum.NewBlockTemplate(tmpl)
-		a.blockHeight = tmpl.Height
-		a.updateDiffFromTemplate(tmpl)
-		runtime.EventsEmit(a.ctx, "node:new-block", map[string]interface{}{
-			"height": tmpl.Height,
-		})
-	}
-	a.monitor.OnTemplateRefresh = func(tmpl *node.BlockTemplate) {
-		a.stratum.RefreshBlockTemplate(tmpl)
-	}
-	a.monitor.SetOnError(func(err error) {
-		a.log.Errorf("app", "chain monitor error: %v", err)
-	})
-	a.monitor.Start()
-
-	a.log.Info("app", "stratum server started")
-	return nil
 }
 
 func (a *App) StopStratum() error {
+	if a.upstream != nil {
+		a.upstream.Stop()
+		a.upstream = nil
+	}
 	if a.monitor != nil {
 		a.monitor.Stop()
 		a.monitor = nil
@@ -326,7 +434,6 @@ func (a *App) StopStratum() error {
 	}
 
 	// Clear stale state so restart doesn't misattribute hashrate.
-	// Share records reference session IDs that no longer exist.
 	a.stats.ClearShareRecords()
 	a.registry.Clear()
 
@@ -757,6 +864,98 @@ func (a *App) GetStratumURL() string {
 	return fmt.Sprintf("stratum+tcp://%s:%d", localIP, a.config.Stratum.Port)
 }
 
+// GetMiningMode returns the current mining mode ("solo" or "proxy").
+func (a *App) GetMiningMode() string {
+	mode := a.config.MiningMode
+	if mode == "" {
+		return "solo"
+	}
+	return mode
+}
+
+// TestUpstreamConnection tests connectivity to an upstream pool.
+func (a *App) TestUpstreamConnection(url, worker, password string) map[string]interface{} {
+	if password == "" {
+		password = "x"
+	}
+
+	uc := upstream.NewClient(url, worker, password, a.log)
+	err := uc.Connect()
+	if err != nil {
+		return map[string]interface{}{
+			"connected": false,
+			"error":     err.Error(),
+		}
+	}
+	defer uc.Stop()
+
+	// Wait briefly for a job to arrive (gives us nBits for difficulty)
+	time.Sleep(2 * time.Second)
+
+	result := map[string]interface{}{
+		"connected":       true,
+		"extranonce1":     uc.Extranonce1(),
+		"extranonce2Size": uc.Extranonce2Size(),
+		"localEN2Size":    uc.LocalEN2Size(),
+		"upstreamDiff":    uc.UpstreamDifficulty(),
+	}
+
+	if nbits := uc.LastNBits(); nbits != "" {
+		result["lastNBits"] = nbits
+		// Compute network difficulty from nBits
+		target := stratum.CompactToBig(nbits)
+		if target.Sign() > 0 {
+			pdiff1 := stratum.Pdiff1Target()
+			netDiff := new(big.Float).SetInt(pdiff1)
+			netDiff.Quo(netDiff, new(big.Float).SetInt(target))
+			nd, _ := netDiff.Float64()
+			result["networkDiff"] = nd
+		}
+	}
+
+	return result
+}
+
+// GetUpstreamStatus returns connection state of the upstream pool.
+func (a *App) GetUpstreamStatus() map[string]interface{} {
+	if a.upstream == nil {
+		return map[string]interface{}{
+			"connected": false,
+			"mode":      a.GetMiningMode(),
+		}
+	}
+	return map[string]interface{}{
+		"connected":    a.upstream.IsConnected(),
+		"authorized":   a.upstream.IsAuthorized(),
+		"extranonce1":  a.upstream.Extranonce1(),
+		"upstreamDiff": a.upstream.UpstreamDifficulty(),
+		"mode":         "proxy",
+	}
+}
+
+// updateNetworkDiffFromNBits computes network difficulty from a compact target.
+func (a *App) updateNetworkDiffFromNBits(nbitsHex string) {
+	if nbitsHex == "" {
+		return
+	}
+	nbitsBytes, err := hex.DecodeString(nbitsHex)
+	if err != nil || len(nbitsBytes) != 4 {
+		return
+	}
+	_ = binary.BigEndian.Uint32(nbitsBytes) // validate it parses
+
+	target := stratum.CompactToBig(nbitsHex)
+	if target.Sign() <= 0 {
+		return
+	}
+
+	pdiff1 := stratum.Pdiff1Target()
+	netDiff := new(big.Float).SetInt(pdiff1)
+	netDiff.Quo(netDiff, new(big.Float).SetInt(target))
+	nd, _ := netDiff.Float64()
+	a.networkDiff = nd
+}
+
 // === Database ===
 
 // GetDatabaseInfo returns the database file path and total disk usage in bytes.
@@ -834,29 +1033,29 @@ func (a *App) statsLoop() {
 }
 
 func (a *App) refreshNodeInfo() {
-	if info, err := a.nodeClient.GetMiningInfo(); err == nil {
-		// Only use getmininginfo difficulty when stratum is NOT running.
-		// When stratum IS running, networkDiff is derived from the block
-		// template's nBits (the actual target for the algorithm being mined).
-		// For multi-algo coins like DigiByte, getmininginfo.difficulty may
-		// reflect a different algorithm than what miners are solving.
-		if a.stratum == nil || !a.stratum.IsRunning() {
-			a.networkDiff = info.Difficulty
-		}
-		a.networkHashrate = info.NetworkHashPS
-		a.blockHeight = info.Blocks
-	}
-}
-
-// updateDiffFromTemplate computes the actual mining difficulty from the block
-// template's compact target (nBits). This is the authoritative difficulty for
-// the algorithm being mined and is correct for both single-algo (BTC) and
-// multi-algo (DGB) coins.
-func (a *App) updateDiffFromTemplate(tmpl *node.BlockTemplate) {
-	if tmpl.Bits == "" {
+	// In proxy mode, network info comes from upstream job nBits
+	if a.config.MiningMode == "proxy" {
 		return
 	}
-	a.networkDiff = stratum.DifficultyFromBits(tmpl.Bits)
+	if info, err := a.nodeClient.GetMiningInfo(); err == nil {
+		a.blockHeight = info.Blocks
+
+		// For multi-algo coins (DGB), use the per-algorithm difficulty and
+		// hashrate from the "difficulties"/"networkhashesps" maps. These are
+		// always correct regardless of which algorithm's turn it is.
+		miningAlgo := coin.Get(a.config.Mining.Coin).MiningAlgo
+		if miningAlgo != "" && len(info.Difficulties) > 0 {
+			if algoDiff, ok := info.Difficulties[miningAlgo]; ok {
+				a.networkDiff = algoDiff
+			}
+			if algoHash, ok := info.NetworkHashesPSs[miningAlgo]; ok {
+				a.networkHashrate = algoHash
+			}
+		} else {
+			a.networkDiff = info.Difficulty
+			a.networkHashrate = info.NetworkHashPS
+		}
+	}
 }
 
 func (a *App) loadStatsFromDB() {

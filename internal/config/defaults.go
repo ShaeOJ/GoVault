@@ -31,5 +31,9 @@ func Defaults() *Config {
 			Theme:    "dark",
 			LogLevel: "info",
 		},
+		Proxy: ProxyConfig{
+			Password: "x",
+		},
+		MiningMode: "solo",
 	}
 }

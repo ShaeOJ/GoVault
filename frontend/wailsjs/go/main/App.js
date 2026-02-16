@@ -46,6 +46,10 @@ export function GetMiners() {
   return window['go']['main']['App']['GetMiners']();
 }
 
+export function GetMiningMode() {
+  return window['go']['main']['App']['GetMiningMode']();
+}
+
 export function GetNodeStatus() {
   return window['go']['main']['App']['GetNodeStatus']();
 }
@@ -56,6 +60,10 @@ export function GetRecentLogs(arg1) {
 
 export function GetStratumURL() {
   return window['go']['main']['App']['GetStratumURL']();
+}
+
+export function GetUpstreamStatus() {
+  return window['go']['main']['App']['GetUpstreamStatus']();
 }
 
 export function IsStratumRunning() {
@@ -84,6 +92,10 @@ export function StopStratum() {
 
 export function TestNodeConnection(arg1, arg2, arg3, arg4, arg5) {
   return window['go']['main']['App']['TestNodeConnection'](arg1, arg2, arg3, arg4, arg5);
+}
+
+export function TestUpstreamConnection(arg1, arg2, arg3) {
+  return window['go']['main']['App']['TestUpstreamConnection'](arg1, arg2, arg3);
 }
 
 export function UpdateConfig(arg1) {

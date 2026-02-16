@@ -132,6 +132,57 @@ func (jm *JobManager) CreateJob(tmpl *node.BlockTemplate, extranonce1Size int) (
 	return job, nil
 }
 
+// RegisterUpstreamJob creates a Job from raw upstream stratum fields.
+// Unlike CreateJob, this does not build a coinbase or merkle branches — it
+// stores the upstream-provided values directly. Template is nil.
+func (jm *JobManager) RegisterUpstreamJob(
+	jobID, prevHash, coinbase1, coinbase2 string,
+	merkleBranches []string,
+	version, nbits, ntime string,
+	cleanJobs bool,
+) *Job {
+	if merkleBranches == nil {
+		merkleBranches = []string{}
+	}
+
+	job := &Job{
+		ID:             jobID,
+		PrevHash:       prevHash,
+		Coinbase1:      coinbase1,
+		Coinbase2:      coinbase2,
+		MerkleBranches: merkleBranches,
+		Version:        version,
+		NBits:          nbits,
+		NTime:          ntime,
+		Template:       nil, // proxy mode: no local template
+	}
+
+	jm.mu.Lock()
+	if cleanJobs {
+		jm.jobs = make(map[string]*Job)
+	}
+	jm.jobs[jobID] = job
+	// Trim old jobs
+	if len(jm.jobs) > jm.maxJobs {
+		var oldest string
+		var oldestAge int
+		for id := range jm.jobs {
+			// In proxy mode job IDs are opaque strings from upstream,
+			// so we just count backwards to find the oldest entry.
+			oldestAge++
+			if oldestAge == 1 || id < oldest {
+				oldest = id
+			}
+		}
+		if oldest != jobID {
+			delete(jm.jobs, oldest)
+		}
+	}
+	jm.mu.Unlock()
+
+	return job
+}
+
 func (jm *JobManager) GetJob(id string) *Job {
 	jm.mu.RLock()
 	defer jm.mu.RUnlock()

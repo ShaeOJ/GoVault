@@ -16,9 +16,19 @@ type Config struct {
 	Mining  MiningConfig  `json:"mining"`
 	Vardiff VardiffConfig `json:"vardiff"`
 	App     AppConfig     `json:"app"`
+	Proxy   ProxyConfig   `json:"proxy"`
+
+	// MiningMode selects "solo" (local node) or "proxy" (upstream pool).
+	MiningMode string `json:"miningMode"`
 
 	path string
 	mu   sync.RWMutex
+}
+
+type ProxyConfig struct {
+	URL        string `json:"url"`
+	WorkerName string `json:"workerName"`
+	Password   string `json:"password"`
 }
 
 type NodeConfig struct {
@@ -96,6 +106,11 @@ func Load() (*Config, error) {
 		return nil, fmt.Errorf("parse config: %w", err)
 	}
 
+	// Backward compat: empty mining mode defaults to solo
+	if cfg.MiningMode == "" {
+		cfg.MiningMode = "solo"
+	}
+
 	return cfg, nil
 }
 
@@ -128,23 +143,41 @@ func (c *Config) Update(newCfg *Config) error {
 	c.Mining = newCfg.Mining
 	c.Vardiff = newCfg.Vardiff
 	c.App = newCfg.App
+	c.Proxy = newCfg.Proxy
+	c.MiningMode = newCfg.MiningMode
 	c.mu.Unlock()
 	return c.Save()
 }
 
 func (c *Config) Validate() error {
+	// Normalize empty mining mode to "solo" for backward compatibility
+	if c.MiningMode == "" {
+		c.MiningMode = "solo"
+	}
+
 	if c.Stratum.Port < 1 || c.Stratum.Port > 65535 {
 		return fmt.Errorf("invalid stratum port: %d", c.Stratum.Port)
 	}
-	if c.Node.Port < 1 || c.Node.Port > 65535 {
-		return fmt.Errorf("invalid node port: %d", c.Node.Port)
-	}
-	if c.Mining.PayoutAddress != "" {
-		coinDef := coin.Get(c.Mining.Coin)
-		if valid, _ := coin.ValidateAddress(coinDef, c.Mining.PayoutAddress); !valid {
-			return fmt.Errorf("invalid %s address format: %s", coinDef.Name, c.Mining.PayoutAddress)
+
+	if c.MiningMode == "proxy" {
+		if c.Proxy.URL == "" {
+			return fmt.Errorf("proxy mode requires a pool URL")
+		}
+		if c.Proxy.WorkerName == "" {
+			return fmt.Errorf("proxy mode requires a worker name")
+		}
+	} else {
+		if c.Node.Port < 1 || c.Node.Port > 65535 {
+			return fmt.Errorf("invalid node port: %d", c.Node.Port)
+		}
+		if c.Mining.PayoutAddress != "" {
+			coinDef := coin.Get(c.Mining.Coin)
+			if valid, _ := coin.ValidateAddress(coinDef, c.Mining.PayoutAddress); !valid {
+				return fmt.Errorf("invalid %s address format: %s", coinDef.Name, c.Mining.PayoutAddress)
+			}
 		}
 	}
+
 	if c.Vardiff.MinDiff <= 0 {
 		return fmt.Errorf("vardiff min_diff must be positive")
 	}

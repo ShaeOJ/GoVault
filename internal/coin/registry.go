@@ -44,6 +44,7 @@ var Coins = map[string]*CoinDef{
 		DefaultRPCUsername: "digibyte",
 		GBTRules:           []string{"segwit"},
 		TargetBlockTimeSec: 60,
+		MiningAlgo:         "sha256d",
 	},
 	"bc2": {
 		Name:               "Bitcoin II",

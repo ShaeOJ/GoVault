@@ -119,15 +119,17 @@ func (sv *ShareValidator) ValidateShare(extranonce1 string, sub ShareSubmission)
 	}
 
 	// Check if this meets the network target (block found!)
-	networkTarget := compactToBig(job.NBits)
+	networkTarget := CompactToBig(job.NBits)
 	if hashInt.Cmp(networkTarget) <= 0 {
 		result.BlockFound = true
 		// Hash in display order (reversed)
 		result.BlockHash = hex.EncodeToString(hashReversed)
-		// Build full block hex for submission
-		blockHex, err := buildFullBlock(job, coinbaseBytes, header)
-		if err == nil {
-			result.BlockHex = blockHex
+		// Build full block hex for submission (only in solo mode where Template is set)
+		if job.Template != nil {
+			blockHex, err := buildFullBlock(job, coinbaseBytes, header)
+			if err == nil {
+				result.BlockHex = blockHex
+			}
 		}
 	}
 
@@ -261,8 +263,13 @@ func buildFullBlock(job *Job, coinbaseTx []byte, header []byte) (string, error) 
 	return hex.EncodeToString(block), nil
 }
 
-// compactToBig converts an nBits compact target to a big.Int.
-func compactToBig(nbitsHex string) *big.Int {
+// Pdiff1Target returns the pool difficulty-1 target (used for difficulty calculations).
+func Pdiff1Target() *big.Int {
+	return new(big.Int).Set(pdiff1Target)
+}
+
+// CompactToBig converts an nBits compact target to a big.Int.
+func CompactToBig(nbitsHex string) *big.Int {
 	nbitsBytes, _ := hex.DecodeString(nbitsHex)
 	if len(nbitsBytes) != 4 {
 		return new(big.Int)
@@ -287,21 +294,6 @@ func compactToBig(nbitsHex string) *big.Int {
 	}
 
 	return &target
-}
-
-// DifficultyFromBits computes the pool difficulty (pdiff) from a compact
-// nBits target. This gives the actual mining difficulty for the algorithm
-// in the block template, which may differ from getmininginfo on multi-algo
-// coins like DigiByte.
-func DifficultyFromBits(nbitsHex string) float64 {
-	target := compactToBig(nbitsHex)
-	if target.Sign() == 0 {
-		return 0
-	}
-	diff := new(big.Float).SetInt(pdiff1Target)
-	diff.Quo(diff, new(big.Float).SetInt(target))
-	result, _ := diff.Float64()
-	return result
 }
 
 // DifficultyToTarget converts a pool difficulty to a target big.Int.

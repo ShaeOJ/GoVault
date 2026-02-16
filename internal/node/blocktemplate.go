@@ -68,11 +68,16 @@ type BlockchainInfo struct {
 }
 
 type MiningInfo struct {
-	Blocks           int64   `json:"blocks"`
-	Difficulty       float64 `json:"difficulty"`
-	NetworkHashPS    float64 `json:"networkhashps"`
-	PooledTx         int     `json:"pooledtx"`
-	Chain            string  `json:"chain"`
+	Blocks        int64   `json:"blocks"`
+	Difficulty    float64 `json:"difficulty"`
+	NetworkHashPS float64 `json:"networkhashps"`
+	PooledTx      int     `json:"pooledtx"`
+	Chain         string  `json:"chain"`
+
+	// Multi-algo fields (DigiByte) — present when node supports multiple PoW algorithms
+	PowAlgo          string             `json:"pow_algo"`           // current template's algo: "sha256d", "scrypt", etc.
+	Difficulties     map[string]float64 `json:"difficulties"`       // per-algo difficulties
+	NetworkHashesPSs map[string]float64 `json:"networkhashesps"`    // per-algo hashrates
 }
 
 type NetworkInfo struct {

@@ -6,11 +6,12 @@ import (
 	"govault/internal/config"
 	"govault/internal/logger"
 	"govault/internal/node"
+	"govault/internal/upstream"
+	"math/rand"
 	"net"
 	"sync"
 	"sync/atomic"
 	"time"
-	"math/rand"
 )
 
 // Server is the Stratum V1 TCP server.
@@ -37,6 +38,12 @@ type Server struct {
 	currentJobMu sync.RWMutex
 	currentJobVal *Job
 
+	// Proxy mode fields
+	proxyMode      bool
+	upstreamEN1    string
+	upstreamDiff   float64
+	upstreamDiffMu sync.RWMutex
+
 	// Event callbacks
 	OnMinerConnected    func(MinerInfo)
 	OnMinerDisconnected func(string)
@@ -45,6 +52,7 @@ type Server struct {
 	OnBlockFound        func(hash string, height int64, accepted bool)
 	LookupWorkerDiff    func(workerName string) float64
 	OnDiffChanged       func(workerName string, diff float64)
+	OnShareForward      func(workerName, jobID, fullEN2, ntime, nonce, versionBits string) (bool, string)
 }
 
 func NewServer(
@@ -194,8 +202,60 @@ func (s *Server) removeSession(session *Session) {
 }
 
 func (s *Server) generateExtranonce1() string {
+	if s.proxyMode {
+		// In proxy mode: upstream_en1 + 2-byte miner prefix
+		counter := s.nextEN1.Add(1) & 0xFFFF
+		return s.upstreamEN1 + fmt.Sprintf("%04x", counter)
+	}
 	val := s.nextEN1.Add(1)
 	return fmt.Sprintf("%08x", val)
+}
+
+// SetProxyMode configures the server for proxy operation.
+func (s *Server) SetProxyMode(upstreamEN1 string, localEN2Size int) {
+	s.proxyMode = true
+	s.upstreamEN1 = upstreamEN1
+	s.extranonce2Size = localEN2Size
+}
+
+// IsProxyMode returns true if the server is in proxy mode.
+func (s *Server) IsProxyMode() bool {
+	return s.proxyMode
+}
+
+// SetUpstreamDifficulty sets the current upstream pool difficulty.
+func (s *Server) SetUpstreamDifficulty(diff float64) {
+	s.upstreamDiffMu.Lock()
+	s.upstreamDiff = diff
+	s.upstreamDiffMu.Unlock()
+}
+
+// UpstreamDifficulty returns the current upstream pool difficulty.
+func (s *Server) UpstreamDifficulty() float64 {
+	s.upstreamDiffMu.RLock()
+	defer s.upstreamDiffMu.RUnlock()
+	return s.upstreamDiff
+}
+
+// BroadcastUpstreamJob registers a job from upstream and broadcasts to all miners.
+func (s *Server) BroadcastUpstreamJob(params *upstream.JobParams) {
+	job := s.jobManager.RegisterUpstreamJob(
+		params.JobID,
+		params.PrevHash,
+		params.Coinbase1,
+		params.Coinbase2,
+		params.MerkleBranches,
+		params.Version,
+		params.NBits,
+		params.NTime,
+		params.CleanJobs,
+	)
+
+	if params.CleanJobs {
+		s.shareValidator.CleanDuplicates(s.jobManager.ActiveJobIDs())
+	}
+
+	s.BroadcastJob(job, params.CleanJobs)
 }
 
 // BroadcastJob sends a new job to all connected and authorized miners.
