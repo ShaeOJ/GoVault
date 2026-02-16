@@ -234,6 +234,20 @@
     proxySaving = false;
   }
 
+  const poolPresets = [
+    { name: 'CKPool Solo', url: 'solo.ckpool.org:3333', desc: 'Most popular solo pool, 2% fee' },
+    { name: 'CKPool Solo (High Diff)', url: 'solo.ckpool.org:3334', desc: 'For high-hashrate setups' },
+    { name: 'Public Pool', url: 'public-pool.io:21496', desc: 'Open source, no fee solo pool' },
+    { name: 'Firepool', url: 'btc.firepool.ca:4333', desc: 'Canadian solo pool' },
+  ];
+
+  function applyPreset(preset: typeof poolPresets[0]) {
+    proxyUrl = preset.url;
+    proxyTestResult = null;
+    proxyTestError = '';
+    proxySaveSuccess = false;
+  }
+
   function setMode(mode: 'solo' | 'proxy') {
     miningMode = mode;
     // Clear results when switching
@@ -651,6 +665,29 @@
           {/if}
         </div>
 
+        <!-- Pool Presets -->
+        <div class="rounded-xl p-6 card-glow" style="background-color: var(--bg-card);">
+          <h3 class="text-sm font-medium font-tech uppercase tracking-wider mb-3" style="color: var(--text-secondary);">Pool Presets</h3>
+          <div class="space-y-2">
+            {#each poolPresets as preset}
+              <button
+                class="w-full text-left rounded-lg p-3 transition-all"
+                style="background-color: var(--bg-secondary); border: 1px solid {proxyUrl === preset.url ? 'var(--accent)' : 'transparent'}; {proxyUrl === preset.url ? 'box-shadow: 0 0 8px rgba(var(--accent-rgb), 0.15);' : ''}"
+                on:click={() => applyPreset(preset)}
+              >
+                <div class="flex items-center justify-between">
+                  <span class="text-sm font-medium font-tech" style="color: {proxyUrl === preset.url ? 'var(--accent)' : 'var(--text-primary)'};">{preset.name}</span>
+                  {#if proxyUrl === preset.url}
+                    <span class="text-[10px] font-tech uppercase px-1.5 py-0.5 rounded" style="background: rgba(var(--accent-rgb), 0.15); color: var(--accent);">Selected</span>
+                  {/if}
+                </div>
+                <div class="text-xs font-data mt-0.5" style="color: var(--text-secondary);">{preset.url}</div>
+                <div class="text-xs mt-0.5" style="color: var(--text-secondary); opacity: 0.7;">{preset.desc}</div>
+              </button>
+            {/each}
+          </div>
+        </div>
+
         <!-- How it works -->
         <div class="rounded-xl p-6 card-glow" style="background-color: var(--bg-card);">
           <h3 class="text-sm font-medium font-tech uppercase tracking-wider mb-3" style="color: var(--text-secondary);">How Proxy Mode Works</h3>
@@ -658,13 +695,6 @@
             <p>GoVault connects as a single miner to the upstream pool and relays work to all your local miners.</p>
             <p>Each miner gets its own difficulty via vardiff. Shares that meet the upstream difficulty are forwarded to the pool.</p>
             <p>Hashrate tracking, miner monitoring, and all dashboard stats work the same as solo mode.</p>
-            <div class="rounded-lg p-3 mt-3" style="background-color: var(--bg-secondary);">
-              <div class="font-tech uppercase tracking-wider text-[10px] mb-1.5" style="color: var(--accent);">Popular Solo Pools</div>
-              <div class="font-data space-y-1">
-                <div>solo.ckpool.org:3333</div>
-                <div>solo.ckpool.org:3334 <span style="opacity: 0.5;">(high diff)</span></div>
-              </div>
-            </div>
           </div>
         </div>
       </div>
