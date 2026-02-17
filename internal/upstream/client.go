@@ -72,6 +72,7 @@ type Client struct {
 	OnJob        func(*JobParams)
 	OnDifficulty func(float64)
 	OnDisconnect func(error)
+	OnReconnect  func() // called after successful reconnect (new EN1 assigned)
 
 	// Buffer for early job notifications received before OnJob is wired.
 	earlyJob pendingJob
@@ -646,8 +647,13 @@ func (c *Client) reconnectLoop() {
 			continue
 		}
 
-		c.log.Infof("upstream", "reconnected to %s (vroll=%v)", addr, c.versionRolling)
+		c.log.Infof("upstream", "reconnected to %s (en1=%s en2_size=%d local_en2=%d vroll=%v)",
+			addr, c.extranonce1, c.extranonce2Size, c.localEN2Size, c.versionRolling)
 		backoff = time.Second
+
+		if c.OnReconnect != nil {
+			c.OnReconnect()
+		}
 	}
 }
 

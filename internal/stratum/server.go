@@ -226,6 +226,34 @@ func (s *Server) IsProxyMode() bool {
 	return s.proxyMode
 }
 
+// UpdateProxyState updates upstream EN1 and version mask after a reconnect,
+// then kicks all miners so they reconnect and get new EN1-based sessions.
+func (s *Server) UpdateProxyState(upstreamEN1 string, localEN2Size int, versionMask uint32) {
+	s.upstreamEN1 = upstreamEN1
+	s.extranonce2Size = localEN2Size
+	s.proxyVersionMask = versionMask
+
+	s.log.Infof("stratum", "upstream reconnected — new EN1=%s, kicking %d miners to reconnect", upstreamEN1, s.SessionCount())
+
+	// Send client.reconnect to all authorized miners, then close their connections.
+	// They'll reconnect immediately and get new sessions with the updated EN1.
+	s.sessionMu.RLock()
+	for _, session := range s.sessions {
+		if session.authorized {
+			session.sendReconnect(3)
+		}
+	}
+	s.sessionMu.RUnlock()
+
+	time.Sleep(200 * time.Millisecond)
+
+	s.sessionMu.Lock()
+	for _, session := range s.sessions {
+		session.conn.Close()
+	}
+	s.sessionMu.Unlock()
+}
+
 // SetUpstreamDifficulty sets the current upstream pool difficulty.
 func (s *Server) SetUpstreamDifficulty(diff float64) {
 	s.upstreamDiffMu.Lock()

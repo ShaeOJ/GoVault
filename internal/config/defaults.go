@@ -28,8 +28,9 @@ func Defaults() *Config {
 			VariancePct:     30,
 		},
 		App: AppConfig{
-			Theme:    "dark",
-			LogLevel: "info",
+			Theme:           "dark",
+			LogLevel:        "info",
+			ElectricityCost: 0.10,
 		},
 		Proxy: ProxyConfig{
 			Password: "x",

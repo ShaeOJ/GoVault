@@ -16,6 +16,7 @@
   let retargetTimeSec = 90;
   let variancePct = 30;
   let logLevel = 'info';
+  let electricityCost = 0.10;
   let selectedCoin = 'btc';
 
   let saving = false;
@@ -64,6 +65,7 @@
         retargetTimeSec = cfg.vardiff?.retargetTimeSec || 90;
         variancePct = cfg.vardiff?.variancePct || 30;
         logLevel = cfg.app?.logLevel || 'info';
+        electricityCost = cfg.app?.electricityCost ?? 0.10;
       }
       stratumURL = await GetStratumURL();
       const dbInfo = await GetDatabaseInfo();
@@ -108,7 +110,7 @@
       cfg.stratum = { port: stratumPort, maxConn, autoStart };
       cfg.mining = { coin: selectedCoin, payoutAddress, coinbaseTag };
       cfg.vardiff = { minDiff, maxDiff, targetTimeSec, retargetTimeSec, variancePct };
-      cfg.app = { ...cfg.app, logLevel };
+      cfg.app = { ...cfg.app, logLevel, electricityCost };
       await UpdateConfig(cfg);
       saveMsg = 'Settings saved!';
       setTimeout(() => saveMsg = '', 3000);
@@ -305,6 +307,18 @@
               <option value="warn">Warning</option>
               <option value="error">Error</option>
             </select>
+          </div>
+          <div>
+            <label class="block text-xs mb-1.5 inline-flex items-center gap-1" style="color: var(--text-secondary);">Electricity Cost ($/kWh) <Info tip="Used to estimate daily power costs on the Miners page" size={12} /></label>
+            <input
+              bind:value={electricityCost}
+              type="number"
+              step="0.01"
+              min="0"
+              class="w-full rounded-lg px-3 py-2 text-sm input-themed"
+              placeholder="0.10"
+            />
+            <div class="text-xs mt-1" style="color: var(--text-secondary); opacity: 0.7;">US average ~$0.10/kWh</div>
           </div>
           {#if dbPath}
             <div>

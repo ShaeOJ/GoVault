@@ -46,7 +46,24 @@ type App struct {
 	networkHashrate float64
 	blockHeight    int64
 
+	// Fleet power cache (30s TTL)
+	fleetPowerCache miner.FleetPowerStats
+	fleetPowerTime  time.Time
+	fleetPowerMu    sync.Mutex
+
 	stopStats chan struct{}
+}
+
+// FleetOverview holds aggregated fleet stats for the Miners page.
+type FleetOverview struct {
+	TotalHashrate   float64 `json:"totalHashrate"`
+	BlockChance     float64 `json:"blockChance"`
+	TotalWatts      float64 `json:"totalWatts"`
+	PowerResponded  int     `json:"powerResponded"`
+	PowerQueried    int     `json:"powerQueried"`
+	DailyCost       float64 `json:"dailyCost"`
+	ElectricityCost float64 `json:"electricityCost"`
+	Efficiency      float64 `json:"efficiency"` // J/TH
 }
 
 // NewApp creates a new App application struct.
@@ -308,6 +325,20 @@ func (a *App) startProxy() error {
 		a.log.Errorf("app", "upstream disconnected: %v (reconnecting...)", err)
 	}
 
+	uc.OnReconnect = func() {
+		// Upstream assigned a new EN1 — update stratum server and kick
+		// all miners so they reconnect with new EN1-based sessions.
+		var vMask uint32
+		if uc.VersionRolling() && uc.VersionMask() != "" {
+			maskBytes, _ := hex.DecodeString(uc.VersionMask())
+			if len(maskBytes) == 4 {
+				vMask = binary.BigEndian.Uint32(maskBytes)
+			}
+		}
+		a.stratum.UpdateProxyState(uc.Extranonce1(), uc.LocalEN2Size(), vMask)
+		a.stratum.SetUpstreamDifficulty(uc.UpstreamDifficulty())
+	}
+
 	// Wire share forwarding: stratum → upstream
 	a.stratum.OnShareForward = func(workerName, jobID, fullEN2, ntime, nonce, versionBits string) (bool, string) {
 		// Use upstream authorized worker name, not local miner name
@@ -549,6 +580,67 @@ func (a *App) GetMiners() []miner.MinerInfo {
 		}
 	}
 	return miners
+}
+
+// GetFleetOverview returns aggregated stats for the Miners page fleet overview.
+func (a *App) GetFleetOverview() FleetOverview {
+	dash := a.GetDashboardStats()
+	overview := FleetOverview{
+		TotalHashrate:   dash.TotalHashrate,
+		BlockChance:     dash.BlockChance,
+		ElectricityCost: a.config.App.ElectricityCost,
+	}
+
+	// Collect unique miner IPs from active sessions
+	var ips []string
+	if a.stratum != nil && a.stratum.IsRunning() {
+		seen := make(map[string]bool)
+		for _, s := range a.stratum.GetSessions() {
+			host, _, err := net.SplitHostPort(s.IPAddress)
+			if err != nil {
+				host = s.IPAddress
+			}
+			if !seen[host] {
+				seen[host] = true
+				ips = append(ips, host)
+			}
+		}
+	}
+
+	// Query fleet power with 30s cache
+	a.fleetPowerMu.Lock()
+	if time.Since(a.fleetPowerTime) > 30*time.Second {
+		a.fleetPowerMu.Unlock()
+		// Query outside mutex
+		power := a.discovery.QueryFleetPower(ips)
+		a.fleetPowerMu.Lock()
+		// Double-check: only update if still stale
+		if time.Since(a.fleetPowerTime) > 30*time.Second {
+			a.fleetPowerCache = power
+			a.fleetPowerTime = time.Now()
+		}
+	}
+	power := a.fleetPowerCache
+	a.fleetPowerMu.Unlock()
+
+	overview.TotalWatts = power.TotalWatts
+	overview.PowerResponded = power.Responded
+	overview.PowerQueried = power.Queried
+
+	// Daily cost: watts * 24h / 1000 * $/kWh
+	if power.TotalWatts > 0 && overview.ElectricityCost > 0 {
+		overview.DailyCost = (power.TotalWatts * 24 / 1000) * overview.ElectricityCost
+	}
+
+	// Efficiency: J/TH = watts / (hashrate in TH/s)
+	if power.TotalWatts > 0 && dash.TotalHashrate > 0 {
+		thPerSec := dash.TotalHashrate / 1e12
+		if thPerSec > 0 {
+			overview.Efficiency = power.TotalWatts / thPerSec
+		}
+	}
+
+	return overview
 }
 
 // === Node ===

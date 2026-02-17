@@ -30,7 +30,7 @@ type axeOSSystemInfo struct {
 	Temp         float64 `json:"temp"`
 	VrTemp       float64 `json:"vrTemp"`
 	HashRate     float64 `json:"hashRate"`
-	BestDiff     string  `json:"bestDiff"`
+	BestDiff     interface{} `json:"bestDiff"`
 	FreeHeap     int     `json:"freeHeap"`
 	Hostname     string  `json:"hostname"`
 	ASICModel    string  `json:"ASICModel"`
@@ -39,6 +39,71 @@ type axeOSSystemInfo struct {
 	StratumUser  string  `json:"stratumUser"`
 	Version      string  `json:"version"`
 	BoardVersion string  `json:"boardVersion"`
+}
+
+// FleetPowerStats holds aggregated power data from AxeOS queries.
+type FleetPowerStats struct {
+	TotalWatts float64 `json:"totalWatts"`
+	Responded  int     `json:"responded"`
+	Queried    int     `json:"queried"`
+}
+
+// QueryFleetPower queries a list of IPs for AxeOS power data concurrently.
+// Non-AxeOS devices are silently skipped.
+func (d *Discovery) QueryFleetPower(ips []string) FleetPowerStats {
+	stats := FleetPowerStats{Queried: len(ips)}
+	if len(ips) == 0 {
+		return stats
+	}
+
+	var mu sync.Mutex
+	var wg sync.WaitGroup
+
+	for _, ip := range ips {
+		wg.Add(1)
+		go func(ip string) {
+			defer wg.Done()
+
+			url := fmt.Sprintf("http://%s/api/system/info", ip)
+			resp, err := d.client.Get(url)
+			if err != nil {
+				return
+			}
+			defer resp.Body.Close()
+
+			if resp.StatusCode != 200 {
+				return
+			}
+
+			body, err := io.ReadAll(resp.Body)
+			if err != nil {
+				return
+			}
+
+			var info axeOSSystemInfo
+			if err := json.Unmarshal(body, &info); err != nil {
+				return
+			}
+
+			watts := info.Power
+			// Fallback: compute from voltage (mV) × current (mA) if power not reported
+			if watts <= 0 && info.Voltage > 0 && info.Current > 0 {
+				watts = (info.Voltage * info.Current) / 1_000_000
+			}
+
+			if watts <= 0 {
+				return
+			}
+
+			mu.Lock()
+			stats.TotalWatts += watts
+			stats.Responded++
+			mu.Unlock()
+		}(ip)
+	}
+
+	wg.Wait()
+	return stats
 }
 
 // Discovery scans the local network for compatible mining devices.

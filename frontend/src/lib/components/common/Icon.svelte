@@ -128,6 +128,21 @@
         'M23 14l-4.64 4.36A9 9 0 0 1 3.51 15',
       ],
     },
+    // Power — Plug/zap: power symbol
+    power: {
+      paths: [
+        'M12 2v10',
+        'M8 4.2A8 8 0 1 0 16 4.2',
+      ],
+    },
+    // Dollar — Currency: circle with $ sign
+    dollar: {
+      paths: [
+        'M12 1v2',
+        'M12 21v2',
+        'M7 7.5c0-1.66 2.24-3 5-3s5 1.34 5 3-2.24 3-5 3-5 1.34-5 3 2.24 3 5 3 5-1.34 5-3',
+      ],
+    },
     // Signal/Active miners — Waves: concentric arcs
     waves: {
       paths: [

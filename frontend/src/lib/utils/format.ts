@@ -66,6 +66,25 @@ export function formatRatio(ratio: number): string {
   return ratio.toFixed(6);
 }
 
+export function formatPower(watts: number): string {
+  if (watts <= 0) return 'N/A';
+  if (watts >= 1000) return `${(watts / 1000).toFixed(2)} kW`;
+  return `${watts.toFixed(1)} W`;
+}
+
+export function formatCurrency(amount: number): string {
+  if (amount <= 0) return '$0.00';
+  return `$${amount.toFixed(2)}`;
+}
+
+export function formatEfficiency(watts: number, hashrate: number): string {
+  if (watts <= 0 || hashrate <= 0) return 'N/A';
+  const thPerSec = hashrate / 1e12;
+  if (thPerSec <= 0) return 'N/A';
+  const jPerTH = watts / thPerSec;
+  return `${jPerTH.toFixed(1)} J/TH`;
+}
+
 export function timeAgo(dateStr: string): string {
   if (!dateStr) return 'never';
   const now = Date.now();

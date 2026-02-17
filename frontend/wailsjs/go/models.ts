@@ -3,6 +3,7 @@ export namespace config {
 	export class AppConfig {
 	    theme: string;
 	    logLevel: string;
+	    electricityCost: number;
 	
 	    static createFrom(source: any = {}) {
 	        return new AppConfig(source);
@@ -12,6 +13,7 @@ export namespace config {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.theme = source["theme"];
 	        this.logLevel = source["logLevel"];
+	        this.electricityCost = source["electricityCost"];
 	    }
 	}
 	export class ProxyConfig {
@@ -171,6 +173,37 @@ export namespace logger {
 	        this.level = source["level"];
 	        this.component = source["component"];
 	        this.message = source["message"];
+	    }
+	}
+
+}
+
+export namespace main {
+	
+	export class FleetOverview {
+	    totalHashrate: number;
+	    blockChance: number;
+	    totalWatts: number;
+	    powerResponded: number;
+	    powerQueried: number;
+	    dailyCost: number;
+	    electricityCost: number;
+	    efficiency: number;
+	
+	    static createFrom(source: any = {}) {
+	        return new FleetOverview(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.totalHashrate = source["totalHashrate"];
+	        this.blockChance = source["blockChance"];
+	        this.totalWatts = source["totalWatts"];
+	        this.powerResponded = source["powerResponded"];
+	        this.powerQueried = source["powerQueried"];
+	        this.dailyCost = source["dailyCost"];
+	        this.electricityCost = source["electricityCost"];
+	        this.efficiency = source["efficiency"];
 	    }
 	}
 

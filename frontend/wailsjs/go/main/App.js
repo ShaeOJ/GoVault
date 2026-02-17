@@ -34,6 +34,10 @@ export function GetDatabaseInfo() {
   return window['go']['main']['App']['GetDatabaseInfo']();
 }
 
+export function GetFleetOverview() {
+  return window['go']['main']['App']['GetFleetOverview']();
+}
+
 export function GetHashrateHistory(arg1) {
   return window['go']['main']['App']['GetHashrateHistory'](arg1);
 }

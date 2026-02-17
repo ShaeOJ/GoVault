@@ -1,7 +1,7 @@
 <script lang="ts">
   import { onMount, onDestroy } from 'svelte';
   import { miners, selectedMiner, discoveredMiners } from '../lib/stores/miners';
-  import { formatHashrate, formatDifficulty, timeAgo } from '../lib/utils/format';
+  import { formatHashrate, formatDifficulty, formatChance, formatPower, formatCurrency, formatEfficiency, timeAgo } from '../lib/utils/format';
   import type { MinerInfo, DiscoveredMiner } from '../lib/stores/miners';
   import { EventsOn } from '../../wailsjs/runtime/runtime';
   import Icon from '../lib/components/common/Icon.svelte';
@@ -19,6 +19,19 @@
   let unsubs: (() => void)[] = [];
   let refreshInterval: ReturnType<typeof setInterval>;
   let sparklineInterval: ReturnType<typeof setInterval>;
+
+  // Fleet overview stats
+  interface FleetOverviewData {
+    totalHashrate: number;
+    blockChance: number;
+    totalWatts: number;
+    powerResponded: number;
+    powerQueried: number;
+    dailyCost: number;
+    electricityCost: number;
+    efficiency: number;
+  }
+  let fleet: FleetOverviewData | null = null;
 
   // Per-miner sparkline data cache
   let minerSparklines: Record<string, SparkPoint[]> = {};
@@ -97,9 +110,10 @@
 
   async function refreshMiners() {
     try {
-      const { GetMiners } = await import('../../wailsjs/go/main/App');
-      const m = await GetMiners();
+      const { GetMiners, GetFleetOverview } = await import('../../wailsjs/go/main/App');
+      const [m, fo] = await Promise.all([GetMiners(), GetFleetOverview()]);
       if (m) miners.set(m);
+      if (fo) fleet = fo;
     } catch {}
   }
 
@@ -195,6 +209,64 @@
       {/if}
     </button>
   </div>
+
+  <!-- Fleet Overview -->
+  {#if minerList.length > 0 && fleet}
+    <div class="grid grid-cols-2 lg:grid-cols-4 gap-4">
+      <!-- Total Hashrate -->
+      <div class="rounded-xl p-4 card-glow" style="background-color: var(--bg-card);">
+        <div class="flex items-center gap-2 mb-2">
+          <span style="color: var(--accent);"><Icon name="bolt" size={18} /></span>
+          <span class="text-xs font-tech uppercase tracking-wider" style="color: var(--text-secondary);">Total Hashrate</span>
+        </div>
+        <div class="text-xl font-bold data-readout">{formatHashrate(fleet.totalHashrate)}</div>
+      </div>
+
+      <!-- Block Chance -->
+      <div class="rounded-xl p-4 card-glow" style="background-color: var(--bg-card);">
+        <div class="flex items-center gap-2 mb-2">
+          <span style="color: var(--warning);"><Icon name="dice" size={18} /></span>
+          <span class="text-xs font-tech uppercase tracking-wider" style="color: var(--text-secondary);">Block Chance</span>
+        </div>
+        <div class="text-xl font-bold font-data" style="color: var(--warning);">{formatChance(fleet.blockChance)}</div>
+        <div class="text-xs mt-1" style="color: var(--text-secondary);">per day</div>
+      </div>
+
+      <!-- Fleet Power -->
+      <div class="rounded-xl p-4 card-glow" style="background-color: var(--bg-card);">
+        <div class="flex items-center gap-2 mb-2">
+          <span style="color: var(--accent);"><Icon name="power" size={18} /></span>
+          <span class="text-xs font-tech uppercase tracking-wider" style="color: var(--text-secondary);">Fleet Power</span>
+        </div>
+        <div class="text-xl font-bold font-data" style="color: var(--text-primary);">{formatPower(fleet.totalWatts)}</div>
+        <div class="text-xs mt-1" style="color: var(--text-secondary);">
+          {#if fleet.powerResponded > 0}
+            {formatEfficiency(fleet.totalWatts, fleet.totalHashrate)} &middot; {fleet.powerResponded} of {fleet.powerQueried} miners
+          {:else}
+            N/A
+          {/if}
+        </div>
+      </div>
+
+      <!-- Daily Cost -->
+      <div class="rounded-xl p-4 card-glow" style="background-color: var(--bg-card);">
+        <div class="flex items-center gap-2 mb-2">
+          <span style="color: var(--success);"><Icon name="dollar" size={18} /></span>
+          <span class="text-xs font-tech uppercase tracking-wider" style="color: var(--text-secondary);">Daily Cost</span>
+        </div>
+        <div class="text-xl font-bold font-data" style="color: var(--success);">
+          {fleet.powerResponded > 0 ? formatCurrency(fleet.dailyCost) : 'N/A'}
+        </div>
+        <div class="text-xs mt-1" style="color: var(--text-secondary);">
+          {#if fleet.powerResponded > 0}
+            at ${fleet.electricityCost.toFixed(2)}/kWh
+          {:else}
+            no AxeOS miners
+          {/if}
+        </div>
+      </div>
+    </div>
+  {/if}
 
   <!-- Discovered Miners -->
   {#if showDiscovery && discovered.length > 0}

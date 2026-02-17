@@ -61,8 +61,9 @@ type VardiffConfig struct {
 }
 
 type AppConfig struct {
-	Theme    string `json:"theme"`
-	LogLevel string `json:"logLevel"`
+	Theme           string  `json:"theme"`
+	LogLevel        string  `json:"logLevel"`
+	ElectricityCost float64 `json:"electricityCost"`
 }
 
 func configDir() (string, error) {
