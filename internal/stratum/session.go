@@ -522,18 +522,20 @@ func (s *Session) handleSuggestDifficulty(req *Request) {
 }
 
 // effectiveThreshold returns the difficulty to use per share for hashrate
-// estimation. This is the miner's actual submission threshold, not the
-// pool's session difficulty (which non-compliant miners may ignore).
+// estimation. For any fixed threshold T, counting shares >= T and recording
+// each at T gives correct hashrate: rate = H/(T*2^32), so totalDiff*2^32/window = H.
+// We prefer suggestedDiff (known immediately, stable) over minShareDiff
+// (takes many samples to converge and can drop far below the ASIC floor
+// with few shares due to the geometric distribution of share difficulties).
 func (s *Session) effectiveThreshold() float64 {
-	// Prefer observed ASIC floor (ground truth of actual submission behavior).
-	// ESP-Miner sends suggest_difficulty=1000 but submits everything above
-	// the hardware floor (~256 for BM1366), so suggestedDiff overcredits.
-	if s.minShareDiff > 0 {
-		return s.minShareDiff
-	}
-	// Before we have observations, use miner's suggested difficulty
+	// Prefer miner's suggested difficulty — ESP-Miner/AxeOS sends this
+	// immediately and it gives correct, stable hashrate estimates.
 	if s.suggestedDiff > 0 {
 		return s.suggestedDiff
+	}
+	// Fall back to observed ASIC floor for miners that don't suggest
+	if s.minShareDiff > 0 {
+		return s.minShareDiff
 	}
 	// Fallback to session difficulty (for compliant miners)
 	return s.currentDiff
