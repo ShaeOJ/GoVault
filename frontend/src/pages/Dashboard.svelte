@@ -27,6 +27,7 @@
   let chartRefreshInterval: ReturnType<typeof setInterval>;
   let coinName = 'Bitcoin';
   let coinSymbol = 'BTC';
+  let miningMode = 'solo';
   let stratumToggling = false;
   let stratumError = '';
   let clearingRejects = false;
@@ -61,6 +62,7 @@
       dashboardStats.set(s);
       // Get active coin info
       const cfg = await GetConfig();
+      miningMode = cfg?.miningMode || 'solo';
       const coins = await GetCoinList() || [];
       const activeCoin = coins.find((c: any) => c.id === (cfg?.mining?.coin || 'btc'));
       if (activeCoin) {
@@ -271,7 +273,7 @@
   <div class="flex items-center justify-between">
     <div>
       <h1 class="text-2xl font-bold font-tech uppercase tracking-wide" style="color: var(--text-primary);">Dashboard</h1>
-      <p class="text-sm" style="color: var(--text-secondary);">Solo mining {coinSymbol}</p>
+      <p class="text-sm" style="color: var(--text-secondary);">{miningMode === 'proxy' ? 'Proxy' : 'Solo'} mining {coinSymbol}</p>
     </div>
     <div class="flex items-center gap-2">
       {#if reconnectResult}

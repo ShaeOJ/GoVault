@@ -431,12 +431,15 @@ func (s *Session) handleSubmit(req *Request) {
 		}
 	}
 
-	// Hashrate: only qualifying shares (>= session difficulty) contribute,
-	// and only after vardiff has completed at least one retarget cycle.
-	// Before that, shares at the initial difficulty inflate hashrate estimates.
+	// Hashrate: use the effective threshold (observed ASIC floor if known,
+	// else suggested difficulty, else session difficulty). This avoids
+	// gross underestimation when session diff is still ramping up from a
+	// low start value — the miner only submits shares above its ASIC floor,
+	// so session diff << ASIC floor means far fewer shares than expected.
 	var hashrateDiff float64
-	if meetsTarget && (s.diffRestored || s.vardiffState.RetargetCount >= 2) {
-		hashrateDiff = s.currentDiff
+	et := s.effectiveThreshold()
+	if result.Difficulty >= et && (s.diffRestored || s.vardiffState.RetargetCount >= 1) {
+		hashrateDiff = et
 	}
 
 	if s.server.OnShareAccepted != nil {
