@@ -299,7 +299,7 @@ func (a *App) startProxy() error {
 			vMask = binary.BigEndian.Uint32(maskBytes)
 		}
 	}
-	a.stratum.SetProxyMode(uc.Extranonce1(), uc.LocalEN2Size(), vMask)
+	a.stratum.SetProxyMode(uc.Extranonce1(), uc.LocalEN2Size(), uc.PrefixBytes(), vMask)
 	a.stratum.SetUpstreamDifficulty(uc.UpstreamDifficulty())
 
 	a.wireStratumCallbacks()
@@ -335,7 +335,7 @@ func (a *App) startProxy() error {
 				vMask = binary.BigEndian.Uint32(maskBytes)
 			}
 		}
-		a.stratum.UpdateProxyState(uc.Extranonce1(), uc.LocalEN2Size(), vMask)
+		a.stratum.UpdateProxyState(uc.Extranonce1(), uc.LocalEN2Size(), uc.PrefixBytes(), vMask)
 		a.stratum.SetUpstreamDifficulty(uc.UpstreamDifficulty())
 	}
 

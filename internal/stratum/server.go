@@ -27,6 +27,7 @@ type Server struct {
 
 	extranonce2Size int
 	nextEN1         atomic.Uint32
+	nextSessionID   atomic.Uint32
 
 	running atomic.Bool
 	stopCh  chan struct{}
@@ -41,6 +42,7 @@ type Server struct {
 	// Proxy mode fields
 	proxyMode        bool
 	upstreamEN1      string
+	proxyPrefixBytes int    // bytes of EN2 used for miner prefix (0-2)
 	upstreamDiff     float64
 	upstreamDiffMu   sync.RWMutex
 	proxyVersionMask uint32 // version-rolling mask from upstream (0 = no rolling)
@@ -85,6 +87,7 @@ func NewServer(
 	// recycle across stop/start cycles. Lower 16 bits = counter space
 	// for 65536 connections per server instance (more than enough).
 	s.nextEN1.Store(rand.Uint32() & 0xFFFF0000)
+	s.nextSessionID.Store(rand.Uint32() & 0xFFFF0000)
 
 	return s
 }
@@ -169,7 +172,7 @@ func (s *Server) acceptLoop() {
 		}
 
 		en1 := s.generateExtranonce1()
-		sessionID := fmt.Sprintf("s_%s", en1)
+		sessionID := fmt.Sprintf("s_%08x", s.nextSessionID.Add(1))
 
 		session := newSession(sessionID, conn, s, en1)
 
@@ -204,9 +207,14 @@ func (s *Server) removeSession(session *Session) {
 
 func (s *Server) generateExtranonce1() string {
 	if s.proxyMode {
-		// In proxy mode: upstream_en1 + 2-byte miner prefix
-		counter := s.nextEN1.Add(1) & 0xFFFF
-		return s.upstreamEN1 + fmt.Sprintf("%04x", counter)
+		if s.proxyPrefixBytes == 0 {
+			// No prefix — all miners share the upstream EN2 space.
+			return s.upstreamEN1
+		}
+		mask := uint32((1 << (8 * s.proxyPrefixBytes)) - 1)
+		counter := s.nextEN1.Add(1) & mask
+		format := fmt.Sprintf("%%0%dx", s.proxyPrefixBytes*2)
+		return s.upstreamEN1 + fmt.Sprintf(format, counter)
 	}
 	val := s.nextEN1.Add(1)
 	return fmt.Sprintf("%08x", val)
@@ -214,10 +222,11 @@ func (s *Server) generateExtranonce1() string {
 
 // SetProxyMode configures the server for proxy operation.
 // versionMask is the upstream pool's version-rolling mask (0 = no rolling).
-func (s *Server) SetProxyMode(upstreamEN1 string, localEN2Size int, versionMask uint32) {
+func (s *Server) SetProxyMode(upstreamEN1 string, localEN2Size, prefixBytes int, versionMask uint32) {
 	s.proxyMode = true
 	s.upstreamEN1 = upstreamEN1
 	s.extranonce2Size = localEN2Size
+	s.proxyPrefixBytes = prefixBytes
 	s.proxyVersionMask = versionMask
 }
 
@@ -228,9 +237,10 @@ func (s *Server) IsProxyMode() bool {
 
 // UpdateProxyState updates upstream EN1 and version mask after a reconnect,
 // then kicks all miners so they reconnect and get new EN1-based sessions.
-func (s *Server) UpdateProxyState(upstreamEN1 string, localEN2Size int, versionMask uint32) {
+func (s *Server) UpdateProxyState(upstreamEN1 string, localEN2Size, prefixBytes int, versionMask uint32) {
 	s.upstreamEN1 = upstreamEN1
 	s.extranonce2Size = localEN2Size
+	s.proxyPrefixBytes = prefixBytes
 	s.proxyVersionMask = versionMask
 
 	s.log.Infof("stratum", "upstream reconnected — new EN1=%s, kicking %d miners to reconnect", upstreamEN1, s.SessionCount())

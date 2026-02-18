@@ -46,7 +46,8 @@ type Client struct {
 
 	extranonce1     string
 	extranonce2Size int
-	localEN2Size    int // upstream_en2_size - 2 (space for miner prefix)
+	localEN2Size    int // upstream_en2_size - prefixBytes
+	prefixBytes     int // bytes stolen from EN2 for miner prefix (0-2)
 
 	nextMinerPrefix atomic.Uint32
 	upstreamDiff    float64
@@ -167,6 +168,7 @@ func (c *Client) IsAuthorized() bool { return c.authorized.Load() }
 func (c *Client) Extranonce1() string    { return c.extranonce1 }
 func (c *Client) Extranonce2Size() int   { return c.extranonce2Size }
 func (c *Client) LocalEN2Size() int      { return c.localEN2Size }
+func (c *Client) PrefixBytes() int       { return c.prefixBytes }
 func (c *Client) WorkerName() string     { return c.workerName }
 func (c *Client) VersionRolling() bool   { return c.versionRolling }
 func (c *Client) VersionMask() string    { return c.versionMask }
@@ -193,10 +195,16 @@ func (c *Client) DrainEarlyJob() *JobParams {
 	return j
 }
 
-// AssignMinerPrefix allocates a 2-byte hex prefix for a local miner's EN2 space.
+// AssignMinerPrefix allocates a hex prefix for a local miner's EN2 space.
+// Prefix size varies (0-2 bytes) to ensure miners always get at least 4-byte EN2.
 func (c *Client) AssignMinerPrefix() (prefix string, en2Size int) {
-	val := c.nextMinerPrefix.Add(1) & 0xFFFF
-	return fmt.Sprintf("%04x", val), c.localEN2Size
+	if c.prefixBytes == 0 {
+		return "", c.localEN2Size
+	}
+	mask := uint32((1 << (8 * c.prefixBytes)) - 1)
+	val := c.nextMinerPrefix.Add(1) & mask
+	format := fmt.Sprintf("%%0%dx", c.prefixBytes*2) // e.g. "%02x" for 1 byte, "%04x" for 2
+	return fmt.Sprintf(format, val), c.localEN2Size
 }
 
 // SubmitShare forwards a share to the upstream pool.
@@ -294,8 +302,16 @@ func (c *Client) subscribe() error {
 	c.extranonce1 = en1
 	c.extranonce2Size = en2Size
 
-	// Reserve 2 bytes of EN2 space for miner prefixes
-	c.localEN2Size = en2Size - 2
+	// Reserve up to 2 bytes of EN2 space for miner prefixes, but ensure
+	// miners still get at least 4-byte EN2 (many ASIC firmware expect this).
+	c.prefixBytes = 2
+	if en2Size-c.prefixBytes < 4 {
+		c.prefixBytes = en2Size - 4
+		if c.prefixBytes < 0 {
+			c.prefixBytes = 0
+		}
+	}
+	c.localEN2Size = en2Size - c.prefixBytes
 	if c.localEN2Size < 1 {
 		c.localEN2Size = 1
 	}

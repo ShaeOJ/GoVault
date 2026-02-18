@@ -37,8 +37,6 @@ func (v *VardiffManager) StartDiffForUA(userAgent string) float64 {
 	switch {
 	case strings.Contains(ua, "nerdminer"):
 		return v.config.MinDiff // ~500 H/s, needs absolute minimum
-	case strings.Contains(ua, "nerdaxe"), strings.Contains(ua, "nerdqaxe"):
-		return 0.1 // ~500 KH/s–5 MH/s
 	default:
 		return v.StartDiff()
 	}

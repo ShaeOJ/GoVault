@@ -208,15 +208,15 @@ func (s *StatsAggregator) estimateHashrateAdaptive(maxWindow time.Duration, mine
 	}
 
 	// Adaptive window: use the time span from first share in window to now,
-	// but never less than 60 seconds (avoids huge spikes from a few early shares)
+	// but never less than 30 seconds (avoids huge spikes from a few early shares)
 	// and never more than the full window.
 	windowSec := now.Sub(earliest).Seconds()
 	maxSec := maxWindow.Seconds()
 	if windowSec > maxSec {
 		windowSec = maxSec
 	}
-	if windowSec < 60 {
-		windowSec = 60
+	if windowSec < 30 {
+		windowSec = 30
 	}
 
 	return totalDiff * math.Pow(2, 32) / windowSec

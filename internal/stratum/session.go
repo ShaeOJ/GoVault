@@ -37,9 +37,7 @@ type Session struct {
 	sharesRejected uint64
 	bestDifficulty float64
 
-	diffRestored  bool    // true if difficulty was restored from DB (skip warmup gate)
 	suggestedDiff float64 // from mining.suggest_difficulty (miner's threshold)
-	minShareDiff  float64 // lowest observed share difficulty (ASIC floor estimate)
 
 	// Difficulty transition grace period (matches ckpool diff_change_job_id).
 	// Shares for jobs issued before diffChangeJobID are validated against oldDiff.
@@ -305,7 +303,6 @@ func (s *Session) handleAuthorize(req *Request) {
 				stored = maxDiff
 			}
 			s.currentDiff = stored
-			s.diffRestored = true
 			s.sendSetDifficulty(stored)
 			s.server.log.Infof("stratum", "restored difficulty %.6f for %s", stored, workerName)
 		}
@@ -391,11 +388,6 @@ func (s *Session) handleSubmit(req *Request) {
 		s.bestDifficulty = result.Difficulty
 	}
 
-	// Track minimum share difficulty (estimates the miner's ASIC floor)
-	if s.minShareDiff == 0 || result.Difficulty < s.minShareDiff {
-		s.minShareDiff = result.Difficulty
-	}
-
 	s.sendResponse(req.ID, true, nil)
 
 	// Vardiff: only count shares meeting session difficulty for retarget.
@@ -431,15 +423,11 @@ func (s *Session) handleSubmit(req *Request) {
 		}
 	}
 
-	// Hashrate: use the effective threshold (observed ASIC floor if known,
-	// else suggested difficulty, else session difficulty). This avoids
-	// gross underestimation when session diff is still ramping up from a
-	// low start value — the miner only submits shares above its ASIC floor,
-	// so session diff << ASIC floor means far fewer shares than expected.
+	// Hashrate: record every qualifying share at session difficulty.
+	// Standard pool formula: count * diff * 2^32 / time = hashrate.
 	var hashrateDiff float64
-	et := s.effectiveThreshold()
-	if result.Difficulty >= et && (s.diffRestored || s.vardiffState.RetargetCount >= 1) {
-		hashrateDiff = et
+	if meetsTarget {
+		hashrateDiff = effectiveDiff
 	}
 
 	if s.server.OnShareAccepted != nil {
@@ -521,25 +509,6 @@ func (s *Session) handleSuggestDifficulty(req *Request) {
 	s.server.log.Infof("stratum", "miner %s suggested difficulty: %.6f", s.workerName, diff)
 }
 
-// effectiveThreshold returns the difficulty to use per share for hashrate
-// estimation. For any fixed threshold T, counting shares >= T and recording
-// each at T gives correct hashrate: rate = H/(T*2^32), so totalDiff*2^32/window = H.
-// We prefer suggestedDiff (known immediately, stable) over minShareDiff
-// (takes many samples to converge and can drop far below the ASIC floor
-// with few shares due to the geometric distribution of share difficulties).
-func (s *Session) effectiveThreshold() float64 {
-	// Prefer miner's suggested difficulty — ESP-Miner/AxeOS sends this
-	// immediately and it gives correct, stable hashrate estimates.
-	if s.suggestedDiff > 0 {
-		return s.suggestedDiff
-	}
-	// Fall back to observed ASIC floor for miners that don't suggest
-	if s.minShareDiff > 0 {
-		return s.minShareDiff
-	}
-	// Fallback to session difficulty (for compliant miners)
-	return s.currentDiff
-}
 
 func (s *Session) sendNotify(job *Job, cleanJobs bool) {
 	params := []interface{}{
