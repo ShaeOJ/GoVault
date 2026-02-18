@@ -30,6 +30,7 @@
   let coinName = 'Bitcoin';
   let coinSymbol = 'BTC';
   let coinId = 'btc';
+  let coinList: any[] = [];
   let copied = false;
 
   let detecting = false;
@@ -118,7 +119,7 @@
       miningMode = cfg?.miningMode === 'proxy' ? 'proxy' : 'solo';
 
       // Get coin info for display
-      const coinList = await GetCoinList() || [];
+      coinList = await GetCoinList() || [];
       const selectedCoin = cfg?.mining?.coin || 'btc';
       coinId = selectedCoin;
       const coinDef = coinList.find((c: any) => c.id === selectedCoin);
@@ -214,6 +215,7 @@
       const { GetConfig, UpdateConfig, IsStratumRunning, StopStratum, StartStratum } = await import('../../wailsjs/go/main/App');
       const cfg = await GetConfig();
       cfg.proxy = { url: proxyUrl, workerName: proxyWorker, password: proxyPassword || 'x' };
+      cfg.mining = { ...cfg.mining, coin: coinId };
       cfg.miningMode = 'proxy';
       await UpdateConfig(cfg);
       miningMode = 'proxy';
@@ -534,6 +536,24 @@
         <h3 class="text-sm font-medium font-tech uppercase tracking-wider mb-4" style="color: var(--text-secondary);">Upstream Pool</h3>
 
         <div class="space-y-4">
+          <div>
+            <label class="block text-xs mb-1.5 inline-flex items-center gap-1" style="color: var(--text-secondary);" for="proxy-coin">
+              Blockchain <Info tip="Select which cryptocurrency the upstream pool is mining" size={12} />
+            </label>
+            <select
+              id="proxy-coin"
+              bind:value={coinId}
+              class="w-full rounded-lg px-3 py-2 text-sm select-themed"
+            >
+              {#each coinList as c}
+                <option value={c.id}>{c.name} ({c.symbol})</option>
+              {/each}
+              {#if coinList.length === 0}
+                <option value="btc">Bitcoin (BTC)</option>
+              {/if}
+            </select>
+          </div>
+
           <div>
             <label class="block text-xs mb-1.5 inline-flex items-center gap-1" style="color: var(--text-secondary);" for="proxy-url">
               Pool URL <Info tip="Stratum URL of the upstream pool (e.g. solo.ckpool.org:3333)" size={12} />

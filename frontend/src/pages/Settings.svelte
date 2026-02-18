@@ -163,7 +163,7 @@
       <h3 class="text-sm font-medium font-tech uppercase tracking-wider mb-4" style="color: var(--text-secondary);">Mining</h3>
       <div class="space-y-4">
         <div>
-          <label class="block text-xs mb-1.5 inline-flex items-center gap-1" style="color: var(--text-secondary);" for="coin">Blockchain <Info tip="Select which cryptocurrency to solo mine" size={12} /></label>
+          <label class="block text-xs mb-1.5 inline-flex items-center gap-1" style="color: var(--text-secondary);" for="coin">Blockchain <Info tip="Select which cryptocurrency to mine" size={12} /></label>
           <select
             id="coin"
             bind:value={selectedCoin}
@@ -177,7 +177,7 @@
               <option value="btc">Bitcoin (BTC)</option>
             {/if}
           </select>
-          <div class="text-xs mt-1" style="color: var(--text-secondary); opacity: 0.7;">Select which coin to solo mine</div>
+          <div class="text-xs mt-1" style="color: var(--text-secondary); opacity: 0.7;">Select which coin to mine</div>
         </div>
         <div>
           <label class="block text-xs mb-1.5 inline-flex items-center gap-1" style="color: var(--text-secondary);" for="payout">{currentCoinSymbol} Payout Address <Info tip="Wallet address for block rewards. Must match selected blockchain" size={12} /></label>
