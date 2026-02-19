@@ -128,7 +128,10 @@ func (s *StatsAggregator) RecordShare(minerID string, difficulty float64, accept
 				difficulty: difficulty,
 			})
 			if len(s.shareRecords) > s.maxRecords {
-				s.shareRecords = s.shareRecords[1:]
+				// Copy to a fresh slice so the old backing array can be GC'd.
+				// Simple [1:] trimming never releases memory.
+				n := copy(s.shareRecords, s.shareRecords[1:])
+				s.shareRecords = s.shareRecords[:n]
 			}
 		}
 	} else {
@@ -164,7 +167,8 @@ func (s *StatsAggregator) RecordHashrate(hashrate float64) {
 
 	s.hashrateHistory = append(s.hashrateHistory, point)
 	if len(s.hashrateHistory) > s.maxHistory {
-		s.hashrateHistory = s.hashrateHistory[1:]
+		n := copy(s.hashrateHistory, s.hashrateHistory[1:])
+		s.hashrateHistory = s.hashrateHistory[:n]
 	}
 }
 

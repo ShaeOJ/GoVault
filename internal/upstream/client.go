@@ -62,6 +62,7 @@ type Client struct {
 	authorized atomic.Bool
 	running    atomic.Bool
 	stopCh     chan struct{}
+	wg         sync.WaitGroup
 
 	nextID  atomic.Int64
 	pending map[int64]chan json.RawMessage
@@ -125,6 +126,7 @@ func (c *Client) Connect() error {
 	c.connected.Store(true)
 	c.running.Store(true)
 
+	c.wg.Add(1)
 	go c.readLoop()
 
 	// Negotiate version-rolling with upstream so forwarded shares
@@ -147,6 +149,7 @@ func (c *Client) Connect() error {
 		addr, c.extranonce1, c.extranonce2Size, c.localEN2Size, c.versionRolling)
 
 	// Start reconnect watcher
+	c.wg.Add(1)
 	go c.reconnectLoop()
 
 	return nil
@@ -159,6 +162,7 @@ func (c *Client) Stop() {
 	}
 	close(c.stopCh)
 	c.closeConn()
+	c.wg.Wait()
 	c.log.Info("upstream", "client stopped")
 }
 
@@ -348,6 +352,7 @@ func (c *Client) authorize() error {
 }
 
 func (c *Client) readLoop() {
+	defer c.wg.Done()
 	defer func() {
 		c.connected.Store(false)
 		c.authorized.Store(false)
@@ -606,6 +611,7 @@ func (c *Client) closeConn() {
 }
 
 func (c *Client) reconnectLoop() {
+	defer c.wg.Done()
 	backoff := time.Second
 	maxBackoff := 30 * time.Second
 
@@ -667,6 +673,7 @@ func (c *Client) reconnectLoop() {
 		c.pending = make(map[int64]chan json.RawMessage)
 		c.pendMu.Unlock()
 
+		c.wg.Add(1)
 		go c.readLoop()
 
 		// Re-negotiate version-rolling before subscribe

@@ -56,7 +56,8 @@ type App struct {
 	fleetPowerTime  time.Time
 	fleetPowerMu    sync.Mutex
 
-	stopStats chan struct{}
+	stopStats     chan struct{}
+	stopStatsOnce sync.Once
 }
 
 // FleetOverview holds aggregated fleet stats for the Miners page.
@@ -154,7 +155,7 @@ func (a *App) domReady(ctx context.Context) {
 
 // shutdown is called when the app is closing.
 func (a *App) shutdown(ctx context.Context) {
-	close(a.stopStats)
+	a.stopStatsOnce.Do(func() { close(a.stopStats) })
 
 	a.svcMu.Lock()
 	uc := a.upstream
@@ -832,14 +833,21 @@ func (a *App) GetNodeStatus() map[string]interface{} {
 	}
 
 	if connected {
-		if info, err := a.nodeClient.GetBlockchainInfo(); err == nil {
+		// Use a quick client (8s timeout, 1 retry) so GetNodeStatus never
+		// blocks the Wails UI thread for more than ~16s in the worst case.
+		quick := node.NewQuickClient(
+			a.config.Node.Host, a.config.Node.Port,
+			a.config.Node.Username, a.config.Node.Password,
+			a.config.Node.UseSSL,
+		)
+		if info, err := quick.GetBlockchainInfo(); err == nil {
 			result["chain"] = info.Chain
 			result["blocks"] = info.Blocks
 			result["headers"] = info.Headers
 			result["syncPercent"] = info.VerificationProgress * 100
 			result["syncing"] = info.InitialBlockDownload
 		}
-		if netInfo, err := a.nodeClient.GetNetworkInfo(); err == nil {
+		if netInfo, err := quick.GetNetworkInfo(); err == nil {
 			result["nodeVersion"] = netInfo.SubVersion
 			result["connections"] = netInfo.Connections
 		}

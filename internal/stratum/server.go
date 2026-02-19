@@ -167,10 +167,18 @@ func (s *Server) acceptLoop() {
 	for s.running.Load() {
 		conn, err := s.listener.Accept()
 		if err != nil {
-			if s.running.Load() {
-				s.log.Errorf("stratum", "accept error: %v", err)
+			if !s.running.Load() {
+				return // server shutting down — expected
 			}
-			return
+			// Transient error (e.g. too many open files) — log and
+			// retry after a short backoff instead of exiting permanently.
+			s.log.Errorf("stratum", "accept error (retrying): %v", err)
+			select {
+			case <-s.stopCh:
+				return
+			case <-time.After(500 * time.Millisecond):
+			}
+			continue
 		}
 
 		// Enable TCP keepalives for fast dead-connection detection.
