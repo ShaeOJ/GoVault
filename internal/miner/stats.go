@@ -27,6 +27,13 @@ type DashboardStats struct {
 	BlockChance         float64 `json:"blockChance"`
 	StratumRunning      bool    `json:"stratumRunning"`
 	BlockHeight         int64   `json:"blockHeight"`
+
+	// Proxy mode fields
+	MiningMode          string  `json:"miningMode"`
+	UpstreamDiff        float64 `json:"upstreamDiff"`
+	ProxySharesFwd      uint64  `json:"proxySharesFwd"`
+	ProxySharesAccepted uint64  `json:"proxySharesAccepted"`
+	ProxySharesRejected uint64  `json:"proxySharesRejected"`
 }
 
 // StatsAggregator collects and aggregates mining statistics.

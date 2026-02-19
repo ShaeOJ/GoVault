@@ -40,9 +40,10 @@ type ShareResult struct {
 
 // ShareValidator validates submitted shares against job data.
 type ShareValidator struct {
-	jobManager *JobManager
-	duplicates map[string]map[string]bool // jobID -> set of "en2+ntime+nonce"
-	mu         sync.Mutex
+	jobManager    *JobManager
+	duplicates    map[string]map[string]bool // jobID -> set of "en2+ntime+nonce"
+	skipDupeCheck bool                        // proxy mode: let upstream pool handle dupes
+	mu            sync.Mutex
 }
 
 func NewShareValidator(jm *JobManager) *ShareValidator {
@@ -67,18 +68,22 @@ func (sv *ShareValidator) ValidateShare(extranonce1 string, sub ShareSubmission)
 		return nil, NewError(ErrStaleJob, fmt.Sprintf("job not found: %q (available: %v)", sub.JobID, available))
 	}
 
-	// Check for duplicate (include version bits for version-rolling miners)
-	dupeKey := sub.Extranonce2 + sub.NTime + sub.Nonce + sub.VersionBits
-	sv.mu.Lock()
-	if sv.duplicates[sub.JobID] == nil {
-		sv.duplicates[sub.JobID] = make(map[string]bool)
-	}
-	if sv.duplicates[sub.JobID][dupeKey] {
+	// Check for duplicate (include version bits for version-rolling miners).
+	// In proxy mode, skip dupe check — let the upstream pool handle it.
+	// Local dupe filtering was eating valid shares and causing hashrate undercount.
+	if !sv.skipDupeCheck {
+		dupeKey := sub.Extranonce2 + sub.NTime + sub.Nonce + sub.VersionBits
+		sv.mu.Lock()
+		if sv.duplicates[sub.JobID] == nil {
+			sv.duplicates[sub.JobID] = make(map[string]bool)
+		}
+		if sv.duplicates[sub.JobID][dupeKey] {
+			sv.mu.Unlock()
+			return nil, NewError(ErrDuplicate, "duplicate share")
+		}
+		sv.duplicates[sub.JobID][dupeKey] = true
 		sv.mu.Unlock()
-		return nil, NewError(ErrDuplicate, "duplicate share")
 	}
-	sv.duplicates[sub.JobID][dupeKey] = true
-	sv.mu.Unlock()
 
 	// Reconstruct coinbase transaction
 	coinbaseHex := job.Coinbase1 + extranonce1 + sub.Extranonce2 + job.Coinbase2

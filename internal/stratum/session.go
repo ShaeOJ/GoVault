@@ -35,6 +35,7 @@ type Session struct {
 
 	sharesAccepted uint64
 	sharesRejected uint64
+	sharesDuped    uint64
 	bestDifficulty float64
 
 	suggestedDiff float64 // from mining.suggest_difficulty (miner's threshold)
@@ -382,6 +383,7 @@ func (s *Session) handleSubmit(req *Request) {
 		// re-reads) — don't count them as rejections or fire callbacks.
 		// Matches ckpool which silently drops duplicates.
 		if stratumErr.Code == ErrDuplicate {
+			s.sharesDuped++
 			if s.server.proxyMode {
 				s.server.proxySharesDupe.Add(1)
 			}

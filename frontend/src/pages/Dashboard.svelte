@@ -359,27 +359,49 @@
 
   <!-- Second Row -->
   <div class="grid grid-cols-2 lg:grid-cols-4 gap-4">
-    <StatCard
-      label="Blocks Found"
-      value={String(stats?.blocksFound || 0)}
-      subtext="solo blocks discovered"
-      iconName="cube"
-      color="accent"
-      tooltip="{coinName} blocks mined and submitted to the network by your pool"
-    />
-    <StatCard
-      label="Block Chance"
-      value={formatChance(stats?.blockChance || 0)}
-      subtext="per day"
-      iconName="dice"
-      color="gold"
-      tooltip="Probability of finding at least one block in the next 24 hours"
-    />
+    {#if miningMode === 'proxy'}
+      <StatCard
+        label="Pool Difficulty"
+        value={formatDifficulty(stats?.upstreamDiff || 0)}
+        subtext="upstream pool target"
+        iconName="gauge"
+        color="gold"
+        tooltip="Current difficulty set by the upstream pool. All miners are locked to this difficulty"
+      />
+      <StatCard
+        label="Upstream Shares"
+        value={formatNumber(stats?.proxySharesFwd || 0)}
+        iconName="nodes"
+        color="green"
+        tooltip="Shares forwarded to the upstream pool. Accepted count toward pool hashrate"
+      >
+        <svelte:fragment slot="subtext">
+          {formatNumber(stats?.proxySharesAccepted || 0)} accepted · <span style="color: {(stats?.proxySharesRejected || 0) > 0 ? 'var(--error)' : 'inherit'};">{formatNumber(stats?.proxySharesRejected || 0)} rejected</span>
+        </svelte:fragment>
+      </StatCard>
+    {:else}
+      <StatCard
+        label="Blocks Found"
+        value={String(stats?.blocksFound || 0)}
+        subtext="solo blocks discovered"
+        iconName="cube"
+        color="accent"
+        tooltip="{coinName} blocks mined and submitted to the network by your pool"
+      />
+      <StatCard
+        label="Block Chance"
+        value={formatChance(stats?.blockChance || 0)}
+        subtext="per day"
+        iconName="dice"
+        color="gold"
+        tooltip="Probability of finding at least one block in the next 24 hours"
+      />
+    {/if}
     <StatCard
       label="Pool Shares"
       value={formatNumber(stats?.poolShares || 0)}
       iconName="nodes"
-      color="green"
+      color={miningMode === 'proxy' ? 'accent' : 'green'}
       tooltip="Accepted shares count toward hashrate. Rejected indicate stale or invalid work"
     >
       <svelte:fragment slot="subtext">

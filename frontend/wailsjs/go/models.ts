@@ -225,6 +225,11 @@ export namespace miner {
 	    blockChance: number;
 	    stratumRunning: boolean;
 	    blockHeight: number;
+	    miningMode: string;
+	    upstreamDiff: number;
+	    proxySharesFwd: number;
+	    proxySharesAccepted: number;
+	    proxySharesRejected: number;
 	
 	    static createFrom(source: any = {}) {
 	        return new DashboardStats(source);
@@ -245,6 +250,11 @@ export namespace miner {
 	        this.blockChance = source["blockChance"];
 	        this.stratumRunning = source["stratumRunning"];
 	        this.blockHeight = source["blockHeight"];
+	        this.miningMode = source["miningMode"];
+	        this.upstreamDiff = source["upstreamDiff"];
+	        this.proxySharesFwd = source["proxySharesFwd"];
+	        this.proxySharesAccepted = source["proxySharesAccepted"];
+	        this.proxySharesRejected = source["proxySharesRejected"];
 	    }
 	}
 	export class DiscoveredMiner {

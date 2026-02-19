@@ -238,6 +238,7 @@ func (s *Server) SetProxyMode(upstreamEN1 string, localEN2Size, prefixBytes int,
 	s.extranonce2Size = localEN2Size
 	s.proxyPrefixBytes = prefixBytes
 	s.proxyVersionMask = versionMask
+	s.shareValidator.skipDupeCheck = true // let upstream pool handle duplicates
 }
 
 // IsProxyMode returns true if the server is in proxy mode.
@@ -315,6 +316,8 @@ type ProxyDiagnostics struct {
 	SharesStale    uint64  `json:"sharesStale"`    // stale job (job not found)
 	UpstreamDiff   float64 `json:"upstreamDiff"`   // current upstream pool diff
 	MinerDiffs     map[string]float64 `json:"minerDiffs"` // worker → session diff
+	MinerDupes     map[string]uint64  `json:"minerDupes"` // worker → duplicate count
+	MinerAccepted  map[string]uint64  `json:"minerAccepted"` // worker → accepted count
 }
 
 // GetProxyDiagnostics returns current proxy pipeline counters.
@@ -330,12 +333,16 @@ func (s *Server) GetProxyDiagnostics() ProxyDiagnostics {
 		SharesStale:    s.proxySharesStale.Load(),
 		UpstreamDiff:   s.UpstreamDifficulty(),
 		MinerDiffs:     make(map[string]float64),
+		MinerDupes:     make(map[string]uint64),
+		MinerAccepted:  make(map[string]uint64),
 	}
 
 	s.sessionMu.RLock()
 	for _, session := range s.sessions {
 		if session.authorized && session.workerName != "" {
 			d.MinerDiffs[session.workerName] = session.currentDiff
+			d.MinerDupes[session.workerName] = session.sharesDuped
+			d.MinerAccepted[session.workerName] = session.sharesAccepted
 		}
 	}
 	s.sessionMu.RUnlock()

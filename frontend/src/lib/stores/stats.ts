@@ -14,6 +14,12 @@ export interface DashboardStats {
   blockChance: number;
   stratumRunning: boolean;
   blockHeight: number;
+  // Proxy mode fields
+  miningMode: string;
+  upstreamDiff: number;
+  proxySharesFwd: number;
+  proxySharesAccepted: number;
+  proxySharesRejected: number;
 }
 
 export interface HashratePoint {
@@ -35,6 +41,11 @@ export const dashboardStats = writable<DashboardStats>({
   blockChance: 0,
   stratumRunning: false,
   blockHeight: 0,
+  miningMode: 'solo',
+  upstreamDiff: 0,
+  proxySharesFwd: 0,
+  proxySharesAccepted: 0,
+  proxySharesRejected: 0,
 });
 
 export const hashrateHistory = writable<HashratePoint[]>([]);

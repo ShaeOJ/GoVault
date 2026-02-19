@@ -509,13 +509,24 @@ func (a *App) GetDashboardStats() miner.DashboardStats {
 		activeMiners = a.stratum.SessionCount()
 	}
 
-	return a.stats.GetDashboardStats(
+	ds := a.stats.GetDashboardStats(
 		activeMiners,
 		a.networkDiff,
 		a.networkHashrate,
 		a.blockHeight,
 		a.IsStratumRunning(),
 	)
+
+	ds.MiningMode = a.config.MiningMode
+	if a.stratum != nil && a.stratum.IsProxyMode() {
+		diag := a.stratum.GetProxyDiagnostics()
+		ds.UpstreamDiff = diag.UpstreamDiff
+		ds.ProxySharesFwd = diag.SharesFwd
+		ds.ProxySharesAccepted = diag.SharesAccepted
+		ds.ProxySharesRejected = diag.SharesRejected
+	}
+
+	return ds
 }
 
 func (a *App) GetHashrateHistory(period string) []miner.HashratePoint {
@@ -1184,8 +1195,15 @@ func (a *App) statsLoop() {
 					d.SharesFwd, fwdRate, d.SharesAccepted, d.SharesRejected, rejectRate,
 					d.SharesBelow, d.UpstreamDiff)
 				for name, diff := range d.MinerDiffs {
-					a.log.Infof("proxy", "[STATS]   miner=%s vardiff=%.2f upDiff=%.2f ratio=%.2fx",
-						name, diff, d.UpstreamDiff, diff/d.UpstreamDiff)
+					dupes := d.MinerDupes[name]
+					accepted := d.MinerAccepted[name]
+					total := accepted + dupes
+					dupeRate := float64(0)
+					if total > 0 {
+						dupeRate = float64(dupes) / float64(total) * 100
+					}
+					a.log.Infof("proxy", "[STATS]   miner=%s accepted=%d dupes=%d(%.1f%%) total=%d diff=%.2f",
+						name, accepted, dupes, dupeRate, total, diff)
 				}
 			}
 		}
