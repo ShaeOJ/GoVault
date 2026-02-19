@@ -44,6 +44,11 @@ type Session struct {
 	// Shares for jobs issued before diffChangeJobID are validated against oldDiff.
 	oldDiff          float64
 	diffChangeJobID  string
+
+	// diffMu protects currentDiff, oldDiff, diffChangeJobID, and the share
+	// counters above. These are written by Handle() and read/written by
+	// setProxyDiff() (from the server goroutine) and GetProxyDiagnostics().
+	diffMu sync.Mutex
 }
 
 func newSession(id string, conn net.Conn, server *Server, extranonce1 string) *Session {
@@ -89,12 +94,17 @@ func (s *Session) Handle() {
 				}
 				// Idle vardiff: halve difficulty if no qualifying shares arrived
 				if s.authorized && s.vardiffState != nil {
-					if newDiff, changed := s.server.vardiffMgr.CheckRetarget(s.vardiffState, s.currentDiff, s.suggestedDiff); changed {
+					s.diffMu.Lock()
+					curDiff := s.currentDiff
+					s.diffMu.Unlock()
+					if newDiff, changed := s.server.vardiffMgr.CheckRetarget(s.vardiffState, curDiff, s.suggestedDiff); changed {
+						s.diffMu.Lock()
 						s.oldDiff = s.currentDiff
 						if curJob := s.server.currentJob(); curJob != nil {
 							s.diffChangeJobID = curJob.ID
 						}
 						s.currentDiff = newDiff
+						s.diffMu.Unlock()
 						s.sendSetDifficulty(newDiff)
 						s.server.log.Infof("stratum", "idle vardiff: %s difficulty -> %.6f", s.workerName, newDiff)
 						if s.server.OnDiffChanged != nil && s.workerName != "" {
@@ -210,7 +220,9 @@ func (s *Session) handleConfigure(req *Request) {
 					if poolMax > 0 && minDiffVal > poolMax {
 						minDiffVal = poolMax
 					}
+					s.diffMu.Lock()
 					s.currentDiff = minDiffVal
+					s.diffMu.Unlock()
 					result["minimum-difficulty"] = true
 					s.server.log.Infof("stratum", "session %s minimum-difficulty set to %.6f", s.ID, minDiffVal)
 				} else {
@@ -227,8 +239,11 @@ func (s *Session) handleConfigure(req *Request) {
 
 	// Send difficulty update if changed via minimum-difficulty
 	s.sendResponse(req.ID, result, nil)
-	if s.currentDiff != s.server.vardiffMgr.StartDiff() {
-		s.sendSetDifficulty(s.currentDiff)
+	s.diffMu.Lock()
+	curDiff := s.currentDiff
+	s.diffMu.Unlock()
+	if curDiff != s.server.vardiffMgr.StartDiff() {
+		s.sendSetDifficulty(curDiff)
 	}
 }
 
@@ -295,23 +310,32 @@ func (s *Session) handleAuthorize(req *Request) {
 	// In solo mode, restore last known difficulty for this worker.
 	if s.server.proxyMode {
 		if upDiff := s.server.UpstreamDifficulty(); upDiff > 0 {
+			s.diffMu.Lock()
 			s.currentDiff = upDiff
+			s.diffMu.Unlock()
 			s.sendSetDifficulty(upDiff)
 		}
-	} else if s.server.LookupWorkerDiff != nil && s.currentDiff == s.server.vardiffMgr.StartDiff() {
-		if stored := s.server.LookupWorkerDiff(workerName); stored > 0 {
-			// Clamp to pool bounds
-			minDiff := s.server.vardiffMgr.config.MinDiff
-			maxDiff := s.server.vardiffMgr.config.MaxDiff
-			if stored < minDiff {
-				stored = minDiff
+	} else if s.server.LookupWorkerDiff != nil {
+		s.diffMu.Lock()
+		isDefault := s.currentDiff == s.server.vardiffMgr.StartDiff()
+		s.diffMu.Unlock()
+		if isDefault {
+			if stored := s.server.LookupWorkerDiff(workerName); stored > 0 {
+				// Clamp to pool bounds
+				minDiff := s.server.vardiffMgr.config.MinDiff
+				maxDiff := s.server.vardiffMgr.config.MaxDiff
+				if stored < minDiff {
+					stored = minDiff
+				}
+				if maxDiff > 0 && stored > maxDiff {
+					stored = maxDiff
+				}
+				s.diffMu.Lock()
+				s.currentDiff = stored
+				s.diffMu.Unlock()
+				s.sendSetDifficulty(stored)
+				s.server.log.Infof("stratum", "restored difficulty %.6f for %s", stored, workerName)
 			}
-			if maxDiff > 0 && stored > maxDiff {
-				stored = maxDiff
-			}
-			s.currentDiff = stored
-			s.sendSetDifficulty(stored)
-			s.server.log.Infof("stratum", "restored difficulty %.6f for %s", stored, workerName)
 		}
 	}
 
@@ -383,7 +407,9 @@ func (s *Session) handleSubmit(req *Request) {
 		// re-reads) — don't count them as rejections or fire callbacks.
 		// Matches ckpool which silently drops duplicates.
 		if stratumErr.Code == ErrDuplicate {
+			s.diffMu.Lock()
 			s.sharesDuped++
+			s.diffMu.Unlock()
 			if s.server.proxyMode {
 				s.server.proxySharesDupe.Add(1)
 			}
@@ -399,7 +425,9 @@ func (s *Session) handleSubmit(req *Request) {
 				s.workerName, jobID)
 		}
 
+		s.diffMu.Lock()
 		s.sharesRejected++
+		s.diffMu.Unlock()
 		if s.server.OnShareRejected != nil {
 			s.server.OnShareRejected(s.ID, stratumErr.Message)
 		}
@@ -408,12 +436,15 @@ func (s *Session) handleSubmit(req *Request) {
 		return
 	}
 
+	s.sendResponse(req.ID, true, nil)
+
+	// Lock diff fields and counters for the entire accounting section.
+	// setProxyDiff() writes these from the server goroutine concurrently.
+	s.diffMu.Lock()
 	s.sharesAccepted++
 	if result.Difficulty > s.bestDifficulty {
 		s.bestDifficulty = result.Difficulty
 	}
-
-	s.sendResponse(req.ID, true, nil)
 
 	// Determine effective difficulty for qualifying shares.
 	// In proxy mode, use upstream difficulty — it's the stable threshold
@@ -467,6 +498,7 @@ func (s *Session) handleSubmit(req *Request) {
 			hashrateDiff = result.Difficulty
 		}
 	}
+	s.diffMu.Unlock()
 
 	if s.server.OnShareAccepted != nil {
 		s.server.OnShareAccepted(s.ID, hashrateDiff, result.Difficulty)
@@ -553,11 +585,13 @@ func (s *Session) handleSuggestDifficulty(req *Request) {
 
 	s.suggestedDiff = diff
 	// Record grace period for in-flight shares
+	s.diffMu.Lock()
 	s.oldDiff = s.currentDiff
 	if curJob := s.server.currentJob(); curJob != nil {
 		s.diffChangeJobID = curJob.ID
 	}
 	s.currentDiff = diff
+	s.diffMu.Unlock()
 	s.sendSetDifficulty(diff)
 	s.sendResponse(req.ID, true, nil)
 	s.server.log.Infof("stratum", "miner %s suggested difficulty: %.6f", s.workerName, diff)
@@ -585,8 +619,11 @@ func (s *Session) sendSetDifficulty(diff float64) {
 }
 
 // setProxyDiff updates session difficulty from upstream and notifies the miner.
+// Called from Server.SetUpstreamDifficulty on a different goroutine than Handle().
 func (s *Session) setProxyDiff(diff float64) {
+	s.diffMu.Lock()
 	if s.currentDiff == diff {
+		s.diffMu.Unlock()
 		return
 	}
 	s.oldDiff = s.currentDiff
@@ -594,6 +631,7 @@ func (s *Session) setProxyDiff(diff float64) {
 		s.diffChangeJobID = curJob.ID
 	}
 	s.currentDiff = diff
+	s.diffMu.Unlock()
 	s.sendSetDifficulty(diff)
 }
 
@@ -616,16 +654,23 @@ func (s *Session) send(data []byte) {
 }
 
 func (s *Session) toMinerInfo() MinerInfo {
+	s.diffMu.Lock()
+	curDiff := s.currentDiff
+	accepted := s.sharesAccepted
+	rejected := s.sharesRejected
+	bestDiff := s.bestDifficulty
+	s.diffMu.Unlock()
+
 	return MinerInfo{
 		ID:             s.ID,
 		WorkerName:     s.workerName,
 		UserAgent:      s.userAgent,
 		IPAddress:      s.conn.RemoteAddr().String(),
 		ConnectedAt:    s.connectedAt,
-		CurrentDiff:    s.currentDiff,
-		SharesAccepted: s.sharesAccepted,
-		SharesRejected: s.sharesRejected,
-		BestDifficulty: s.bestDifficulty,
+		CurrentDiff:    curDiff,
+		SharesAccepted: accepted,
+		SharesRejected: rejected,
+		BestDifficulty: bestDiff,
 	}
 }
 

@@ -243,6 +243,11 @@ func (c *Client) SubmitShare(worker, jobID, fullEN2, ntime, nonce, versionBits s
 // miners (Bitaxe, NerdAxe) produce wrong hashes on the upstream side.
 // Non-fatal: if the pool doesn't support it, we proceed without.
 func (c *Client) configure() {
+	// Reset before (re-)negotiation so stale state from a previous
+	// connection doesn't persist if the new upstream doesn't support it.
+	c.versionRolling = false
+	c.versionMask = ""
+
 	extensions := []string{"version-rolling"}
 	extParams := map[string]interface{}{
 		"version-rolling.mask":    "1fffe000",
@@ -559,6 +564,9 @@ func (c *Client) call(method string, params []interface{}, timeout time.Duration
 		c.pendMu.Unlock()
 		return nil, fmt.Errorf("timeout waiting for %s response", method)
 	case <-c.stopCh:
+		c.pendMu.Lock()
+		delete(c.pending, id)
+		c.pendMu.Unlock()
 		return nil, fmt.Errorf("client stopped")
 	}
 }
@@ -655,7 +663,9 @@ func (c *Client) reconnectLoop() {
 		c.conn = conn
 		c.reader = bufio.NewReaderSize(conn, 8192)
 		c.connected.Store(true)
+		c.pendMu.Lock()
 		c.pending = make(map[int64]chan json.RawMessage)
+		c.pendMu.Unlock()
 
 		go c.readLoop()
 

@@ -37,14 +37,19 @@ type App struct {
 
 	upstream *upstream.Client
 
+	// svcMu protects stratum, upstream, and monitor pointers which are
+	// written by Start/StopStratum and read from statsLoop + Wails methods.
+	svcMu sync.RWMutex
+
 	// Database persistence
 	db     *database.DB
 	buffer *database.Buffer
 
-	// Cached node info
+	// Cached node info (protected by netMu)
 	networkDiff    float64
 	networkHashrate float64
 	blockHeight    int64
+	netMu          sync.RWMutex
 
 	// Fleet power cache (30s TTL)
 	fleetPowerCache miner.FleetPowerStats
@@ -151,14 +156,22 @@ func (a *App) domReady(ctx context.Context) {
 func (a *App) shutdown(ctx context.Context) {
 	close(a.stopStats)
 
-	if a.upstream != nil {
-		a.upstream.Stop()
+	a.svcMu.Lock()
+	uc := a.upstream
+	a.upstream = nil
+	srv := a.stratum
+	mon := a.monitor
+	a.monitor = nil
+	a.svcMu.Unlock()
+
+	if uc != nil {
+		uc.Stop()
 	}
-	if a.stratum != nil && a.stratum.IsRunning() {
-		a.stratum.Stop()
+	if srv != nil && srv.IsRunning() {
+		srv.Stop()
 	}
-	if a.monitor != nil {
-		a.monitor.Stop()
+	if mon != nil {
+		mon.Stop()
 	}
 	if a.buffer != nil {
 		a.buffer.Stop()
@@ -184,7 +197,10 @@ func (a *App) beforeClose(ctx context.Context) bool {
 // === Stratum Control ===
 
 func (a *App) StartStratum() error {
-	if a.stratum != nil && a.stratum.IsRunning() {
+	a.svcMu.RLock()
+	srv := a.stratum
+	a.svcMu.RUnlock()
+	if srv != nil && srv.IsRunning() {
 		return fmt.Errorf("stratum server already running")
 	}
 
@@ -207,7 +223,7 @@ func (a *App) startSolo() error {
 	coinDef := coin.Get(a.config.Mining.Coin)
 	a.log.Infof("app", "starting stratum (solo) for %s (%s)", coinDef.Name, coinDef.Symbol)
 
-	a.stratum = stratum.NewServer(
+	srv := stratum.NewServer(
 		&a.config.Stratum,
 		&a.config.Mining,
 		&a.config.Vardiff,
@@ -215,6 +231,10 @@ func (a *App) startSolo() error {
 		a.log,
 		coinDef,
 	)
+
+	a.svcMu.Lock()
+	a.stratum = srv
+	a.svcMu.Unlock()
 
 	a.wireStratumCallbacks()
 
@@ -225,7 +245,9 @@ func (a *App) startSolo() error {
 		a.log.Errorf("app", "initial block template fetch failed: %v (miners will wait for next poll)", err)
 	} else {
 		a.stratum.NewBlockTemplate(tmpl)
+		a.netMu.Lock()
 		a.blockHeight = tmpl.Height
+		a.netMu.Unlock()
 		a.log.Infof("app", "initial block template ready: height=%d", tmpl.Height)
 	}
 
@@ -234,23 +256,39 @@ func (a *App) startSolo() error {
 	}
 
 	// Start chain monitor for ongoing block updates
-	a.monitor = node.NewChainMonitor(a.nodeClient, 500*time.Millisecond, coinDef.GBTRules)
-	a.monitor.SetRefreshInterval(10 * time.Second)
-	a.monitor.OnNewBlock = func(tmpl *node.BlockTemplate) {
+	mon := node.NewChainMonitor(a.nodeClient, 500*time.Millisecond, coinDef.GBTRules)
+	mon.SetRefreshInterval(10 * time.Second)
+	mon.OnNewBlock = func(tmpl *node.BlockTemplate) {
 		a.log.Infof("app", "new block template: height=%d txns=%d", tmpl.Height, len(tmpl.Transactions))
-		a.stratum.NewBlockTemplate(tmpl)
+		a.svcMu.RLock()
+		srv := a.stratum
+		a.svcMu.RUnlock()
+		if srv != nil {
+			srv.NewBlockTemplate(tmpl)
+		}
+		a.netMu.Lock()
 		a.blockHeight = tmpl.Height
+		a.netMu.Unlock()
 		runtime.EventsEmit(a.ctx, "node:new-block", map[string]interface{}{
 			"height": tmpl.Height,
 		})
 	}
-	a.monitor.OnTemplateRefresh = func(tmpl *node.BlockTemplate) {
-		a.stratum.RefreshBlockTemplate(tmpl)
+	mon.OnTemplateRefresh = func(tmpl *node.BlockTemplate) {
+		a.svcMu.RLock()
+		srv := a.stratum
+		a.svcMu.RUnlock()
+		if srv != nil {
+			srv.RefreshBlockTemplate(tmpl)
+		}
 	}
-	a.monitor.SetOnError(func(err error) {
+	mon.SetOnError(func(err error) {
 		a.log.Errorf("app", "chain monitor error: %v", err)
 	})
-	a.monitor.Start()
+
+	a.svcMu.Lock()
+	a.monitor = mon
+	a.svcMu.Unlock()
+	mon.Start()
 
 	a.log.Info("app", "stratum server started (solo mode)")
 	return nil
@@ -277,11 +315,13 @@ func (a *App) startProxy() error {
 	if err := uc.Connect(); err != nil {
 		return fmt.Errorf("upstream connect: %w", err)
 	}
+	a.svcMu.Lock()
 	a.upstream = uc
+	a.svcMu.Unlock()
 
 	// Create stratum server with nil nodeClient (proxy mode)
 	coinDef := coin.Get(a.config.Mining.Coin)
-	a.stratum = stratum.NewServer(
+	srv := stratum.NewServer(
 		&a.config.Stratum,
 		&a.config.Mining,
 		&a.config.Vardiff,
@@ -289,6 +329,10 @@ func (a *App) startProxy() error {
 		a.log,
 		coinDef,
 	)
+
+	a.svcMu.Lock()
+	a.stratum = srv
+	a.svcMu.Unlock()
 
 	// Configure proxy mode on stratum server
 	// Parse upstream version-rolling mask so local miners are constrained to it.
@@ -306,22 +350,34 @@ func (a *App) startProxy() error {
 
 	// Wire upstream → stratum job relay
 	uc.OnJob = func(params *upstream.JobParams) {
-		a.stratum.BroadcastUpstreamJob(params)
+		a.svcMu.RLock()
+		srv := a.stratum
+		a.svcMu.RUnlock()
+		if srv != nil {
+			srv.BroadcastUpstreamJob(params)
+		}
 		a.updateNetworkDiffFromNBits(params.NBits)
 		if params.CleanJobs {
+			a.netMu.Lock()
 			a.blockHeight++
+			h := a.blockHeight
+			a.netMu.Unlock()
 			runtime.EventsEmit(a.ctx, "node:new-block", map[string]interface{}{
-				"height": a.blockHeight,
+				"height": h,
 			})
 		}
 	}
 
 	uc.OnDifficulty = func(diff float64) {
-		a.stratum.SetUpstreamDifficulty(diff)
-		// Log miner diffs for comparison with upstream
-		sessions := a.stratum.GetSessions()
-		for _, s := range sessions {
-			a.log.Infof("proxy", "[DIFF-CMP] upstream=%.4f miner=%s localVardiff=%.4f", diff, s.WorkerName, s.CurrentDiff)
+		a.svcMu.RLock()
+		srv := a.stratum
+		a.svcMu.RUnlock()
+		if srv != nil {
+			srv.SetUpstreamDifficulty(diff)
+			sessions := srv.GetSessions()
+			for _, s := range sessions {
+				a.log.Infof("proxy", "[DIFF-CMP] upstream=%.4f miner=%s localVardiff=%.4f", diff, s.WorkerName, s.CurrentDiff)
+			}
 		}
 	}
 
@@ -339,8 +395,13 @@ func (a *App) startProxy() error {
 				vMask = binary.BigEndian.Uint32(maskBytes)
 			}
 		}
-		a.stratum.UpdateProxyState(uc.Extranonce1(), uc.LocalEN2Size(), uc.PrefixBytes(), vMask)
-		a.stratum.SetUpstreamDifficulty(uc.UpstreamDifficulty())
+		a.svcMu.RLock()
+		srv := a.stratum
+		a.svcMu.RUnlock()
+		if srv != nil {
+			srv.UpdateProxyState(uc.Extranonce1(), uc.LocalEN2Size(), uc.PrefixBytes(), vMask)
+			srv.SetUpstreamDifficulty(uc.UpstreamDifficulty())
+		}
 	}
 
 	// Wire share forwarding: stratum → upstream
@@ -351,7 +412,9 @@ func (a *App) startProxy() error {
 
 	if err := a.stratum.Start(); err != nil {
 		uc.Stop()
+		a.svcMu.Lock()
 		a.upstream = nil
+		a.svcMu.Unlock()
 		return err
 	}
 
@@ -363,7 +426,9 @@ func (a *App) startProxy() error {
 		a.stratum.BroadcastUpstreamJob(earlyJob)
 		a.updateNetworkDiffFromNBits(earlyJob.NBits)
 		if earlyJob.CleanJobs {
+			a.netMu.Lock()
 			a.blockHeight++
+			a.netMu.Unlock()
 		}
 	}
 
@@ -477,16 +542,24 @@ func (a *App) wireStratumCallbacks() {
 }
 
 func (a *App) StopStratum() error {
-	if a.upstream != nil {
-		a.upstream.Stop()
-		a.upstream = nil
+	// Grab and nil pointers under lock; stop outside lock to avoid
+	// holding svcMu during blocking I/O in Stop().
+	a.svcMu.Lock()
+	uc := a.upstream
+	a.upstream = nil
+	mon := a.monitor
+	a.monitor = nil
+	srv := a.stratum
+	a.svcMu.Unlock()
+
+	if uc != nil {
+		uc.Stop()
 	}
-	if a.monitor != nil {
-		a.monitor.Stop()
-		a.monitor = nil
+	if mon != nil {
+		mon.Stop()
 	}
-	if a.stratum != nil {
-		a.stratum.Stop()
+	if srv != nil {
+		srv.Stop()
 	}
 
 	// Clear stale state so restart doesn't misattribute hashrate.
@@ -498,28 +571,41 @@ func (a *App) StopStratum() error {
 }
 
 func (a *App) IsStratumRunning() bool {
-	return a.stratum != nil && a.stratum.IsRunning()
+	a.svcMu.RLock()
+	srv := a.stratum
+	a.svcMu.RUnlock()
+	return srv != nil && srv.IsRunning()
 }
 
 // === Dashboard ===
 
 func (a *App) GetDashboardStats() miner.DashboardStats {
+	a.svcMu.RLock()
+	srv := a.stratum
+	a.svcMu.RUnlock()
+
 	activeMiners := 0
-	if a.stratum != nil {
-		activeMiners = a.stratum.SessionCount()
+	if srv != nil {
+		activeMiners = srv.SessionCount()
 	}
+
+	a.netMu.RLock()
+	netDiff := a.networkDiff
+	netHash := a.networkHashrate
+	height := a.blockHeight
+	a.netMu.RUnlock()
 
 	ds := a.stats.GetDashboardStats(
 		activeMiners,
-		a.networkDiff,
-		a.networkHashrate,
-		a.blockHeight,
-		a.IsStratumRunning(),
+		netDiff,
+		netHash,
+		height,
+		srv != nil && srv.IsRunning(),
 	)
 
 	ds.MiningMode = a.config.MiningMode
-	if a.stratum != nil && a.stratum.IsProxyMode() {
-		diag := a.stratum.GetProxyDiagnostics()
+	if srv != nil && srv.IsProxyMode() {
+		diag := srv.GetProxyDiagnostics()
 		ds.UpstreamDiff = diag.UpstreamDiff
 		ds.ProxySharesFwd = diag.SharesFwd
 		ds.ProxySharesAccepted = diag.SharesAccepted
@@ -578,10 +664,14 @@ func (a *App) ClearRejectedShares() (int64, error) {
 func (a *App) GetMiners() []miner.MinerInfo {
 	miners := a.registry.GetAll()
 
+	a.svcMu.RLock()
+	srv := a.stratum
+	a.svcMu.RUnlock()
+
 	// Get live session data for current difficulty
 	var liveSessions map[string]stratum.MinerInfo
-	if a.stratum != nil && a.stratum.IsRunning() {
-		sessions := a.stratum.GetSessions()
+	if srv != nil && srv.IsRunning() {
+		sessions := srv.GetSessions()
 		liveSessions = make(map[string]stratum.MinerInfo, len(sessions))
 		for _, s := range sessions {
 			liveSessions[s.ID] = s
@@ -607,10 +697,14 @@ func (a *App) GetFleetOverview() FleetOverview {
 	}
 
 	// Collect unique miner IPs from active sessions
+	a.svcMu.RLock()
+	srv := a.stratum
+	a.svcMu.RUnlock()
+
 	var ips []string
-	if a.stratum != nil && a.stratum.IsRunning() {
+	if srv != nil && srv.IsRunning() {
 		seen := make(map[string]bool)
-		for _, s := range a.stratum.GetSessions() {
+		for _, s := range srv.GetSessions() {
 			host, _, err := net.SplitHostPort(s.IPAddress)
 			if err != nil {
 				host = s.IPAddress
@@ -724,11 +818,17 @@ func (a *App) TestNodeConnection(host string, port int, username, password strin
 func (a *App) GetNodeStatus() map[string]interface{} {
 	connected := a.nodeClient.IsConnected()
 
+	a.netMu.RLock()
+	height := a.blockHeight
+	netDiff := a.networkDiff
+	netHash := a.networkHashrate
+	a.netMu.RUnlock()
+
 	result := map[string]interface{}{
 		"connected":       connected,
-		"blockHeight":     a.blockHeight,
-		"networkDifficulty": a.networkDiff,
-		"networkHashrate": a.networkHashrate,
+		"blockHeight":     height,
+		"networkDifficulty": netDiff,
+		"networkHashrate": netHash,
 	}
 
 	if connected {
@@ -824,14 +924,15 @@ func (a *App) UpdateConfig(newCfg *config.Config) error {
 	}
 
 	// If coin changed and stratum is running, stop it (requires restart with new coin params)
-	if coinChanged && a.stratum != nil && a.stratum.IsRunning() {
+	a.svcMu.RLock()
+	srv := a.stratum
+	a.svcMu.RUnlock()
+	if coinChanged && srv != nil && srv.IsRunning() {
 		a.log.Infof("app", "coin changed to %s, stopping stratum server for restart", newCfg.Mining.Coin)
 		a.StopStratum()
-	}
-
-	// Update payout address in stratum server
-	if a.stratum != nil && a.stratum.IsRunning() {
-		a.stratum.UpdatePayoutAddress(newCfg.Mining.PayoutAddress)
+	} else if srv != nil && srv.IsRunning() {
+		// Update payout address in stratum server
+		srv.UpdatePayoutAddress(newCfg.Mining.PayoutAddress)
 	}
 
 	// Update log level
@@ -929,9 +1030,13 @@ func (a *App) ReconnectMiners() map[string]interface{} {
 	}
 
 	// Build set of currently-connected IPs (strip port from session IP)
+	a.svcMu.RLock()
+	srv := a.stratum
+	a.svcMu.RUnlock()
+
 	connectedIPs := make(map[string]bool)
-	if a.stratum != nil {
-		for _, s := range a.stratum.GetSessions() {
+	if srv != nil {
+		for _, s := range srv.GetSessions() {
 			host, _, err := net.SplitHostPort(s.IPAddress)
 			if err != nil {
 				host = s.IPAddress // fallback if no port
@@ -1046,27 +1151,35 @@ func (a *App) TestUpstreamConnection(url, worker, password string) map[string]in
 
 // GetUpstreamStatus returns connection state of the upstream pool.
 func (a *App) GetUpstreamStatus() map[string]interface{} {
-	if a.upstream == nil {
+	a.svcMu.RLock()
+	uc := a.upstream
+	a.svcMu.RUnlock()
+
+	if uc == nil {
 		return map[string]interface{}{
 			"connected": false,
 			"mode":      a.GetMiningMode(),
 		}
 	}
 	return map[string]interface{}{
-		"connected":    a.upstream.IsConnected(),
-		"authorized":   a.upstream.IsAuthorized(),
-		"extranonce1":  a.upstream.Extranonce1(),
-		"upstreamDiff": a.upstream.UpstreamDifficulty(),
+		"connected":    uc.IsConnected(),
+		"authorized":   uc.IsAuthorized(),
+		"extranonce1":  uc.Extranonce1(),
+		"upstreamDiff": uc.UpstreamDifficulty(),
 		"mode":         "proxy",
 	}
 }
 
 // GetProxyDiagnostics returns proxy share pipeline counters for debugging.
 func (a *App) GetProxyDiagnostics() map[string]interface{} {
-	if a.stratum == nil || !a.stratum.IsProxyMode() {
+	a.svcMu.RLock()
+	srv := a.stratum
+	a.svcMu.RUnlock()
+
+	if srv == nil || !srv.IsProxyMode() {
 		return map[string]interface{}{"enabled": false}
 	}
-	d := a.stratum.GetProxyDiagnostics()
+	d := srv.GetProxyDiagnostics()
 	return map[string]interface{}{
 		"enabled":        true,
 		"sharesIn":       d.SharesIn,
@@ -1097,10 +1210,12 @@ func (a *App) updateNetworkDiffFromNBits(nbitsHex string) {
 	}
 
 	pdiff1 := stratum.Pdiff1Target()
-	netDiff := new(big.Float).SetInt(pdiff1)
-	netDiff.Quo(netDiff, new(big.Float).SetInt(target))
-	nd, _ := netDiff.Float64()
+	netDiffF := new(big.Float).SetInt(pdiff1)
+	netDiffF.Quo(netDiffF, new(big.Float).SetInt(target))
+	nd, _ := netDiffF.Float64()
+	a.netMu.Lock()
 	a.networkDiff = nd
+	a.netMu.Unlock()
 }
 
 // === Database ===
@@ -1179,8 +1294,11 @@ func (a *App) statsLoop() {
 		case <-nodeRefreshTicker.C:
 			a.refreshNodeInfo()
 		case <-proxyStatsTicker.C:
-			if a.stratum != nil && a.stratum.IsProxyMode() {
-				d := a.stratum.GetProxyDiagnostics()
+			a.svcMu.RLock()
+			srv := a.stratum
+			a.svcMu.RUnlock()
+			if srv != nil && srv.IsProxyMode() {
+				d := srv.GetProxyDiagnostics()
 				fwdRate := float64(0)
 				if d.SharesValid > 0 {
 					fwdRate = float64(d.SharesFwd) / float64(d.SharesValid) * 100
@@ -1216,12 +1334,13 @@ func (a *App) refreshNodeInfo() {
 		return
 	}
 	if info, err := a.nodeClient.GetMiningInfo(); err == nil {
-		a.blockHeight = info.Blocks
-
 		// For multi-algo coins (DGB), use the per-algorithm difficulty and
 		// hashrate from the "difficulties"/"networkhashesps" maps. These are
 		// always correct regardless of which algorithm's turn it is.
 		miningAlgo := coin.Get(a.config.Mining.Coin).MiningAlgo
+
+		a.netMu.Lock()
+		a.blockHeight = info.Blocks
 		if miningAlgo != "" && len(info.Difficulties) > 0 {
 			if algoDiff, ok := info.Difficulties[miningAlgo]; ok {
 				a.networkDiff = algoDiff
@@ -1233,6 +1352,7 @@ func (a *App) refreshNodeInfo() {
 			a.networkDiff = info.Difficulty
 			a.networkHashrate = info.NetworkHashPS
 		}
+		a.netMu.Unlock()
 	}
 }
 

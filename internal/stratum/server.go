@@ -208,7 +208,10 @@ func (s *Server) removeSession(session *Session) {
 	s.log.Infof("stratum", "session %s disconnected (%s)", session.ID, session.workerName)
 
 	if s.OnDiffChanged != nil && session.authorized && session.workerName != "" {
-		s.OnDiffChanged(session.workerName, session.currentDiff)
+		session.diffMu.Lock()
+		diff := session.currentDiff
+		session.diffMu.Unlock()
+		s.OnDiffChanged(session.workerName, diff)
 	}
 	if s.OnMinerDisconnected != nil && session.authorized {
 		s.OnMinerDisconnected(session.ID)
@@ -340,9 +343,11 @@ func (s *Server) GetProxyDiagnostics() ProxyDiagnostics {
 	s.sessionMu.RLock()
 	for _, session := range s.sessions {
 		if session.authorized && session.workerName != "" {
+			session.diffMu.Lock()
 			d.MinerDiffs[session.workerName] = session.currentDiff
 			d.MinerDupes[session.workerName] = session.sharesDuped
 			d.MinerAccepted[session.workerName] = session.sharesAccepted
+			session.diffMu.Unlock()
 		}
 	}
 	s.sessionMu.RUnlock()
