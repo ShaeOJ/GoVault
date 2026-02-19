@@ -241,7 +241,15 @@ func (a *App) startSolo() error {
 
 	// Pre-fetch the first block template BEFORE accepting miners so the
 	// first reconnecting device gets work immediately.
-	tmpl, err := a.nodeClient.GetBlockTemplate(coinDef.GBTRules)
+	// Use a quick client (8s/1 retry) so a manual Start from the UI
+	// doesn't block for up to ~90s if the node is slow. If this fails,
+	// the chain monitor will fetch the template shortly after anyway.
+	quickGBT := node.NewQuickClient(
+		a.config.Node.Host, a.config.Node.Port,
+		a.config.Node.Username, a.config.Node.Password,
+		a.config.Node.UseSSL,
+	)
+	tmpl, err := quickGBT.GetBlockTemplate(coinDef.GBTRules)
 	if err != nil {
 		a.log.Errorf("app", "initial block template fetch failed: %v (miners will wait for next poll)", err)
 	} else {
@@ -922,6 +930,7 @@ func (a *App) UpdateConfig(newCfg *config.Config) error {
 	if oldNode.Host != newCfg.Node.Host || oldNode.Port != newCfg.Node.Port ||
 		oldNode.Username != newCfg.Node.Username || oldNode.Password != newCfg.Node.Password ||
 		oldNode.UseSSL != newCfg.Node.UseSSL {
+		a.nodeClient.Close() // release idle HTTP connections from old client
 		a.nodeClient = node.NewClient(
 			newCfg.Node.Host,
 			newCfg.Node.Port,
@@ -1121,6 +1130,17 @@ func (a *App) TestUpstreamConnection(url, worker, password string) map[string]in
 	}
 
 	uc := upstream.NewClient(url, worker, password, a.log)
+
+	// Wire a callback to detect first job arrival so we don't have
+	// to sleep a fixed 2 seconds — return as soon as nBits is available.
+	gotJob := make(chan struct{}, 1)
+	uc.OnJob = func(_ *upstream.JobParams) {
+		select {
+		case gotJob <- struct{}{}:
+		default:
+		}
+	}
+
 	err := uc.Connect()
 	if err != nil {
 		return map[string]interface{}{
@@ -1130,8 +1150,11 @@ func (a *App) TestUpstreamConnection(url, worker, password string) map[string]in
 	}
 	defer uc.Stop()
 
-	// Wait briefly for a job to arrive (gives us nBits for difficulty)
-	time.Sleep(2 * time.Second)
+	// Wait for the first job (gives us nBits for difficulty), up to 3s.
+	select {
+	case <-gotJob:
+	case <-time.After(3 * time.Second):
+	}
 
 	result := map[string]interface{}{
 		"connected":       true,

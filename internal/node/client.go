@@ -40,6 +40,7 @@ type Client struct {
 	username   string
 	password   string
 	client     *http.Client
+	transport  *http.Transport
 	nextID     atomic.Int64
 	maxRetries int
 
@@ -70,7 +71,16 @@ func newClient(host string, port int, username, password string, useSSL bool, ti
 			Timeout:   timeout,
 			Transport: transport,
 		},
+		transport:  transport,
 		maxRetries: maxRetries,
+	}
+}
+
+// Close releases idle connections held by the HTTP transport.
+// Call this before discarding a Client to avoid lingering connections.
+func (c *Client) Close() {
+	if c.transport != nil {
+		c.transport.CloseIdleConnections()
 	}
 }
 

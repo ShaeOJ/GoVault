@@ -233,6 +233,9 @@ func (c *Client) SubmitShare(worker, jobID, fullEN2, ntime, nonce, versionBits s
 
 	c.log.Infof("proxy", "[SUBMIT-RESP] raw=%s", string(resp))
 
+	if resp == nil {
+		return false, "upstream disconnected"
+	}
 	var result bool
 	if json.Unmarshal(resp, &result) == nil && result {
 		return true, ""
