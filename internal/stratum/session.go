@@ -290,8 +290,14 @@ func (s *Session) handleAuthorize(req *Request) {
 	s.sendResponse(req.ID, true, nil)
 	s.server.log.Infof("stratum", "miner %s authorized as %s", s.conn.RemoteAddr(), workerName)
 
-	// Restore last known difficulty for this worker (skip if mining.configure already changed it)
-	if s.server.LookupWorkerDiff != nil && s.currentDiff == s.server.vardiffMgr.StartDiff() {
+	// In proxy mode, set difficulty to upstream diff immediately.
+	// In solo mode, restore last known difficulty for this worker.
+	if s.server.proxyMode {
+		if upDiff := s.server.UpstreamDifficulty(); upDiff > 0 {
+			s.currentDiff = upDiff
+			s.sendSetDifficulty(upDiff)
+		}
+	} else if s.server.LookupWorkerDiff != nil && s.currentDiff == s.server.vardiffMgr.StartDiff() {
 		if stored := s.server.LookupWorkerDiff(workerName); stored > 0 {
 			// Clamp to pool bounds
 			minDiff := s.server.vardiffMgr.config.MinDiff
@@ -361,6 +367,13 @@ func (s *Session) handleSubmit(req *Request) {
 	s.server.log.Debugf("stratum", "share submit from %s: job=%q en1=%s en2=%s ntime=%s nonce=%s vbits=%s en2size=%d",
 		s.workerName, jobID, s.extranonce1, en2, ntime, nonce, versionBits, s.server.extranonce2Size)
 
+	shareReceived := time.Now()
+
+	// Count ALL shares at entry point (before validation) for proxy accounting
+	if s.server.proxyMode {
+		s.server.proxySharesIn.Add(1)
+	}
+
 	result, stratumErr := s.server.shareValidator.ValidateShare(s.extranonce1, sub)
 	if stratumErr != nil {
 		s.sendResponse(req.ID, false, stratumErr)
@@ -369,9 +382,19 @@ func (s *Session) handleSubmit(req *Request) {
 		// re-reads) — don't count them as rejections or fire callbacks.
 		// Matches ckpool which silently drops duplicates.
 		if stratumErr.Code == ErrDuplicate {
+			if s.server.proxyMode {
+				s.server.proxySharesDupe.Add(1)
+			}
 			s.server.log.Debugf("stratum", "duplicate share from %s (job=%q en2=%s nonce=%s vbits=%s)",
 				s.workerName, jobID, en2, nonce, versionBits)
 			return
+		}
+
+		// Track stale jobs in proxy mode — these are shares we'll never forward
+		if s.server.proxyMode && stratumErr.Code == ErrStaleJob {
+			s.server.proxySharesStale.Add(1)
+			s.server.log.Infof("proxy", "[SHARE-STALE] miner=%s job=%q — share lost (not forwarded)",
+				s.workerName, jobID)
 		}
 
 		s.sharesRejected++
@@ -390,11 +413,17 @@ func (s *Session) handleSubmit(req *Request) {
 
 	s.sendResponse(req.ID, true, nil)
 
-	// Vardiff: only count shares meeting session difficulty for retarget.
-	// Grace period: shares for jobs issued before the difficulty change
-	// are validated against the old difficulty (matches ckpool behavior).
+	// Determine effective difficulty for qualifying shares.
+	// In proxy mode, use upstream difficulty — it's the stable threshold
+	// that matters. Local vardiff oscillates wildly for ASIC miners whose
+	// hardware filter (suggest_difficulty) ignores pool difficulty changes.
+	// In solo mode, use session difficulty with grace period for in-flight shares.
 	effectiveDiff := s.currentDiff
-	if s.oldDiff > 0 && s.diffChangeJobID != "" {
+	if s.server.proxyMode {
+		if upDiff := s.server.UpstreamDifficulty(); upDiff > 0 {
+			effectiveDiff = upDiff
+		}
+	} else if s.oldDiff > 0 && s.diffChangeJobID != "" {
 		submitJobNum, _ := strconv.ParseUint(jobID, 16, 64)
 		changeJobNum, _ := strconv.ParseUint(s.diffChangeJobID, 16, 64)
 		if submitJobNum > 0 && submitJobNum <= changeJobNum {
@@ -406,45 +435,68 @@ func (s *Session) handleSubmit(req *Request) {
 		s.server.vardiffMgr.RecordQualifyingShare(s.vardiffState)
 	}
 
-	// Check retarget on every share. Use suggestedDiff as floor so vardiff
-	// never drops below what the miner told us (pointless since the miner
-	// won't submit more shares at lower difficulty).
-	if newDiff, changed := s.server.vardiffMgr.CheckRetarget(s.vardiffState, s.currentDiff, s.suggestedDiff); changed {
-		// Record grace period: shares for jobs before the next one use the old diff
-		s.oldDiff = s.currentDiff
-		if curJob := s.server.currentJob(); curJob != nil {
-			s.diffChangeJobID = curJob.ID
-		}
-		s.currentDiff = newDiff
-		s.sendSetDifficulty(newDiff)
-		s.server.log.Infof("stratum", "vardiff: %s difficulty -> %.6f", s.workerName, newDiff)
-		if s.server.OnDiffChanged != nil && s.workerName != "" {
-			s.server.OnDiffChanged(s.workerName, newDiff)
+	// In proxy mode, skip vardiff — upstream diff is relayed proactively
+	// by SetUpstreamDifficulty() when the pool changes it.
+	// In solo mode, vardiff runs normally.
+	if !s.server.proxyMode {
+		if newDiff, changed := s.server.vardiffMgr.CheckRetarget(s.vardiffState, s.currentDiff, s.suggestedDiff); changed {
+			// Record grace period: shares for jobs before the next one use the old diff
+			s.oldDiff = s.currentDiff
+			if curJob := s.server.currentJob(); curJob != nil {
+				s.diffChangeJobID = curJob.ID
+			}
+			s.currentDiff = newDiff
+			s.sendSetDifficulty(newDiff)
+			s.server.log.Infof("stratum", "vardiff: %s difficulty -> %.6f", s.workerName, newDiff)
+			if s.server.OnDiffChanged != nil && s.workerName != "" {
+				s.server.OnDiffChanged(s.workerName, newDiff)
+			}
 		}
 	}
 
-	// Hashrate: record every qualifying share at session difficulty.
-	// Standard pool formula: count * diff * 2^32 / time = hashrate.
+	// Hashrate: record qualifying shares for estimation.
+	// Use min(actualDiff, sessionDiff). In proxy mode, sessionDiff is locked
+	// to upstream diff so the hashrate estimate matches the pool's estimate.
+	// In solo mode, sessionDiff is the vardiff level.
 	var hashrateDiff float64
 	if meetsTarget {
-		hashrateDiff = effectiveDiff
+		hashrateDiff = s.currentDiff
+		if result.Difficulty < hashrateDiff {
+			hashrateDiff = result.Difficulty
+		}
 	}
 
 	if s.server.OnShareAccepted != nil {
 		s.server.OnShareAccepted(s.ID, hashrateDiff, result.Difficulty)
 	}
 
-	// Proxy mode: forward qualifying shares upstream
-	if s.server.proxyMode && s.server.OnShareForward != nil {
-		if result.Difficulty >= s.server.UpstreamDifficulty() {
+	// Proxy mode: instrument and forward qualifying shares upstream
+	if s.server.proxyMode {
+		upDiff := s.server.UpstreamDifficulty()
+		s.server.proxySharesValid.Add(1)
+
+		// Per-share diagnostic: shows every share with all difficulty levels
+		s.server.log.Infof("proxy", "[SHARE-IN] miner=%s actualDiff=%.2f sessionDiff=%.2f upstreamDiff=%.2f meetsSession=%v meetsUpstream=%v",
+			s.workerName, result.Difficulty, effectiveDiff, upDiff, meetsTarget, result.Difficulty >= upDiff)
+
+		if s.server.OnShareForward != nil && upDiff > 0 && result.Difficulty >= upDiff {
+			s.server.proxySharesFwd.Add(1)
 			minerPrefix := s.extranonce1[len(s.server.upstreamEN1):]
 			fullEN2 := minerPrefix + en2
 			accepted, reason := s.server.OnShareForward(s.workerName, jobID, fullEN2, ntime, nonce, versionBits)
+			latency := time.Since(shareReceived)
+
 			if accepted {
-				s.server.log.Debugf("stratum", "share forwarded upstream for %s (job=%s)", s.workerName, jobID)
+				s.server.proxySharesUpAccept.Add(1)
+				s.server.log.Infof("proxy", "[SHARE-FWD] miner=%s ACCEPTED latency=%v job=%s diff=%.2f upDiff=%.2f",
+					s.workerName, latency, jobID, result.Difficulty, upDiff)
 			} else {
-				s.server.log.Infof("stratum", "upstream rejected share from %s: %s", s.workerName, reason)
+				s.server.proxySharesUpReject.Add(1)
+				s.server.log.Infof("proxy", "[SHARE-FWD] miner=%s REJECTED reason=%q latency=%v job=%s diff=%.2f upDiff=%.2f en2=%s",
+					s.workerName, reason, latency, jobID, result.Difficulty, upDiff, fullEN2)
 			}
+		} else if upDiff > 0 && result.Difficulty < upDiff {
+			s.server.proxySharesBelow.Add(1)
 		}
 	}
 
@@ -528,6 +580,19 @@ func (s *Session) sendNotify(job *Job, cleanJobs bool) {
 func (s *Session) sendSetDifficulty(diff float64) {
 	params := []interface{}{diff}
 	s.send(EncodeNotification("mining.set_difficulty", params))
+}
+
+// setProxyDiff updates session difficulty from upstream and notifies the miner.
+func (s *Session) setProxyDiff(diff float64) {
+	if s.currentDiff == diff {
+		return
+	}
+	s.oldDiff = s.currentDiff
+	if curJob := s.server.currentJob(); curJob != nil {
+		s.diffChangeJobID = curJob.ID
+	}
+	s.currentDiff = diff
+	s.sendSetDifficulty(diff)
 }
 
 // sendReconnect tells the miner to disconnect and reconnect after waitSec.

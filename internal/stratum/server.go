@@ -47,6 +47,16 @@ type Server struct {
 	upstreamDiffMu   sync.RWMutex
 	proxyVersionMask uint32 // version-rolling mask from upstream (0 = no rolling)
 
+	// Proxy diagnostic counters
+	proxySharesIn       atomic.Uint64 // ALL shares received from miners (proxy mode)
+	proxySharesValid    atomic.Uint64 // passed validation
+	proxySharesFwd      atomic.Uint64 // forwarded to upstream
+	proxySharesUpAccept atomic.Uint64 // accepted by upstream pool
+	proxySharesUpReject atomic.Uint64 // rejected by upstream pool
+	proxySharesBelow    atomic.Uint64 // below upstream diff, not forwarded
+	proxySharesDupe     atomic.Uint64 // duplicate shares (not counted as rejections)
+	proxySharesStale    atomic.Uint64 // stale job (job not found)
+
 	// Event callbacks
 	OnMinerConnected    func(MinerInfo)
 	OnMinerDisconnected func(string)
@@ -264,11 +274,26 @@ func (s *Server) UpdateProxyState(upstreamEN1 string, localEN2Size, prefixBytes 
 	s.sessionMu.Unlock()
 }
 
-// SetUpstreamDifficulty sets the current upstream pool difficulty.
+// SetUpstreamDifficulty sets the current upstream pool difficulty and
+// immediately relays it to all connected miners (true passthrough).
 func (s *Server) SetUpstreamDifficulty(diff float64) {
 	s.upstreamDiffMu.Lock()
+	old := s.upstreamDiff
 	s.upstreamDiff = diff
 	s.upstreamDiffMu.Unlock()
+
+	if old != diff {
+		s.log.Infof("proxy", "[DIFF-RELAY] upstream pool diff: %.4f → %.4f — broadcasting to miners", old, diff)
+
+		// Immediately relay new difficulty to all authorized miners.
+		s.sessionMu.RLock()
+		for _, session := range s.sessions {
+			if session.authorized {
+				session.setProxyDiff(diff)
+			}
+		}
+		s.sessionMu.RUnlock()
+	}
 }
 
 // UpstreamDifficulty returns the current upstream pool difficulty.
@@ -276,6 +301,46 @@ func (s *Server) UpstreamDifficulty() float64 {
 	s.upstreamDiffMu.RLock()
 	defer s.upstreamDiffMu.RUnlock()
 	return s.upstreamDiff
+}
+
+// ProxyDiagnostics holds proxy share pipeline counters.
+type ProxyDiagnostics struct {
+	SharesIn       uint64  `json:"sharesIn"`       // ALL received from miners
+	SharesValid    uint64  `json:"sharesValid"`    // passed validation
+	SharesFwd      uint64  `json:"sharesFwd"`      // forwarded to upstream
+	SharesAccepted uint64  `json:"sharesAccepted"` // accepted by upstream
+	SharesRejected uint64  `json:"sharesRejected"` // rejected by upstream
+	SharesBelow    uint64  `json:"sharesBelow"`    // below upstream diff
+	SharesDupe     uint64  `json:"sharesDupe"`     // duplicate (ASIC re-reads)
+	SharesStale    uint64  `json:"sharesStale"`    // stale job (job not found)
+	UpstreamDiff   float64 `json:"upstreamDiff"`   // current upstream pool diff
+	MinerDiffs     map[string]float64 `json:"minerDiffs"` // worker → session diff
+}
+
+// GetProxyDiagnostics returns current proxy pipeline counters.
+func (s *Server) GetProxyDiagnostics() ProxyDiagnostics {
+	d := ProxyDiagnostics{
+		SharesIn:       s.proxySharesIn.Load(),
+		SharesValid:    s.proxySharesValid.Load(),
+		SharesFwd:      s.proxySharesFwd.Load(),
+		SharesAccepted: s.proxySharesUpAccept.Load(),
+		SharesRejected: s.proxySharesUpReject.Load(),
+		SharesBelow:    s.proxySharesBelow.Load(),
+		SharesDupe:     s.proxySharesDupe.Load(),
+		SharesStale:    s.proxySharesStale.Load(),
+		UpstreamDiff:   s.UpstreamDifficulty(),
+		MinerDiffs:     make(map[string]float64),
+	}
+
+	s.sessionMu.RLock()
+	for _, session := range s.sessions {
+		if session.authorized && session.workerName != "" {
+			d.MinerDiffs[session.workerName] = session.currentDiff
+		}
+	}
+	s.sessionMu.RUnlock()
+
+	return d
 }
 
 // BroadcastUpstreamJob registers a job from upstream and broadcasts to all miners.

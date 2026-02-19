@@ -33,6 +33,8 @@ export function GetMiningMode():Promise<string>;
 
 export function GetNodeStatus():Promise<Record<string, any>>;
 
+export function GetProxyDiagnostics():Promise<Record<string, any>>;
+
 export function GetRecentLogs(arg1:number):Promise<Array<logger.LogEntry>>;
 
 export function GetStratumURL():Promise<string>;

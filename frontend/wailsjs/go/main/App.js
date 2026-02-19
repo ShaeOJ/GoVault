@@ -58,6 +58,10 @@ export function GetNodeStatus() {
   return window['go']['main']['App']['GetNodeStatus']();
 }
 
+export function GetProxyDiagnostics() {
+  return window['go']['main']['App']['GetProxyDiagnostics']();
+}
+
 export function GetRecentLogs(arg1) {
   return window['go']['main']['App']['GetRecentLogs'](arg1);
 }

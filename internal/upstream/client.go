@@ -218,10 +218,16 @@ func (c *Client) SubmitShare(worker, jobID, fullEN2, ntime, nonce, versionBits s
 		params = append(params, versionBits)
 	}
 
+	c.log.Infof("proxy", "[SUBMIT-OUT] worker=%s job=%s en2=%s ntime=%s nonce=%s vbits=%s",
+		worker, jobID, fullEN2, ntime, nonce, versionBits)
+
 	resp, err := c.call("mining.submit", params, 10*time.Second)
 	if err != nil {
+		c.log.Infof("proxy", "[SUBMIT-RESP] ERROR: %v", err)
 		return false, fmt.Sprintf("submit error: %v", err)
 	}
+
+	c.log.Infof("proxy", "[SUBMIT-RESP] raw=%s", string(resp))
 
 	var result bool
 	if json.Unmarshal(resp, &result) == nil && result {
@@ -302,8 +308,10 @@ func (c *Client) subscribe() error {
 	c.extranonce1 = en1
 	c.extranonce2Size = en2Size
 
-	// Reserve up to 2 bytes of EN2 space for miner prefixes, but ensure
-	// miners still get at least 4-byte EN2 (many ASIC firmware expect this).
+	// Reserve prefix bytes from EN2 to give each miner a unique search space.
+	// Each miner gets a unique EN1 (upstream_en1 + prefix), preventing nonce
+	// overlap on the upstream pool. Requires at least 4-byte local EN2 for
+	// firmware compatibility (many ASIC miners hardcode 4-byte EN2).
 	c.prefixBytes = 2
 	if en2Size-c.prefixBytes < 4 {
 		c.prefixBytes = en2Size - 4
@@ -504,19 +512,22 @@ func (c *Client) handleJobNotify(params json.RawMessage) {
 func (c *Client) handleSetDifficulty(params json.RawMessage) {
 	var raw []json.RawMessage
 	if err := json.Unmarshal(params, &raw); err != nil || len(raw) < 1 {
+		c.log.Errorf("proxy", "[DIFF-RECV] failed to parse mining.set_difficulty: %s", string(params))
 		return
 	}
 
 	var diff float64
 	if err := json.Unmarshal(raw[0], &diff); err != nil {
+		c.log.Errorf("proxy", "[DIFF-RECV] failed to parse difficulty value: %s", string(raw[0]))
 		return
 	}
 
 	c.upstreamDiffMu.Lock()
+	oldDiff := c.upstreamDiff
 	c.upstreamDiff = diff
 	c.upstreamDiffMu.Unlock()
 
-	c.log.Infof("upstream", "difficulty set to %f", diff)
+	c.log.Infof("proxy", "[DIFF-RECV] mining.set_difficulty from pool: %.4f → %.4f", oldDiff, diff)
 
 	if c.OnDifficulty != nil {
 		c.OnDifficulty(diff)

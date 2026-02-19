@@ -318,7 +318,11 @@ func (a *App) startProxy() error {
 
 	uc.OnDifficulty = func(diff float64) {
 		a.stratum.SetUpstreamDifficulty(diff)
-		a.log.Infof("app", "upstream difficulty: %f", diff)
+		// Log miner diffs for comparison with upstream
+		sessions := a.stratum.GetSessions()
+		for _, s := range sessions {
+			a.log.Infof("proxy", "[DIFF-CMP] upstream=%.4f miner=%s localVardiff=%.4f", diff, s.WorkerName, s.CurrentDiff)
+		}
 	}
 
 	uc.OnDisconnect = func(err error) {
@@ -1046,6 +1050,25 @@ func (a *App) GetUpstreamStatus() map[string]interface{} {
 	}
 }
 
+// GetProxyDiagnostics returns proxy share pipeline counters for debugging.
+func (a *App) GetProxyDiagnostics() map[string]interface{} {
+	if a.stratum == nil || !a.stratum.IsProxyMode() {
+		return map[string]interface{}{"enabled": false}
+	}
+	d := a.stratum.GetProxyDiagnostics()
+	return map[string]interface{}{
+		"enabled":        true,
+		"sharesIn":       d.SharesIn,
+		"sharesFwd":      d.SharesFwd,
+		"sharesAccepted": d.SharesAccepted,
+		"sharesRejected": d.SharesRejected,
+		"sharesBelow":    d.SharesBelow,
+		"sharesDupe":     d.SharesDupe,
+		"upstreamDiff":   d.UpstreamDiff,
+		"minerDiffs":     d.MinerDiffs,
+	}
+}
+
 // updateNetworkDiffFromNBits computes network difficulty from a compact target.
 func (a *App) updateNetworkDiffFromNBits(nbitsHex string) {
 	if nbitsHex == "" {
@@ -1117,6 +1140,9 @@ func (a *App) statsLoop() {
 	pruneTicker := time.NewTicker(1 * time.Hour)
 	defer pruneTicker.Stop()
 
+	proxyStatsTicker := time.NewTicker(30 * time.Second)
+	defer proxyStatsTicker.Stop()
+
 	for {
 		select {
 		case <-a.stopStats:
@@ -1141,6 +1167,27 @@ func (a *App) statsLoop() {
 			a.pruneOldData()
 		case <-nodeRefreshTicker.C:
 			a.refreshNodeInfo()
+		case <-proxyStatsTicker.C:
+			if a.stratum != nil && a.stratum.IsProxyMode() {
+				d := a.stratum.GetProxyDiagnostics()
+				fwdRate := float64(0)
+				if d.SharesValid > 0 {
+					fwdRate = float64(d.SharesFwd) / float64(d.SharesValid) * 100
+				}
+				rejectRate := float64(0)
+				if d.SharesFwd > 0 {
+					rejectRate = float64(d.SharesRejected) / float64(d.SharesFwd) * 100
+				}
+				dropped := d.SharesIn - d.SharesValid - d.SharesDupe - d.SharesStale
+				a.log.Infof("proxy", "[STATS] in=%d valid=%d stale=%d dupe=%d other_reject=%d | fwd=%d(%.1f%%) accepted=%d rejected=%d(%.1f%%) below=%d upDiff=%.2f",
+					d.SharesIn, d.SharesValid, d.SharesStale, d.SharesDupe, dropped,
+					d.SharesFwd, fwdRate, d.SharesAccepted, d.SharesRejected, rejectRate,
+					d.SharesBelow, d.UpstreamDiff)
+				for name, diff := range d.MinerDiffs {
+					a.log.Infof("proxy", "[STATS]   miner=%s vardiff=%.2f upDiff=%.2f ratio=%.2fx",
+						name, diff, d.UpstreamDiff, diff/d.UpstreamDiff)
+				}
+			}
 		}
 	}
 }
