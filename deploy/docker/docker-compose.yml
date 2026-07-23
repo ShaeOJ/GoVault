@@ -1,0 +1,31 @@
+services:
+  edge:
+    build:
+      context: ../..
+      dockerfile: deploy/docker/Dockerfile
+    container_name: gostratum-edge
+    restart: unless-stopped
+
+    ports:
+      - "3333:3333"   # stratum — miners connect here
+      - "8080:8080"   # HTTP dashboard
+
+    volumes:
+      - ./data:/app/data  # config.json + edge.json + DB persist here
+
+    # Optional: pass config overrides via environment
+    # (the binary reads data/config.json; env vars are not required)
+    environment:
+      - TZ=UTC
+
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+# Usage:
+#   1. mkdir data && cp your-config.json data/config.json
+#   2. docker compose run --rm edge --init     (interactive setup)
+#   3. docker compose up -d
+#   4. docker compose logs -f

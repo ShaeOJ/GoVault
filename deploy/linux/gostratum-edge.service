@@ -1,0 +1,26 @@
+[Unit]
+Description=GoVault Edge Node (Firepool Stratum Relay)
+Documentation=https://firepool.ca
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=gostratum
+Group=gostratum
+WorkingDirectory=/opt/gostratum-edge
+ExecStart=/opt/gostratum-edge/gostratum-edge
+Restart=always
+RestartSec=5s
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=gostratum-edge
+
+# Hardening
+NoNewPrivileges=true
+ProtectSystem=strict
+ReadWritePaths=/opt/gostratum-edge/data
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target

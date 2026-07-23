@@ -1,0 +1,1371 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Firepool Admin</title>
+<style>
+  :root {
+    --bg:          #080c14;
+    --surface:     #0c1422;
+    --surface2:    #101c2e;
+    --border:      rgba(0, 160, 255, 0.15);
+    --accent:      #ffd700;
+    --accent-dim:  rgba(255, 215, 0, 0.1);
+    --accent-glow: rgba(255, 215, 0, 0.35);
+    --accent-rgb:  255, 215, 0;
+    --blue:        #00aaff;
+    --text:        #c8d8f0;
+    --text-dim:    #5a7a9a;
+    --text-bright: #e0eeff;
+    --red:         #ff4455;
+    --yellow:      #ffd700;
+    --green:       #00aaff;
+    --font:        'Courier New', Courier, monospace;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    background: var(--bg); color: var(--text); font-family: var(--font); font-size: 13px; min-height: 100vh;
+    background-image:
+      repeating-linear-gradient(90deg, rgba(0,160,255,0.03) 0px, transparent 1px, transparent 40px),
+      repeating-linear-gradient(0deg,  rgba(0,160,255,0.03) 0px, transparent 1px, transparent 40px);
+  }
+  a { color: var(--accent); text-decoration: none; }
+  a:hover { text-decoration: underline; }
+
+  ::-webkit-scrollbar { width: 6px; height: 6px; }
+  ::-webkit-scrollbar-track { background: var(--bg); }
+  ::-webkit-scrollbar-thumb { background: rgba(0,160,255,0.2); border-radius: 3px; }
+  ::-webkit-scrollbar-thumb:hover { background: rgba(0,160,255,0.4); }
+
+  /* Header */
+  .header {
+    background: var(--surface);
+    border-bottom: 1px solid var(--border);
+    padding: 12px 24px;
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    position: sticky;
+    top: 0;
+    z-index: 100;
+  }
+  .header::after {
+    content: '';
+    position: absolute; bottom: -1px; left: 0; right: 0; height: 1px;
+    background: linear-gradient(90deg, transparent, rgba(0,160,255,0.5), transparent);
+  }
+  .header { position: sticky; }
+  .header-logo img {
+    height: 36px;
+    width: auto;
+    filter: drop-shadow(0 0 8px rgba(255,215,0,0.4));
+  }
+  .header-badge {
+    background: var(--accent-dim);
+    border: 1px solid rgba(0,160,255,0.4);
+    color: var(--accent);
+    padding: 2px 10px;
+    font-size: 11px;
+    letter-spacing: 1px;
+  }
+  .header-right { margin-left: auto; display: flex; align-items: center; gap: 12px; }
+  .refresh-indicator { color: var(--text-dim); font-size: 11px; letter-spacing: 0.5px; }
+
+  /* Layout */
+  .container { max-width: 1400px; margin: 0 auto; padding: 20px 24px; }
+
+  /* Cards */
+  .card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    padding: 16px 20px;
+    position: relative;
+    transition: border-color 250ms, box-shadow 250ms;
+  }
+  .card:hover { border-color: rgba(0,160,255,0.35); box-shadow: 0 0 12px rgba(0,160,255,0.06); }
+  .card::after {
+    content: ''; position: absolute; inset: 0; pointer-events: none;
+    background: repeating-linear-gradient(0deg, transparent, transparent 2px, rgba(0,160,255,0.02) 2px, rgba(0,160,255,0.02) 4px);
+    opacity: 0; transition: opacity 150ms;
+  }
+  .card:hover::after { opacity: 1; }
+  .card-title {
+    color: var(--text-dim);
+    font-size: 10px;
+    letter-spacing: 2px;
+    text-transform: uppercase;
+    margin-bottom: 6px;
+  }
+  .card-value {
+    color: var(--accent);
+    font-size: 22px;
+    font-weight: bold;
+    text-shadow: 0 0 8px var(--accent-glow);
+  }
+  .card-sub { color: var(--text-dim); font-size: 11px; margin-top: 4px; }
+
+  .stats-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+    gap: 12px;
+    margin-bottom: 20px;
+  }
+
+  /* Tables */
+  .section-title {
+    color: var(--text-dim);
+    font-size: 10px;
+    letter-spacing: 2px;
+    text-transform: uppercase;
+    margin-bottom: 10px;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+  .section-title::after {
+    content: '';
+    flex: 1;
+    height: 1px;
+    background: linear-gradient(90deg, var(--border), transparent);
+  }
+
+  table { width: 100%; border-collapse: collapse; }
+  th {
+    color: var(--text-dim);
+    font-size: 10px;
+    letter-spacing: 1px;
+    text-transform: uppercase;
+    text-align: left;
+    padding: 8px 10px;
+    border-bottom: 1px solid var(--border);
+    background: rgba(0,160,255,0.03);
+    white-space: nowrap;
+  }
+  td {
+    padding: 9px 10px;
+    border-bottom: 1px solid rgba(0,160,255,0.06);
+    vertical-align: middle;
+    color: var(--text);
+  }
+  tr:last-child td { border-bottom: none; }
+  tr:hover td { background: rgba(0,160,255,0.03); }
+  .table-wrap {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    overflow-x: auto;
+    margin-bottom: 20px;
+  }
+
+  /* Status dots */
+  .dot {
+    display: inline-block;
+    width: 8px; height: 8px;
+    border-radius: 50%;
+    margin-right: 6px;
+    vertical-align: middle;
+  }
+  .dot-green  { background: var(--green); box-shadow: 0 0 6px var(--green); animation: pulse 3s ease-in-out infinite; }
+  .dot-red    { background: var(--red); }
+  .dot-yellow { background: var(--yellow); }
+  @keyframes pulse { 0%,100%{ opacity:1 } 50%{ opacity:0.5 } }
+
+  /* Buttons */
+  .btn {
+    background: transparent;
+    border: 1px solid rgba(0,160,255,0.2);
+    color: var(--text-dim);
+    padding: 4px 10px;
+    font-family: var(--font);
+    font-size: 11px;
+    cursor: pointer;
+    letter-spacing: 1px;
+    transition: all 0.15s;
+    text-transform: uppercase;
+  }
+  .btn:hover { border-color: var(--accent); color: var(--accent); box-shadow: 0 0 6px rgba(0,160,255,0.15); }
+  .btn-accent { border-color: rgba(0,160,255,0.5); color: var(--accent); }
+  .btn-accent:hover { background: var(--accent-dim); box-shadow: 0 0 8px rgba(0,160,255,0.2); }
+  .btn-danger { border-color: rgba(255,51,51,0.4); color: var(--red); }
+  .btn-danger:hover { background: rgba(255,51,51,0.08); border-color: rgba(255,51,51,0.7); }
+  .btn-sm { padding: 3px 8px; font-size: 10px; }
+
+  /* Back button */
+  .back-btn {
+    background: none;
+    border: none;
+    color: var(--accent);
+    font-family: var(--font);
+    font-size: 13px;
+    cursor: pointer;
+    padding: 0;
+    margin-bottom: 16px;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+  }
+  .back-btn:hover { text-decoration: underline; }
+
+  /* Node name heading */
+  .node-heading {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin-bottom: 20px;
+  }
+  .node-heading h1 {
+    color: var(--text-bright);
+    font-size: 20px;
+    letter-spacing: 2px;
+  }
+
+  /* Modal */
+  .modal-backdrop {
+    position: fixed; inset: 0;
+    background: rgba(0,0,0,0.8);
+    display: flex; align-items: center; justify-content: center;
+    z-index: 200;
+  }
+  .modal {
+    background: var(--surface);
+    border: 1px solid rgba(0,160,255,0.4);
+    box-shadow: 0 0 30px rgba(0,160,255,0.1), 0 0 80px rgba(0,0,0,0.5);
+    padding: 24px;
+    width: 380px;
+    max-width: 95vw;
+  }
+  .modal-title {
+    color: var(--accent);
+    font-size: 14px;
+    letter-spacing: 3px;
+    margin-bottom: 20px;
+    text-shadow: 0 0 10px rgba(255,215,0,0.4);
+  }
+  .form-row { margin-bottom: 16px; }
+  .form-label {
+    display: block;
+    color: var(--text-dim);
+    font-size: 10px;
+    letter-spacing: 1px;
+    text-transform: uppercase;
+    margin-bottom: 6px;
+  }
+  .form-input, .form-select {
+    width: 100%;
+    background: var(--bg);
+    border: 1px solid rgba(0,160,255,0.2);
+    color: var(--text);
+    padding: 7px 10px;
+    font-family: var(--font);
+    font-size: 13px;
+    transition: border-color 200ms, box-shadow 200ms;
+  }
+  .form-input:focus, .form-select:focus {
+    outline: none;
+    border-color: rgba(0,160,255,0.5);
+    box-shadow: 0 0 6px rgba(0,160,255,0.12);
+  }
+  .form-select option { background: var(--surface); }
+  .modal-actions { display: flex; gap: 10px; justify-content: flex-end; margin-top: 20px; }
+
+  /* Inline confirm */
+  .confirm-inline {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .confirm-text { color: var(--yellow); font-size: 11px; }
+
+  /* IP display */
+  .ip-list { font-size: 11px; color: var(--text-dim); }
+
+  /* Ping */
+  .ping-good { color: var(--green); }
+  .ping-ok   { color: var(--yellow); }
+  .ping-bad  { color: var(--red); }
+
+  /* Toast */
+  .toast {
+    position: fixed;
+    bottom: 20px; right: 20px;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    box-shadow: 0 0 20px rgba(0,160,255,0.08);
+    color: var(--text);
+    padding: 10px 16px;
+    font-size: 12px;
+    letter-spacing: 0.5px;
+    z-index: 300;
+    max-width: 300px;
+    transition: opacity 0.3s;
+  }
+  .toast.success { border-color: rgba(0,255,65,0.4); color: var(--green); }
+  .toast.error   { border-color: rgba(255,51,51,0.4); color: var(--red); }
+  .toast.hidden  { opacity: 0; pointer-events: none; }
+
+  /* Dimmed value */
+  .dim { color: var(--text-dim); }
+  .accent { color: var(--accent); }
+
+  .hidden { display: none !important; }
+
+  /* ── Responsive ──────────────────────────────────────────────────────────── */
+  @media (max-width: 768px) {
+    .container { padding: 12px; }
+
+    /* Header: stack badge below logo row on narrow screens */
+    .header { padding: 10px 12px; flex-wrap: wrap; gap: 8px; }
+    .header-right { width: 100%; justify-content: space-between; margin-left: 0; }
+    .header-badge { font-size: 10px; }
+
+    /* Cards: 2-col on tablet */
+    .stats-grid { grid-template-columns: repeat(2, 1fr); gap: 8px; }
+    .card { padding: 12px; }
+    .card-value { font-size: 18px; }
+
+    /* Node detail heading */
+    .node-heading h1 { font-size: 16px; }
+
+    /* Action buttons: wrap and grow to full width on very small rows */
+    td .btn-sm { padding: 4px 6px; font-size: 10px; }
+
+    /* Fleet table: hide less critical columns */
+    #fleet-table th:nth-child(3),  /* Public IP */
+    #fleet-table td:nth-child(3),
+    #fleet-table th:nth-child(4),  /* Uptime */
+    #fleet-table td:nth-child(4),
+    #fleet-table th:nth-child(8),  /* Shares Fwd */
+    #fleet-table td:nth-child(8),
+    #fleet-table th:nth-child(9),  /* Best Diff */
+    #fleet-table td:nth-child(9) { display: none; }
+
+    /* Pairs table: hide Port, Upstream, Net Diff, New Blocks */
+    #detail-pairs-table th:nth-child(3),
+    #detail-pairs-table td:nth-child(3),
+    #detail-pairs-table th:nth-child(4),
+    #detail-pairs-table td:nth-child(4),
+    #detail-pairs-table th:nth-child(7),
+    #detail-pairs-table td:nth-child(7),
+    #detail-pairs-table th:nth-child(9),
+    #detail-pairs-table td:nth-child(9) { display: none; }
+
+    /* Miners table: hide IP, Rejected, Diff, Agent */
+    #detail-miners-table th:nth-child(2),
+    #detail-miners-table td:nth-child(2),
+    #detail-miners-table th:nth-child(5),
+    #detail-miners-table td:nth-child(5),
+    #detail-miners-table th:nth-child(6),
+    #detail-miners-table td:nth-child(6),
+    #detail-miners-table th:nth-child(7),
+    #detail-miners-table td:nth-child(7) { display: none; }
+
+    /* Modal: full width on small screens */
+    .modal { width: 95vw; padding: 16px; }
+    .modal-actions { flex-direction: column-reverse; }
+    .modal-actions .btn { width: 100%; text-align: center; padding: 8px; }
+  }
+
+  @media (max-width: 480px) {
+    body { font-size: 12px; }
+    .header-logo { font-size: 15px; }
+
+    /* Cards: single column on phones */
+    .stats-grid { grid-template-columns: 1fr 1fr; }
+
+    /* Also hide Ping from fleet table on phones */
+    #fleet-table th:nth-child(5),
+    #fleet-table td:nth-child(5) { display: none; }
+
+    /* Tighten table cells */
+    th, td { padding: 7px 6px; }
+
+    /* Wrap action buttons in fleet table */
+    #fleet-table td:last-child {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 4px;
+      align-items: center;
+      border-bottom: 1px solid rgba(26,42,74,0.5);
+    }
+
+    .toast { left: 12px; right: 12px; bottom: 12px; max-width: none; }
+  }
+</style>
+</head>
+<body>
+
+<div class="header">
+  <div class="header-logo"><img src="https://firepool.ca/assets/img/logo.png" alt="Firepool"></div>
+  <div class="header-badge" id="fleet-badge">-- / -- ONLINE</div>
+  <div class="header-right">
+    <span class="refresh-indicator" id="refresh-indicator">refreshing...</span>
+    <button class="btn btn-accent" onclick="openAddNode()">+ Add Node</button>
+    <a href="/logout" style="font-size:11px;color:var(--text-dim);text-decoration:none;letter-spacing:1px;text-transform:uppercase;padding:6px 10px;border:1px solid var(--border);" onmouseover="this.style.color='var(--text)'" onmouseout="this.style.color='var(--text-dim)'">Sign Out</a>
+  </div>
+</div>
+
+<!-- Fleet View -->
+<div id="view-fleet" class="container">
+
+  <!-- Globe -->
+  <div id="globe-wrap" style="margin-bottom:20px;background:var(--surface);border:1px solid var(--border);position:relative;overflow:hidden;height:320px">
+    <canvas id="globe-canvas" style="display:block;width:100%;height:100%;cursor:grab"></canvas>
+    <div style="position:absolute;top:12px;left:16px;font-size:10px;color:rgba(0,160,255,0.35);letter-spacing:2px;text-transform:uppercase;pointer-events:none">fleet network</div>
+  </div>
+
+  <div class="stats-grid" id="summary-cards">
+    <div class="card">
+      <div class="card-title">Total Nodes</div>
+      <div class="card-value" id="sum-total">--</div>
+    </div>
+    <div class="card">
+      <div class="card-title">Online</div>
+      <div class="card-value" id="sum-online">--</div>
+    </div>
+    <div class="card">
+      <div class="card-title">Total Hashrate</div>
+      <div class="card-value" id="sum-hashrate">--</div>
+    </div>
+    <div class="card">
+      <div class="card-title">Total Miners</div>
+      <div class="card-value" id="sum-miners">--</div>
+    </div>
+    <div class="card">
+      <div class="card-title">Shares Fwd</div>
+      <div class="card-value" id="sum-fwd">--</div>
+    </div>
+  </div>
+
+  <div class="section-title">Edge Nodes</div>
+  <div class="table-wrap">
+    <table id="fleet-table">
+      <thead>
+        <tr>
+          <th>Node</th>
+          <th>Status</th>
+          <th>Public IP</th>
+          <th>Uptime</th>
+          <th>Ping</th>
+          <th>Hashrate</th>
+          <th>Miners</th>
+          <th>Shares Fwd</th>
+          <th>Best Diff</th>
+          <th>Actions</th>
+        </tr>
+      </thead>
+      <tbody id="fleet-tbody">
+        <tr><td colspan="10" class="dim" style="text-align:center;padding:24px;">Loading...</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div id="no-nodes-msg" class="hidden" style="text-align:center;padding:40px;color:var(--text-dim);">
+    <div style="font-size:16px;margin-bottom:12px;color:var(--accent);">No nodes registered</div>
+    <div>Add a node with:</div>
+    <div style="margin-top:8px;color:var(--text);background:var(--surface);border:1px solid var(--border);padding:10px 16px;display:inline-block;word-break:break-all;max-width:90vw;">
+      Use the + Add Node button above
+    </div>
+  </div>
+</div>
+
+<!-- Node Detail View -->
+<div id="view-detail" class="container hidden">
+  <button class="back-btn" onclick="showFleet()">&larr; Fleet Overview</button>
+  <div class="node-heading">
+    <h1 id="detail-name">Node</h1>
+    <span id="detail-status"></span>
+  </div>
+
+  <div class="stats-grid" id="detail-cards">
+    <div class="card">
+      <div class="card-title">Hashrate</div>
+      <div class="card-value" id="d-hashrate">--</div>
+    </div>
+    <div class="card">
+      <div class="card-title">Miners</div>
+      <div class="card-value" id="d-miners">--</div>
+    </div>
+    <div class="card">
+      <div class="card-title">Best Diff</div>
+      <div class="card-value" id="d-bestdiff">--</div>
+    </div>
+    <div class="card">
+      <div class="card-title">Uptime</div>
+      <div class="card-value" id="d-uptime">--</div>
+    </div>
+    <div class="card">
+      <div class="card-title">Ping</div>
+      <div class="card-value" id="d-ping">--</div>
+      <div class="card-sub" id="d-ping-sub"></div>
+    </div>
+    <div class="card">
+      <div class="card-title">Network Diff</div>
+      <div class="card-value" id="d-netdiff">--</div>
+    </div>
+  </div>
+
+  <div class="section-title">Proxy Pairs</div>
+  <div class="table-wrap">
+    <table id="detail-pairs-table">
+      <thead>
+        <tr>
+          <th>Coin</th>
+          <th>Mode</th>
+          <th>Port</th>
+          <th>Upstream</th>
+          <th>Auth</th>
+          <th>Up Diff</th>
+          <th>Net Diff</th>
+          <th>Miners</th>
+          <th>New Blocks</th>
+        </tr>
+      </thead>
+      <tbody id="detail-pairs" data-table="pairs">
+        <tr><td colspan="9" class="dim" style="text-align:center;padding:16px;">Loading...</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div class="section-title">Connected Miners</div>
+  <div class="table-wrap">
+    <table id="detail-miners-table">
+      <thead>
+        <tr>
+          <th>Worker</th>
+          <th>IP</th>
+          <th>Hashrate</th>
+          <th>Accepted</th>
+          <th>Rejected</th>
+          <th>Diff</th>
+          <th>Agent</th>
+        </tr>
+      </thead>
+      <tbody id="detail-miners">
+        <tr><td colspan="7" class="dim" style="text-align:center;padding:16px;">No miners connected</td></tr>
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<!-- Settings Modal -->
+<div id="settings-modal" class="modal-backdrop hidden">
+  <div class="modal">
+    <div class="modal-title">NODE SETTINGS</div>
+    <div id="settings-node-label" style="color:var(--text-dim);font-size:11px;margin-bottom:16px;"></div>
+    <div class="form-row">
+      <label class="form-label">Max Connections (global)</label>
+      <input type="number" id="settings-maxconn" class="form-input" placeholder="500" min="1" max="100000">
+    </div>
+    <div class="form-row">
+      <label class="form-label">Max Connections per IP <span style="color:var(--text-dim);font-size:10px">(0 = unlimited)</span></label>
+      <input type="number" id="settings-maxconnperip" class="form-input" placeholder="50" min="0" max="10000">
+    </div>
+    <div class="form-row">
+      <label class="form-label">Auth Timeout (seconds)</label>
+      <input type="number" id="settings-authtimeout" class="form-input" placeholder="30" min="5" max="300">
+    </div>
+    <div class="form-row">
+      <label class="form-label">Log Level</label>
+      <select id="settings-loglevel" class="form-select">
+        <option value="debug">debug</option>
+        <option value="info">info</option>
+        <option value="warn">warn</option>
+        <option value="error">error</option>
+      </select>
+    </div>
+    <div class="modal-actions">
+      <button class="btn" onclick="closeSettings()">Cancel</button>
+      <button class="btn btn-accent" onclick="saveSettings()">Save</button>
+    </div>
+  </div>
+</div>
+
+<!-- Add Node Modal -->
+<div id="addnode-modal" class="modal-backdrop hidden">
+  <div class="modal">
+    <div class="modal-title">ADD EDGE NODE</div>
+    <div class="form-row">
+      <label class="form-label">Node Name <span style="color:var(--text-dim);font-size:10px">(e.g. east, toronto-01)</span></label>
+      <input type="text" id="addnode-name" class="form-input" placeholder="east">
+    </div>
+    <div class="form-row">
+      <label class="form-label">URL <span style="color:var(--text-dim);font-size:10px">(http://ip:8080)</span></label>
+      <input type="text" id="addnode-url" class="form-input" placeholder="http://192.168.1.100:8080">
+    </div>
+    <div class="form-row">
+      <label class="form-label">Admin Token</label>
+      <input type="text" id="addnode-token" class="form-input" placeholder="firepool-admin-2026">
+    </div>
+    <div class="modal-actions">
+      <button class="btn" onclick="closeAddNode()">Cancel</button>
+      <button class="btn btn-accent" onclick="saveAddNode()">Add Node</button>
+    </div>
+  </div>
+</div>
+
+<!-- nginx Setup Modal -->
+<div id="nginx-modal" class="modal-backdrop hidden">
+  <div class="modal" style="width:480px">
+    <div class="modal-title">NGINX SETUP</div>
+    <div id="nginx-node-label" style="color:var(--text-dim);font-size:11px;margin-bottom:16px;"></div>
+    <div class="form-row">
+      <label class="form-label">Domain name <span style="color:var(--text-dim);font-size:10px">(blank = IP only, no SSL)</span></label>
+      <input type="text" id="nginx-domain" class="form-input" placeholder="edge.example.com">
+    </div>
+    <div style="font-size:11px;color:var(--text-dim);margin-bottom:14px;line-height:1.5">
+      On Linux: installs nginx + certbot via apt and issues an SSL certificate automatically.<br>
+      On Windows: generates a PowerShell setup script and returns instructions.
+    </div>
+    <div id="nginx-output-wrap" style="display:none">
+      <div style="color:var(--text-dim);font-size:10px;letter-spacing:1px;text-transform:uppercase;margin-bottom:6px">Output</div>
+      <div id="nginx-output" style="background:var(--bg);border:1px solid var(--border);padding:12px;
+           font-size:11px;max-height:240px;overflow-y:auto;white-space:pre-wrap;line-height:1.5;
+           color:var(--text-dim);font-family:var(--font)"></div>
+    </div>
+    <div class="modal-actions">
+      <button class="btn" onclick="closeNginx()">Close</button>
+      <button class="btn btn-accent" id="nginx-run-btn" onclick="runNginx()">Run Setup</button>
+    </div>
+  </div>
+</div>
+
+<!-- Toast -->
+<div id="toast" class="toast hidden"></div>
+
+<script>
+// ─── State ───────────────────────────────────────────────────────────────────
+let fleetData = [];
+let currentNode = null;
+let settingsNode = null;
+let confirmRestartNode = null;
+let detailInterval = null;
+let fleetInterval = null;
+
+// ─── Formatters ──────────────────────────────────────────────────────────────
+function fmtHashrate(h) {
+  if (!h || h <= 0) return '0 H/s';
+  const units = ['H/s','KH/s','MH/s','GH/s','TH/s','PH/s','EH/s'];
+  let i = 0;
+  while (h >= 1000 && i < units.length - 1) { h /= 1000; i++; }
+  return h.toFixed(2) + ' ' + units[i];
+}
+
+function fmtDiff(d) {
+  if (!d || d <= 0) return '0';
+  if (d >= 1e15) return (d/1e15).toFixed(2) + 'P';
+  if (d >= 1e12) return (d/1e12).toFixed(2) + 'T';
+  if (d >= 1e9)  return (d/1e9).toFixed(2)  + 'G';
+  if (d >= 1e6)  return (d/1e6).toFixed(2)  + 'M';
+  if (d >= 1e3)  return (d/1e3).toFixed(2)  + 'K';
+  return d.toFixed(2);
+}
+
+function fmtUptime(sec) {
+  if (!sec || sec <= 0) return '0s';
+  const d = Math.floor(sec / 86400);
+  const h = Math.floor((sec % 86400) / 3600);
+  const m = Math.floor((sec % 3600) / 60);
+  const s = sec % 60;
+  if (d > 0) return d + 'd ' + h + 'h';
+  if (h > 0) return h + 'h ' + m + 'm';
+  if (m > 0) return m + 'm ' + s + 's';
+  return s + 's';
+}
+
+function fmtNum(n) {
+  if (!n) return '0';
+  if (n >= 1e9) return (n/1e9).toFixed(1) + 'B';
+  if (n >= 1e6) return (n/1e6).toFixed(1) + 'M';
+  if (n >= 1e3) return (n/1e3).toFixed(1) + 'K';
+  return '' + n;
+}
+
+function pingClass(ms) {
+  if (ms < 0) return 'ping-bad';
+  if (ms < 100) return 'ping-good';
+  if (ms < 500) return 'ping-ok';
+  return 'ping-bad';
+}
+
+function fmtPing(ms) {
+  if (ms < 0) return 'offline';
+  return ms + 'ms';
+}
+
+function statusDot(online) {
+  if (online) return '<span class="dot dot-green"></span>';
+  return '<span class="dot dot-red"></span>';
+}
+
+// ─── Toast ────────────────────────────────────────────────────────────────────
+let toastTimer = null;
+function showToast(msg, type) {
+  const el = document.getElementById('toast');
+  el.textContent = msg;
+  el.className = 'toast ' + (type || '');
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => { el.className = 'toast hidden'; }, 3000);
+}
+
+// ─── Fleet View ───────────────────────────────────────────────────────────────
+function showFleet() {
+  document.getElementById('view-fleet').classList.remove('hidden');
+  document.getElementById('view-detail').classList.add('hidden');
+  currentNode = null;
+  if (detailInterval) { clearInterval(detailInterval); detailInterval = null; }
+  if (!fleetInterval) {
+    fleetInterval = setInterval(loadFleet, 10000);
+  }
+}
+
+async function loadFleet() {
+  setRefreshIndicator(true);
+  try {
+    const res = await fetch('/api/nodes');
+    fleetData = await res.json();
+    renderFleet(fleetData);
+  } catch(e) {
+    console.error('fleet fetch error:', e);
+  }
+  setRefreshIndicator(false);
+}
+
+function setRefreshIndicator(loading) {
+  const el = document.getElementById('refresh-indicator');
+  if (loading) {
+    el.textContent = 'refreshing...';
+    el.style.color = 'var(--accent)';
+  } else {
+    const now = new Date();
+    el.textContent = 'updated ' + now.toLocaleTimeString();
+    el.style.color = 'var(--text-dim)';
+  }
+}
+
+function renderFleet(nodes) {
+  if (!Array.isArray(nodes)) nodes = [];
+  globe.update(nodes);
+
+  // Summary
+  const total = nodes.length;
+  const online = nodes.filter(n => n.Online).length;
+  const totalHashrate = nodes.reduce((s, n) => s + (n.Hashrate || 0), 0);
+  const totalMiners = nodes.reduce((s, n) => s + (n.ActiveMiners || 0), 0);
+  const totalFwd = nodes.reduce((s, n) => s + (n.SharesFwd || 0), 0);
+
+  document.getElementById('sum-total').textContent = total;
+  document.getElementById('sum-online').textContent = online;
+  document.getElementById('sum-online').style.color = online === total && total > 0 ? 'var(--accent)' : (online === 0 ? 'var(--red)' : 'var(--yellow)');
+  document.getElementById('sum-hashrate').textContent = fmtHashrate(totalHashrate);
+  document.getElementById('sum-miners').textContent = totalMiners;
+  document.getElementById('sum-fwd').textContent = fmtNum(totalFwd);
+  document.getElementById('fleet-badge').textContent = online + ' / ' + total + ' ONLINE';
+
+  if (total === 0) {
+    document.getElementById('no-nodes-msg').classList.remove('hidden');
+    document.getElementById('fleet-tbody').innerHTML = '';
+    return;
+  }
+  document.getElementById('no-nodes-msg').classList.add('hidden');
+
+  const tbody = document.getElementById('fleet-tbody');
+  tbody.innerHTML = nodes.map(n => {
+    const name = n.Entry ? n.Entry.name : '?';
+    const online = n.Online;
+    const pingMs = n.PingMs;
+    return `<tr>
+      <td><strong>${esc(name)}</strong><br><span class="dim" style="font-size:10px;">${esc(n.NodeID || '')}</span></td>
+      <td>${statusDot(online)}${online ? '<span class="accent">online</span>' : '<span style="color:var(--red)">offline</span>'}</td>
+      <td class="ip-list">${esc(n.PublicIP || '—')}<br>${(n.LocalIPs||[]).join('<br>')}</td>
+      <td>${fmtUptime(n.UptimeSec)}</td>
+      <td class="${pingClass(pingMs)}">${fmtPing(pingMs)}${n.AvgPingMs > 0 ? `<br><span style="color:var(--text-dim);font-size:10px;">avg ${n.AvgPingMs}ms</span>` : ''}</td>
+      <td class="accent">${fmtHashrate(n.Hashrate)}</td>
+      <td>${n.ActiveMiners || 0}</td>
+      <td>${fmtNum(n.SharesFwd)}</td>
+      <td>${fmtDiff(n.BestDiff)}</td>
+      <td>
+        <button class="btn btn-sm btn-accent" onclick="showDetail('${esc(name)}')">Detail</button>
+        ${n.TokenOK ? `<button class="btn btn-sm" onclick="openSettings('${esc(name)}',${n.MaxConn},${n.MaxConnPerIP||50},${n.AuthTimeoutSec||30},'${esc(n.LogLevel)}')">Settings</button>` : ''}
+        ${n.TokenOK ? `<button class="btn btn-sm btn-accent" onclick="openNginx('${esc(name)}')">nginx</button>` : ''}
+        ${n.TokenOK ? `<span id="restart-cell-${esc(name)}"><button class="btn btn-sm btn-danger" onclick="startRestart('${esc(name)}')">Restart</button></span>` : ''}
+        <button class="btn btn-sm" title="Copy admin token" onclick="copyToken('${esc(n.Entry ? n.Entry.token : '')}','${esc(name)}')">&#x1F511;</button>
+        <button class="btn btn-sm btn-danger" onclick="removeNode('${esc(name)}')">Remove</button>
+      </td>
+    </tr>`;
+  }).join('');
+}
+
+// ─── Detail View ─────────────────────────────────────────────────────────────
+async function showDetail(name) {
+  currentNode = name;
+  document.getElementById('view-fleet').classList.add('hidden');
+  document.getElementById('view-detail').classList.remove('hidden');
+  document.getElementById('detail-name').textContent = name;
+
+  if (fleetInterval) { clearInterval(fleetInterval); fleetInterval = null; }
+
+  await loadDetail(name);
+  if (detailInterval) clearInterval(detailInterval);
+  detailInterval = setInterval(() => loadDetail(name), 5000);
+}
+
+async function loadDetail(name) {
+  setRefreshIndicator(true);
+  try {
+    const res = await fetch('/api/nodes/' + encodeURIComponent(name));
+    if (!res.ok) { showToast('Error loading node detail', 'error'); return; }
+    const node = await res.json();
+    renderDetail(node);
+  } catch(e) {
+    console.error('detail fetch error:', e);
+  }
+  setRefreshIndicator(false);
+}
+
+function renderDetail(node) {
+  document.getElementById('detail-name').textContent = node.NodeName || (node.Entry && node.Entry.Name) || '?';
+  const statusEl = document.getElementById('detail-status');
+  if (node.Online) {
+    statusEl.innerHTML = '<span class="dot dot-green"></span><span class="accent">online</span>';
+  } else {
+    statusEl.innerHTML = '<span class="dot dot-red"></span><span style="color:var(--red)">offline</span>';
+  }
+
+  document.getElementById('d-hashrate').textContent = fmtHashrate(node.Hashrate);
+  document.getElementById('d-miners').textContent = node.ActiveMiners || 0;
+  document.getElementById('d-bestdiff').textContent = fmtDiff(node.BestDiff);
+  document.getElementById('d-uptime').textContent = fmtUptime(node.UptimeSec);
+  const pingEl = document.getElementById('d-ping');
+  pingEl.textContent = fmtPing(node.PingMs);
+  pingEl.className = 'card-value ' + pingClass(node.PingMs);
+  document.getElementById('d-ping-sub').textContent = node.AvgPingMs > 0 ? 'avg ' + node.AvgPingMs + 'ms' : '';
+  document.getElementById('d-netdiff').textContent = fmtDiff(node.NetworkDiff);
+
+  // Pairs
+  const pairsBody = document.getElementById('detail-pairs');
+  const pairs = node.Pairs || [];
+  if (pairs.length === 0) {
+    pairsBody.innerHTML = '<tr><td colspan="9" class="dim" style="text-align:center;padding:16px;">No pairs</td></tr>';
+  } else {
+    pairsBody.innerHTML = pairs.map(p => `<tr>
+      <td><strong>${esc(p.coin)}</strong></td>
+      <td>${esc(p.mode)}</td>
+      <td>${p.localPort}</td>
+      <td>${statusDot(p.connected)}${p.connected ? '<span class="accent">connected</span>' : '<span style="color:var(--red)">disconnected</span>'}</td>
+      <td>${p.authorized ? '<span class="accent">auth</span>' : '<span class="dim">—</span>'}</td>
+      <td>${fmtDiff(p.upstreamDiff)}</td>
+      <td>${fmtDiff(p.networkDiff)}</td>
+      <td>${p.minerCount}</td>
+      <td>${p.blockHeight || 0}</td>
+    </tr>`).join('');
+  }
+
+  // Miners
+  const minersBody = document.getElementById('detail-miners');
+  const miners = node.Miners || [];
+  if (miners.length === 0) {
+    minersBody.innerHTML = '<tr><td colspan="7" class="dim" style="text-align:center;padding:16px;">No miners connected</td></tr>';
+  } else {
+    minersBody.innerHTML = miners.map(m => `<tr>
+      <td><strong>${esc(m.workerName || m.WorkerName || '—')}</strong></td>
+      <td class="dim">${esc(m.ipAddress || m.IPAddress || '—')}</td>
+      <td class="accent">${fmtHashrate(m.hashrate || m.Hashrate)}</td>
+      <td>${fmtNum(m.sharesAccepted || m.Accepted)}</td>
+      <td style="color:var(--red)">${fmtNum(m.sharesRejected || m.Rejected)}</td>
+      <td>${fmtDiff(m.currentDiff || m.CurrentDiff)}</td>
+      <td class="dim" style="font-size:11px;">${esc(m.userAgent || m.UserAgent || '—')}</td>
+    </tr>`).join('');
+  }
+}
+
+// ─── Settings Modal ───────────────────────────────────────────────────────────
+function openSettings(nodeName, maxConn, maxConnPerIP, authTimeoutSec, logLevel) {
+  settingsNode = nodeName;
+  document.getElementById('settings-node-label').textContent = 'Node: ' + nodeName;
+  document.getElementById('settings-maxconn').value = maxConn || '';
+  document.getElementById('settings-maxconnperip').value = maxConnPerIP !== undefined ? maxConnPerIP : 50;
+  document.getElementById('settings-authtimeout').value = authTimeoutSec || 30;
+  const sel = document.getElementById('settings-loglevel');
+  sel.value = logLevel || 'info';
+  document.getElementById('settings-modal').classList.remove('hidden');
+}
+
+function closeSettings() {
+  settingsNode = null;
+  document.getElementById('settings-modal').classList.add('hidden');
+}
+
+async function saveSettings() {
+  if (!settingsNode) return;
+  const maxConn = parseInt(document.getElementById('settings-maxconn').value) || 0;
+  const maxConnPerIP = parseInt(document.getElementById('settings-maxconnperip').value) || 0;
+  const authTimeoutSec = parseInt(document.getElementById('settings-authtimeout').value) || 30;
+  const logLevel = document.getElementById('settings-loglevel').value;
+  try {
+    const res = await fetch('/api/nodes/' + encodeURIComponent(settingsNode) + '/settings', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ maxConn, maxConnPerIP, authTimeoutSec, logLevel })
+    });
+    const data = await res.json();
+    if (res.ok && !data.error) {
+      showToast('Settings saved', 'success');
+      closeSettings();
+      loadFleet();
+    } else {
+      showToast('Error: ' + (data.error || 'unknown'), 'error');
+    }
+  } catch(e) {
+    showToast('Request failed: ' + e.message, 'error');
+  }
+}
+
+// Close modal on backdrop click
+document.getElementById('settings-modal').addEventListener('click', function(e) {
+  if (e.target === this) closeSettings();
+});
+
+// ─── Add Node Modal ───────────────────────────────────────────────────────────
+function openAddNode() {
+  document.getElementById('addnode-name').value = '';
+  document.getElementById('addnode-url').value = '';
+  document.getElementById('addnode-token').value = 'firepool-admin-2026';
+  document.getElementById('addnode-modal').classList.remove('hidden');
+  document.getElementById('addnode-name').focus();
+}
+
+function closeAddNode() {
+  document.getElementById('addnode-modal').classList.add('hidden');
+}
+
+async function saveAddNode() {
+  const name  = document.getElementById('addnode-name').value.trim();
+  const url   = document.getElementById('addnode-url').value.trim();
+  const token = document.getElementById('addnode-token').value.trim();
+  if (!name || !url) { showToast('Name and URL are required', 'error'); return; }
+  try {
+    const res = await fetch('/api/nodes', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name, url, token })
+    });
+    const data = await res.json();
+    if (res.ok && !data.error) {
+      showToast('Node "' + name + '" added', 'success');
+      closeAddNode();
+      loadFleet();
+    } else {
+      showToast('Error: ' + (data.error || 'unknown'), 'error');
+    }
+  } catch(e) {
+    showToast('Request failed: ' + e.message, 'error');
+  }
+}
+
+document.getElementById('addnode-modal').addEventListener('click', function(e) {
+  if (e.target === this) closeAddNode();
+});
+
+// ─── Remove Node ──────────────────────────────────────────────────────────────
+async function removeNode(name) {
+  if (!confirm('Remove node "' + name + '"?\nThis only removes it from the admin panel — the edge node keeps running.')) return;
+  try {
+    const res = await fetch('/api/nodes/' + encodeURIComponent(name), { method: 'DELETE' });
+    const data = await res.json();
+    if (res.ok && !data.error) {
+      showToast('Node "' + name + '" removed', 'success');
+      loadFleet();
+    } else {
+      showToast('Error: ' + (data.error || 'unknown'), 'error');
+    }
+  } catch(e) {
+    showToast('Request failed: ' + e.message, 'error');
+  }
+}
+
+// ─── Restart ─────────────────────────────────────────────────────────────────
+function startRestart(name) {
+  const cell = document.getElementById('restart-cell-' + name);
+  if (!cell) return;
+  cell.innerHTML = `<span class="confirm-inline">
+    <span class="confirm-text">Confirm?</span>
+    <button class="btn btn-sm btn-danger" onclick="doRestart('${esc(name)}')">Yes</button>
+    <button class="btn btn-sm" onclick="cancelRestart('${esc(name)}')">No</button>
+  </span>`;
+}
+
+function cancelRestart(name) {
+  const cell = document.getElementById('restart-cell-' + name);
+  if (!cell) return;
+  cell.innerHTML = `<button class="btn btn-sm btn-danger" onclick="startRestart('${esc(name)}')">Restart</button>`;
+}
+
+async function doRestart(name) {
+  try {
+    const res = await fetch('/api/nodes/' + encodeURIComponent(name) + '/restart', {
+      method: 'POST'
+    });
+    const data = await res.json();
+    if (res.ok && !data.error) {
+      showToast('Restart signal sent to ' + name, 'success');
+    } else {
+      showToast('Error: ' + (data.error || 'unknown'), 'error');
+    }
+  } catch(e) {
+    showToast('Request failed: ' + e.message, 'error');
+  }
+  cancelRestart(name);
+}
+
+// ─── nginx Setup ─────────────────────────────────────────────────────────────
+let nginxNode = null;
+
+function openNginx(name) {
+  nginxNode = name;
+  document.getElementById('nginx-node-label').textContent = 'Node: ' + name;
+  document.getElementById('nginx-domain').value = '';
+  document.getElementById('nginx-output-wrap').style.display = 'none';
+  document.getElementById('nginx-output').textContent = '';
+  document.getElementById('nginx-run-btn').disabled = false;
+  document.getElementById('nginx-run-btn').textContent = 'Run Setup';
+  document.getElementById('nginx-modal').classList.remove('hidden');
+  document.getElementById('nginx-domain').focus();
+}
+
+function closeNginx() {
+  nginxNode = null;
+  document.getElementById('nginx-modal').classList.add('hidden');
+}
+
+async function runNginx() {
+  if (!nginxNode) return;
+  const domain = document.getElementById('nginx-domain').value.trim();
+  const btn    = document.getElementById('nginx-run-btn');
+  const outWrap = document.getElementById('nginx-output-wrap');
+  const out    = document.getElementById('nginx-output');
+
+  btn.disabled = true;
+  btn.textContent = 'Running…';
+  outWrap.style.display = 'block';
+  out.textContent = 'Setting up nginx' + (domain ? ' for ' + domain : '') + '…\n';
+
+  try {
+    const res = await fetch('/api/nodes/' + encodeURIComponent(nginxNode) + '/nginx', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ domain })
+    });
+    const data = await res.json();
+    if (data.error) {
+      out.textContent = (data.output || '') + '\nERROR: ' + data.error;
+      showToast('nginx setup failed on ' + nginxNode, 'error');
+    } else {
+      out.textContent = data.output || 'Done.';
+      showToast('nginx setup complete on ' + nginxNode, 'success');
+    }
+  } catch (e) {
+    out.textContent += '\nError: ' + e.message;
+    showToast('Request failed: ' + e.message, 'error');
+  } finally {
+    btn.disabled = false;
+    btn.textContent = 'Run Again';
+    out.scrollTop = out.scrollHeight;
+  }
+}
+
+document.getElementById('nginx-modal').addEventListener('click', function(e) {
+  if (e.target === this) closeNginx();
+});
+
+// ─── Copy Token ───────────────────────────────────────────────────────────────
+function copyToken(token, name) {
+  if (!token) { showToast('No token stored for ' + name, 'error'); return; }
+  navigator.clipboard.writeText(token).then(() => {
+    showToast('Token copied: ' + token, 'success');
+  }).catch(() => {
+    // Fallback for non-HTTPS
+    prompt('Admin token for ' + name + ':', token);
+  });
+}
+
+// ─── Util ─────────────────────────────────────────────────────────────────────
+function esc(s) {
+  return String(s || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');
+}
+
+// ─── Globe ────────────────────────────────────────────────────────────────────
+const FP_LAT = 49.28, FP_LNG = -123.12; // Firepool HQ (Vancouver, BC)
+
+const globe = (() => {
+  const canvas = document.getElementById('globe-canvas');
+  const ctx    = canvas.getContext('2d');
+  let W, H, R, CX, CY;
+  let rotY = 2.56, rotX = 0.42; // rotY centres on BC/Americas; rotX tilts north pole toward viewer
+  let dragging = false, lastDragX = 0;
+  let nodes     = [];
+  let particles = [];
+  let landRings = []; // [{lat,lng}][] — world land outlines
+  const geoCache = {};
+
+  function resize() {
+    const wrap = document.getElementById('globe-wrap');
+    W = wrap.clientWidth; H = wrap.clientHeight;
+    canvas.width = W; canvas.height = H;
+    R = Math.min(W, H) * 0.40;
+    CX = W / 2; CY = H / 2;
+  }
+
+  function proj(lat, lng) {
+    const φ = lat * Math.PI / 180, λ = lng * Math.PI / 180;
+    let x = Math.cos(φ)*Math.cos(λ), y = Math.sin(φ), z = Math.cos(φ)*Math.sin(λ);
+    const cy = Math.cos(rotY), sy = Math.sin(rotY);
+    let x1 = x*cy + z*sy, z1 = -x*sy + z*cy;
+    const cx = Math.cos(rotX), sx = Math.sin(rotX);
+    let y1 = y*cx - z1*sx, z2 = y*sx + z1*cx;
+    return { px: CX - x1*R, py: CY - y1*R, z: z2, depth: (z2+1)*0.5 }; // negate x1 = outside-view
+  }
+
+  // Draw polygon rings in two passes (back then front), breaking at hemisphere crossings
+  function drawRings(rings, backAlpha, frontAlpha, lwBack, lwFront) {
+    for (const front of [false, true]) {
+      ctx.strokeStyle = `rgba(0,200,255,${front ? frontAlpha : backAlpha})`;
+      ctx.lineWidth   = front ? lwFront : lwBack;
+      for (const ring of rings) {
+        ctx.beginPath();
+        let f = true, prevFront = null;
+        for (const pt of ring) {
+          const p = proj(pt.lat, pt.lng);
+          const isFront = p.z >= 0;
+          if (prevFront !== null && prevFront !== isFront) { ctx.stroke(); ctx.beginPath(); f = true; }
+          if (isFront !== front) { prevFront = isFront; f = true; continue; }
+          f ? ctx.moveTo(p.px, p.py) : ctx.lineTo(p.px, p.py);
+          f = false; prevFront = isFront;
+        }
+        ctx.stroke();
+      }
+    }
+  }
+
+  function slerp(la1, lo1, la2, lo2, t) {
+    const r = d => d * Math.PI / 180;
+    const a = [Math.cos(r(la1))*Math.cos(r(lo1)), Math.sin(r(la1)), Math.cos(r(la1))*Math.sin(r(lo1))];
+    const b = [Math.cos(r(la2))*Math.cos(r(lo2)), Math.sin(r(la2)), Math.cos(r(la2))*Math.sin(r(lo2))];
+    const dot = Math.max(-1, Math.min(1, a[0]*b[0]+a[1]*b[1]+a[2]*b[2]));
+    const angle = Math.acos(dot);
+    if (angle < 1e-6) return { lat: la1, lng: lo1 };
+    const s = Math.sin(angle);
+    const fa = Math.sin((1-t)*angle)/s, fb = Math.sin(t*angle)/s;
+    const px = fa*a[0]+fb*b[0], py = fa*a[1]+fb*b[1], pz = fa*a[2]+fb*b[2];
+    return { lat: Math.atan2(py, Math.sqrt(px*px+pz*pz))*180/Math.PI,
+             lng: Math.atan2(pz, px)*180/Math.PI };
+  }
+
+  function draw(now) {
+    ctx.clearRect(0, 0, W, H);
+
+    // Transparent globe fill
+    const g = ctx.createRadialGradient(CX-R*0.2, CY-R*0.2, 0, CX, CY, R);
+    g.addColorStop(0, 'rgba(0,25,60,0.45)'); g.addColorStop(1, 'rgba(0,8,22,0.65)');
+    ctx.beginPath(); ctx.arc(CX, CY, R, 0, Math.PI*2); ctx.fillStyle = g; ctx.fill();
+
+    // Atmosphere glow
+    const ag = ctx.createRadialGradient(CX, CY, R*0.92, CX, CY, R*1.14);
+    ag.addColorStop(0, 'rgba(0,140,255,0.12)'); ag.addColorStop(1, 'transparent');
+    ctx.beginPath(); ctx.arc(CX, CY, R*1.14, 0, Math.PI*2); ctx.fillStyle = ag; ctx.fill();
+
+    // Globe rim
+    ctx.beginPath(); ctx.arc(CX, CY, R, 0, Math.PI*2);
+    ctx.strokeStyle = 'rgba(0,160,255,0.25)'; ctx.lineWidth = 1; ctx.stroke();
+
+    // Lat/lng grid — both hemispheres via drawRings
+    const latLines = [], lngLines = [];
+    for (let la = -60; la <= 60; la += 30) {
+      const r = []; for (let lo = -180; lo <= 180; lo += 4) r.push({lat:la,lng:lo}); latLines.push(r);
+    }
+    for (let lo = -180; lo < 180; lo += 30) {
+      const r = []; for (let la = -85; la <= 85; la += 4) r.push({lat:la,lng:lo}); lngLines.push(r);
+    }
+    drawRings(latLines, 0.03, 0.06, 0.3, 0.3);
+    drawRings(lngLines, 0.03, 0.06, 0.3, 0.3);
+
+    // Land wireframe — back dim, front bright
+    if (landRings.length > 0) drawRings(landRings, 0.07, 0.22, 0.4, 0.65);
+
+    // Arcs — full arc visible on both sides, back dimmer
+    for (const nd of nodes) {
+      if (!nd.lat) continue;
+      for (const front of [false, true]) {
+        ctx.beginPath(); let f = true, prevFront = null;
+        for (let t = 0; t <= 1; t += 0.025) {
+          const sp = slerp(nd.lat, nd.lng, FP_LAT, FP_LNG, t);
+          const p  = proj(sp.lat, sp.lng);
+          const isFront = p.z >= 0;
+          if (prevFront !== null && prevFront !== isFront) { ctx.stroke(); ctx.beginPath(); f = true; }
+          if (isFront !== front) { prevFront = isFront; f = true; continue; }
+          f ? ctx.moveTo(p.px, p.py) : ctx.lineTo(p.px, p.py); f = false; prevFront = isFront;
+        }
+        ctx.strokeStyle = nd.online
+          ? (front ? 'rgba(0,160,255,0.22)' : 'rgba(0,160,255,0.06)')
+          : (front ? 'rgba(255,68,85,0.14)'  : 'rgba(255,68,85,0.04)');
+        ctx.lineWidth = front ? 0.8 : 0.5; ctx.stroke();
+      }
+    }
+
+    // Particles — visible both sides, dimmed on back
+    ctx.save();
+    for (const pt of particles) {
+      const nd = nodes[pt.ni];
+      if (!nd?.lat) continue;
+      const [la1,lo1,la2,lo2] = pt.dir===1
+        ? [nd.lat,nd.lng,FP_LAT,FP_LNG] : [FP_LAT,FP_LNG,nd.lat,nd.lng];
+      const sp = slerp(la1,lo1,la2,lo2,pt.t);
+      const p  = proj(sp.lat,sp.lng);
+      const depthFactor = 0.18 + 0.82 * p.depth;
+      const alpha = Math.sin(pt.t*Math.PI) * depthFactor;
+      const col = pt.dir===1 ? `rgba(0,170,255,${alpha.toFixed(2)})` : `rgba(255,215,0,${alpha.toFixed(2)})`;
+      ctx.beginPath(); ctx.arc(p.px, p.py, p.depth>0.5 ? 2.5 : 1.5, 0, Math.PI*2);
+      ctx.fillStyle=col; ctx.shadowColor=col; ctx.shadowBlur=p.depth>0.5?8:2; ctx.fill();
+    }
+    ctx.restore();
+
+    // Node dots — always visible; front=full glow, back=dim ghost
+    for (const nd of nodes) {
+      if (!nd.lat) continue;
+      const p = proj(nd.lat, nd.lng);
+      if (p.depth >= 0.5) {
+        const col   = nd.online ? '#00aaff' : '#ff4455';
+        const pulse = nd.online ? (0.7+0.3*Math.sin(now/900)) : 1;
+        ctx.beginPath(); ctx.arc(p.px,p.py,8*pulse,0,Math.PI*2);
+        ctx.fillStyle = nd.online ? 'rgba(0,170,255,0.1)' : 'rgba(255,68,85,0.07)'; ctx.fill();
+        ctx.beginPath(); ctx.arc(p.px,p.py,4,0,Math.PI*2);
+        ctx.fillStyle=col; ctx.shadowColor=col; ctx.shadowBlur=14; ctx.fill(); ctx.shadowBlur=0;
+        ctx.fillStyle='#c8d8f0'; ctx.font='10px Courier New'; ctx.fillText(nd.name, p.px+8, p.py+4);
+      } else {
+        ctx.beginPath(); ctx.arc(p.px,p.py,2.5,0,Math.PI*2);
+        ctx.fillStyle = nd.online ? 'rgba(0,170,255,0.25)' : 'rgba(255,68,85,0.2)'; ctx.fill();
+        ctx.fillStyle='rgba(200,216,240,0.18)'; ctx.font='9px Courier New';
+        ctx.fillText(nd.name, p.px+6, p.py+3);
+      }
+    }
+
+    // Firepool dot — always visible, depth-scaled
+    const fp = proj(FP_LAT, FP_LNG);
+    const fpD = 0.15 + 0.85 * fp.depth, fpP = 0.7+0.3*Math.sin(now/600);
+    ctx.beginPath(); ctx.arc(fp.px,fp.py,12*fpP*fpD,0,Math.PI*2);
+    ctx.fillStyle=`rgba(255,215,0,${(0.08*fp.depth).toFixed(2)})`; ctx.fill();
+    ctx.beginPath(); ctx.arc(fp.px,fp.py,5*fpD,0,Math.PI*2);
+    ctx.fillStyle='#ffd700'; ctx.shadowColor='#ffd700'; ctx.shadowBlur=18*fp.depth; ctx.fill(); ctx.shadowBlur=0;
+    ctx.fillStyle=`rgba(255,215,0,${fpD.toFixed(2)})`; ctx.font='bold 10px Courier New';
+    ctx.fillText('FIREPOOL', fp.px+10, fp.py+4);
+  }
+
+  function tick(dt) {
+    if (!dragging) rotY += 0.003 * dt * 60;
+    particles = particles.filter(p => p.t > 0 && p.t < 1);
+    for (const p of particles) p.t += p.spd * dt;
+    const active = nodes.filter(n => n.online && n.lat);
+    if (active.length && Math.random() < 0.12) {
+      const nd = active[Math.floor(Math.random()*active.length)];
+      particles.push({ ni: nodes.indexOf(nd), t: 0.01, dir: Math.random()<0.6?1:-1, spd: 0.22+Math.random()*0.18 });
+    }
+  }
+
+  let last = 0;
+  function loop(now) {
+    const dt = Math.min((now-last)/1000, 0.1); last = now;
+    tick(dt); draw(now);
+    requestAnimationFrame(loop);
+  }
+
+  canvas.addEventListener('mousedown', e => { dragging=true; lastDragX=e.clientX; canvas.style.cursor='grabbing'; });
+  window.addEventListener('mouseup', () => { dragging=false; canvas.style.cursor='grab'; });
+  window.addEventListener('mousemove', e => { if(!dragging) return; rotY-=(e.clientX-lastDragX)*0.006; lastDragX=e.clientX; });
+  new ResizeObserver(resize).observe(document.getElementById('globe-wrap'));
+
+  resize();
+  requestAnimationFrame(loop);
+
+  async function geocode(ip) {
+    if (!ip || ip==='—' || geoCache[ip]!==undefined) return;
+    geoCache[ip] = null;
+    try {
+      const d = await (await fetch(`https://ipapi.co/${ip}/json/`)).json();
+      if (d.latitude && d.longitude) {
+        geoCache[ip] = { lat: d.latitude, lng: d.longitude };
+        for (const nd of nodes) { if (nd.ip===ip) { nd.lat=d.latitude; nd.lng=d.longitude; } }
+      }
+    } catch(e) { geoCache[ip] = null; }
+  }
+
+  // Inline topojson decoder — no external library needed
+  function topoRings(topo, objName) {
+    const {scale:[sx,sy], translate:[tx,ty]} = topo.transform;
+    // decode delta-encoded arcs → [[lng,lat],...]
+    const arcs = topo.arcs.map(arc => {
+      let x=0, y=0;
+      return arc.map(([dx,dy]) => { x+=dx; y+=dy; return [x*sx+tx, y*sy+ty]; });
+    });
+    const rings = [];
+    function arcPts(ref) {
+      return ref>=0 ? arcs[ref] : [...arcs[~ref]].reverse();
+    }
+    function addPoly(arcRefs) {
+      for (const refs of arcRefs) {
+        const ring = [];
+        for (const ref of refs) {
+          const pts = arcPts(ref);
+          ring.push(...(ring.length ? pts.slice(1) : pts));
+        }
+        rings.push(ring.map(([lng,lat]) => ({lat,lng})));
+      }
+    }
+    function walk(g) {
+      if (!g) return;
+      if (g.type==='Polygon')      addPoly([g.arcs]);
+      else if (g.type==='MultiPolygon') g.arcs.forEach(p => addPoly([...p.map(r=>[r])]));
+      else if (g.type==='GeometryCollection') g.geometries.forEach(walk);
+    }
+    // MultiPolygon arcs structure: [polygon][ring][arcref]
+    function walkLand(g) {
+      if (!g) return;
+      if (g.type==='Polygon') {
+        addPoly(g.arcs);
+      } else if (g.type==='MultiPolygon') {
+        for (const poly of g.arcs) addPoly(poly);
+      } else if (g.type==='GeometryCollection') {
+        g.geometries.forEach(walkLand);
+      }
+    }
+    walkLand(topo.objects[objName]);
+    return rings;
+  }
+
+  // Load world land outlines from CDN
+  (async () => {
+    try {
+      const topo = await fetch('https://cdn.jsdelivr.net/npm/world-atlas@2/land-110m.json').then(r=>r.json());
+      landRings = topoRings(topo, 'land');
+      console.log('World map loaded:', landRings.length, 'rings');
+    } catch(e) { console.warn('World map load failed:', e); }
+  })();
+
+  return {
+    update(states) {
+      nodes = (states||[]).map(n => {
+        const name = n.Entry?.name || '?';
+        const ip = n.PublicIP || '';
+        const lat = n.Lat || null;
+        const lng = n.Lng || null;
+        return { name, ip, lat, lng, online: n.Online };
+      });
+    }
+  };
+})();
+
+// ─── Init ─────────────────────────────────────────────────────────────────────
+showFleet();
+loadFleet();
+fleetInterval = setInterval(loadFleet, 10000);
+</script>
+</body>
+</html>

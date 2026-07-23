@@ -1,0 +1,615 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>GoVault Edge Node — Setup</title>
+<style>
+  :root {
+    --bg:        #0a0e1a;
+    --surface:   #0f1628;
+    --border:    #1a2a4a;
+    --accent:    #39ff14;
+    --accent2:   #2bc010;
+    --muted:     #5a6a8a;
+    --text:      #c8d8f0;
+    --text-dim:  #7a8aaa;
+    --red:       #ff4444;
+    --yellow:    #f5a623;
+    --input-bg:  #0c1220;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: 'Courier New', monospace;
+    font-size: 14px;
+    min-height: 100vh;
+  }
+
+  /* ── Header ── */
+  header {
+    background: var(--surface);
+    border-bottom: 1px solid var(--border);
+    padding: 14px 24px;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+  }
+  .logo-icon {
+    width: 32px; height: 32px;
+    background: var(--accent);
+    border-radius: 6px;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 18px; color: var(--bg); font-weight: bold;
+    flex-shrink: 0;
+  }
+  .logo-text { font-size: 16px; font-weight: bold; color: var(--accent); letter-spacing: 1px; }
+  .logo-sub  { font-size: 11px; color: var(--text-dim); margin-top: 2px; }
+
+  /* ── Wizard container ── */
+  .wizard {
+    max-width: 820px;
+    margin: 36px auto;
+    padding: 0 20px 60px;
+  }
+
+  .wizard-title {
+    font-size: 20px;
+    font-weight: bold;
+    color: var(--accent);
+    letter-spacing: 1px;
+    margin-bottom: 6px;
+  }
+  .wizard-sub {
+    font-size: 12px;
+    color: var(--text-dim);
+    margin-bottom: 32px;
+  }
+
+  /* ── Section cards ── */
+  .section {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 22px 24px;
+    margin-bottom: 20px;
+  }
+  .section-label {
+    font-size: 11px;
+    color: var(--text-dim);
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    margin-bottom: 16px;
+  }
+
+  /* ── Form fields ── */
+  .field { margin-bottom: 18px; }
+  .field:last-child { margin-bottom: 0; }
+  .field label {
+    display: block;
+    font-size: 12px;
+    color: var(--text-dim);
+    margin-bottom: 6px;
+    text-transform: uppercase;
+    letter-spacing: 0.8px;
+  }
+  .field input[type=text],
+  .field input[type=number] {
+    width: 100%;
+    background: var(--input-bg);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    color: var(--text);
+    font-family: 'Courier New', monospace;
+    font-size: 14px;
+    padding: 9px 12px;
+    outline: none;
+    transition: border-color 0.15s;
+  }
+  .field input:focus {
+    border-color: var(--accent2);
+  }
+  .field input[type=number] { width: 120px; }
+  .field-hint {
+    font-size: 11px;
+    color: var(--muted);
+    margin-top: 5px;
+  }
+
+  /* ── Coin table ── */
+  .coin-table-wrap { overflow-x: auto; }
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 13px;
+  }
+  thead tr { border-bottom: 1px solid var(--border); }
+  th {
+    padding: 8px 10px;
+    text-align: left;
+    font-size: 11px;
+    color: var(--text-dim);
+    text-transform: uppercase;
+    letter-spacing: 0.8px;
+    white-space: nowrap;
+  }
+  td {
+    padding: 9px 10px;
+    border-bottom: 1px solid rgba(26,42,74,0.4);
+    white-space: nowrap;
+  }
+  tr:last-child td { border-bottom: none; }
+  tr:hover td { background: rgba(57,255,20,0.02); }
+  .td-coin   { color: var(--accent); font-weight: bold; }
+  .td-mode   { color: var(--text-dim); font-size: 12px; text-transform: uppercase; }
+  .td-desc   { color: var(--muted); font-size: 12px; }
+  .td-port input[type=number] {
+    width: 90px;
+    background: var(--input-bg);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    color: var(--text);
+    font-family: 'Courier New', monospace;
+    font-size: 13px;
+    padding: 5px 8px;
+    outline: none;
+  }
+  .td-port input:focus { border-color: var(--accent2); }
+
+  /* ── Custom checkbox ── */
+  .cb-wrap {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+  .cb-wrap input[type=checkbox] {
+    appearance: none;
+    -webkit-appearance: none;
+    width: 18px; height: 18px;
+    border: 1px solid var(--border);
+    border-radius: 3px;
+    background: var(--input-bg);
+    cursor: pointer;
+    position: relative;
+    flex-shrink: 0;
+    transition: background 0.12s, border-color 0.12s;
+  }
+  .cb-wrap input[type=checkbox]:checked {
+    background: var(--accent2);
+    border-color: var(--accent);
+  }
+  .cb-wrap input[type=checkbox]:checked::after {
+    content: '';
+    position: absolute;
+    left: 4px; top: 1px;
+    width: 6px; height: 10px;
+    border: 2px solid var(--bg);
+    border-top: none;
+    border-left: none;
+    transform: rotate(45deg);
+  }
+
+  /* Row dimmed when unchecked */
+  tr.row-disabled td:not(:first-child) { opacity: 0.35; }
+
+  /* ── Select-all row ── */
+  .select-all-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 12px;
+    color: var(--text-dim);
+    margin-bottom: 10px;
+    cursor: pointer;
+  }
+  .select-all-row input[type=checkbox] {
+    appearance: none;
+    -webkit-appearance: none;
+    width: 16px; height: 16px;
+    border: 1px solid var(--border);
+    border-radius: 3px;
+    background: var(--input-bg);
+    cursor: pointer;
+    position: relative;
+    flex-shrink: 0;
+  }
+  .select-all-row input[type=checkbox]:checked {
+    background: var(--accent2);
+    border-color: var(--accent);
+  }
+  .select-all-row input[type=checkbox]:checked::after {
+    content: '';
+    position: absolute;
+    left: 3px; top: 1px;
+    width: 6px; height: 8px;
+    border: 2px solid var(--bg);
+    border-top: none;
+    border-left: none;
+    transform: rotate(45deg);
+  }
+
+  /* ── Save button ── */
+  .btn-save {
+    display: block;
+    width: 100%;
+    padding: 13px 0;
+    background: transparent;
+    border: 2px solid var(--accent);
+    border-radius: 6px;
+    color: var(--accent);
+    font-family: 'Courier New', monospace;
+    font-size: 15px;
+    font-weight: bold;
+    letter-spacing: 1px;
+    cursor: pointer;
+    transition: background 0.15s, color 0.15s;
+  }
+  .btn-save:hover:not(:disabled) {
+    background: rgba(57,255,20,0.1);
+  }
+  .btn-save:disabled {
+    opacity: 0.5;
+    cursor: default;
+  }
+
+  /* ── Spinner ── */
+  .spinner {
+    display: inline-block;
+    width: 16px; height: 16px;
+    border: 2px solid rgba(57,255,20,0.25);
+    border-top-color: var(--accent);
+    border-radius: 50%;
+    animation: spin 0.7s linear infinite;
+    vertical-align: middle;
+    margin-right: 8px;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  /* ── Error/success messages ── */
+  .msg {
+    padding: 12px 16px;
+    border-radius: 6px;
+    font-size: 13px;
+    margin-bottom: 20px;
+  }
+  .msg-error   { background: rgba(255,68,68,0.1);  border: 1px solid #882222; color: var(--red); }
+  .msg-success { background: rgba(57,255,20,0.08); border: 1px solid var(--accent2); color: var(--accent); }
+  .msg-hidden  { display: none; }
+
+  /* ── Firewall commands box ── */
+  .fw-box {
+    background: var(--input-bg);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 14px 16px;
+    margin: 14px 0;
+  }
+  .fw-box pre {
+    font-family: 'Courier New', monospace;
+    font-size: 13px;
+    color: var(--accent);
+    white-space: pre-wrap;
+    word-break: break-all;
+  }
+  .copy-btn {
+    margin-top: 10px;
+    padding: 6px 14px;
+    background: transparent;
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    color: var(--text-dim);
+    font-family: 'Courier New', monospace;
+    font-size: 12px;
+    cursor: pointer;
+    transition: border-color 0.12s, color 0.12s;
+  }
+  .copy-btn:hover { border-color: var(--accent2); color: var(--accent); }
+
+  .btn-dashboard {
+    display: inline-block;
+    margin-top: 16px;
+    padding: 11px 24px;
+    background: rgba(57,255,20,0.1);
+    border: 2px solid var(--accent);
+    border-radius: 6px;
+    color: var(--accent);
+    font-family: 'Courier New', monospace;
+    font-size: 14px;
+    font-weight: bold;
+    letter-spacing: 1px;
+    cursor: pointer;
+    text-decoration: none;
+    transition: background 0.15s;
+  }
+  .btn-dashboard:hover { background: rgba(57,255,20,0.18); }
+
+  /* ── Footer ── */
+  footer {
+    text-align: center;
+    padding: 20px;
+    color: var(--muted);
+    font-size: 11px;
+    border-top: 1px solid var(--border);
+    margin-top: 8px;
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="logo-icon">E</div>
+  <div>
+    <div class="logo-text">GoVault Edge Node</div>
+    <div class="logo-sub">first-run setup wizard</div>
+  </div>
+</header>
+
+<div class="wizard">
+  <div class="wizard-title">Welcome to GoVault Edge Node</div>
+  <div class="wizard-sub">Complete the form below to configure your node. This wizard runs once on first start and replaces the <code>--init</code> CLI wizard.</div>
+
+  <!-- Error / success banners -->
+  <div id="msg-error"   class="msg msg-error   msg-hidden"></div>
+  <div id="msg-success" class="msg msg-success  msg-hidden"></div>
+
+  <!-- ── Section 1: Node identity ── -->
+  <div class="section">
+    <div class="section-label">Node Identity</div>
+
+    <div class="field">
+      <label for="f-nodename">Node Name</label>
+      <input type="text" id="f-nodename" value="edge" maxlength="64" placeholder="east, toronto-01, …">
+      <div class="field-hint">Friendly label shown in the dashboard header.</div>
+    </div>
+
+
+    <div class="field">
+      <label for="f-apiport">Dashboard Port</label>
+      <input type="number" id="f-apiport" value="8080" min="1" max="65535">
+      <div class="field-hint">HTTP port for this web dashboard. Default 8080.</div>
+    </div>
+  </div>
+
+  <!-- ── Section 2: Endpoints ── -->
+  <div class="section">
+    <div class="section-label">Firepool Endpoints</div>
+
+    <label class="select-all-row">
+      <input type="checkbox" id="cb-all" checked>
+      <span>Select / deselect all</span>
+    </label>
+
+    <div class="coin-table-wrap">
+      <table id="endpoints-table">
+        <thead>
+          <tr>
+            <th style="width:36px"></th>
+            <th>Coin</th>
+            <th>Mode</th>
+            <th>Local Port</th>
+            <th style="min-width:180px">Description</th>
+          </tr>
+        </thead>
+        <tbody id="endpoints-body">
+          <!-- filled by JS -->
+        </tbody>
+      </table>
+    </div>
+    <div class="field-hint" style="margin-top:10px">Local port = the port your miners point at on this machine. Defaults match Firepool's ports. Change only if there is a conflict.</div>
+  </div>
+
+  <!-- ── Section 3: Admin panel registration ── -->
+  <div class="section">
+    <div class="section-label">Admin Panel Registration <span style="color:var(--muted);font-size:10px;text-transform:none;letter-spacing:0">(optional)</span></div>
+
+    <div class="field">
+      <label for="f-beacon">Admin Panel URL</label>
+      <input type="text" id="f-beacon" placeholder="http://firepool.ca:9090" autocomplete="off">
+      <div class="field-hint">URL of your GoVault admin panel. When set, this node registers itself automatically on startup.</div>
+    </div>
+
+    <div class="field">
+      <label for="f-selfurl">This Node's Public URL</label>
+      <input type="text" id="f-selfurl" placeholder="http://eu.firepool.ca:8080" autocomplete="off">
+      <div class="field-hint">The URL the admin panel uses to reach this node. Leave blank to auto-detect from public IP.</div>
+    </div>
+  </div>
+
+  <!-- ── Save button ── -->
+  <button class="btn-save" id="btn-save" onclick="doSave()">Save &amp; Start Node</button>
+
+  <!-- ── Post-setup: firewall section (hidden until success) ── -->
+  <div id="fw-section" style="display:none; margin-top:28px;">
+    <div class="section">
+      <div class="section-label">Firewall Commands</div>
+      <p style="color:var(--text-dim);font-size:13px;margin-bottom:10px;" id="fw-hint">
+        Run these commands to open the required ports.
+      </p>
+      <div class="fw-box">
+        <pre id="fw-commands"></pre>
+      </div>
+      <button class="copy-btn" onclick="copyFW()">Copy to clipboard</button>
+    </div>
+    <a class="btn-dashboard" href="/" id="btn-go-dashboard">Go to Dashboard &rarr;</a>
+  </div>
+</div>
+
+<footer>GoVault Edge Node &nbsp;·&nbsp; first-run setup</footer>
+
+<script>
+// ── Firepool presets (mirrors presets.go) ──────────────────────────────────
+const FIREPOOL_HOST = 'firepool.ca';
+const PRESETS = [
+  { coin: 'BC2',  coinId: 'bc2',  mode: 'prop', port: 3333, worker: '1JFzsmducT6DEXhhwjyMMfpbcnxRJhSagX',           desc: 'Bitcoin II — proportional' },
+  { coin: 'BC2',  coinId: 'bc2',  mode: 'solo', port: 3339, worker: '1JFzsmducT6DEXhhwjyMMfpbcnxRJhSagX',           desc: 'Bitcoin II — solo' },
+  { coin: 'BCH',  coinId: 'bch',  mode: 'prop', port: 5333, worker: '1EjpigKqvF9N4KoDnnCTRbbSy6xcpaAwc6',           desc: 'Bitcoin Cash — proportional' },
+  { coin: 'BCH',  coinId: 'bch',  mode: 'solo', port: 5339, worker: '1EjpigKqvF9N4KoDnnCTRbbSy6xcpaAwc6',           desc: 'Bitcoin Cash — solo' },
+  { coin: 'DGB',  coinId: 'dgb',  mode: 'prop', port: 6333, worker: 'DPceoh3LN9AcFqHBteCCvq96BVfRr7CXPy',           desc: 'DigiByte — proportional' },
+  { coin: 'DGB',  coinId: 'dgb',  mode: 'solo', port: 6339, worker: 'DPceoh3LN9AcFqHBteCCvq96BVfRr7CXPy',           desc: 'DigiByte — solo' },
+  { coin: 'BTC',  coinId: 'btc',  mode: 'prop', port: 4333, worker: '39fSJjmDL8ZuCZhCqpyozbAbrWgxeuUKbA',           desc: 'Bitcoin — proportional' },
+  { coin: 'BTC',  coinId: 'btc',  mode: 'solo', port: 4339, worker: '39fSJjmDL8ZuCZhCqpyozbAbrWgxeuUKbA',           desc: 'Bitcoin — solo' },
+  { coin: 'BTCS', coinId: 'btcs', mode: 'prop', port: 7333, worker: 'bs1qn94vypw8vdltuuyqfmkz5uz5783dnvelny0cnf', desc: 'Bitcoin Satoshi — proportional' },
+  { coin: 'BTCS', coinId: 'btcs', mode: 'solo', port: 7339, worker: 'bs1qn94vypw8vdltuuyqfmkz5uz5783dnvelny0cnf', desc: 'Bitcoin Satoshi — solo' },
+  { coin: 'XEC',  coinId: 'xec',  mode: 'prop', port: 9333, worker: '1GdAGV2DW44nsN3Kg4SDzjSa9iiMT7iUtJ',           desc: 'eCash — proportional' },
+  { coin: 'XEC',  coinId: 'xec',  mode: 'solo', port: 9339, worker: '1GdAGV2DW44nsN3Kg4SDzjSa9iiMT7iUtJ',           desc: 'eCash — solo' },
+];
+
+// ── Build table ────────────────────────────────────────────────────────────
+(function buildTable() {
+  const tbody = document.getElementById('endpoints-body');
+  PRESETS.forEach((p, i) => {
+    const tr = document.createElement('tr');
+    tr.id = `row-${i}`;
+    tr.innerHTML = `
+      <td class="cb-wrap">
+        <input type="checkbox" id="cb-${i}" checked onchange="rowToggle(${i})">
+      </td>
+      <td class="td-coin">${p.coin}</td>
+      <td class="td-mode">${p.mode.toUpperCase()}</td>
+      <td class="td-port"><input type="number" id="port-${i}" value="${p.port}" min="1" max="65535"></td>
+      <td class="td-desc">${p.desc}</td>
+    `;
+    tbody.appendChild(tr);
+  });
+})();
+
+// ── Checkbox helpers ───────────────────────────────────────────────────────
+function rowToggle(i) {
+  const checked = document.getElementById(`cb-${i}`).checked;
+  const row = document.getElementById(`row-${i}`);
+  if (checked) row.classList.remove('row-disabled');
+  else         row.classList.add('row-disabled');
+  syncSelectAll();
+}
+
+function syncSelectAll() {
+  const cbAll = document.getElementById('cb-all');
+  const any = PRESETS.some((_, i) => document.getElementById(`cb-${i}`).checked);
+  const all = PRESETS.every((_, i) => document.getElementById(`cb-${i}`).checked);
+  cbAll.checked = all;
+  cbAll.indeterminate = any && !all;
+}
+
+document.getElementById('cb-all').addEventListener('change', function() {
+  const v = this.checked;
+  PRESETS.forEach((_, i) => {
+    document.getElementById(`cb-${i}`).checked = v;
+    const row = document.getElementById(`row-${i}`);
+    if (v) row.classList.remove('row-disabled');
+    else   row.classList.add('row-disabled');
+  });
+});
+
+// ── Show/hide messages ─────────────────────────────────────────────────────
+function showError(msg) {
+  const el = document.getElementById('msg-error');
+  el.textContent = msg;
+  el.classList.remove('msg-hidden');
+  document.getElementById('msg-success').classList.add('msg-hidden');
+  el.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+}
+
+function showSuccess(msg) {
+  const el = document.getElementById('msg-success');
+  el.textContent = msg;
+  el.classList.remove('msg-hidden');
+  document.getElementById('msg-error').classList.add('msg-hidden');
+}
+
+// ── Save handler ───────────────────────────────────────────────────────────
+async function doSave() {
+  const btn = document.getElementById('btn-save');
+
+  // Gather values
+  const nodeName  = document.getElementById('f-nodename').value.trim() || 'edge';
+  const apiPort   = parseInt(document.getElementById('f-apiport').value, 10) || 8080;
+  const beaconUrl = document.getElementById('f-beacon').value.trim();
+  const selfUrl   = document.getElementById('f-selfurl').value.trim();
+
+  // Build endpoints array
+  const endpoints = PRESETS.map((p, i) => {
+    const enabled   = document.getElementById(`cb-${i}`).checked;
+    const localPort = parseInt(document.getElementById(`port-${i}`).value, 10) || p.port;
+    return {
+      coin:        p.coin,
+      coinId:      p.coinId,
+      mode:        p.mode,
+      localPort:   localPort,
+      upstreamUrl: `stratum+tcp://${FIREPOOL_HOST}:${p.port}`,
+      workerName:  p.worker,
+      password:    'x',
+      enabled:     enabled,
+    };
+  }).filter(ep => ep.enabled);
+
+  if (endpoints.length === 0) {
+    showError('At least one endpoint must be enabled.');
+    return;
+  }
+
+  // Disable button, show spinner
+  btn.disabled = true;
+  btn.innerHTML = '<span class="spinner"></span>Saving…';
+
+  try {
+    const res = await fetch('/api/setup', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ nodeName, apiPort, endpoints, beaconUrl, selfUrl }),
+    });
+
+    const data = await res.json();
+
+    if (!res.ok || data.error) {
+      showError(data.error || 'Setup failed (HTTP ' + res.status + ')');
+      btn.disabled = false;
+      btn.textContent = 'Save & Start Node';
+      return;
+    }
+
+    // Success
+    showSuccess('Node configured successfully. Proxy pairs are starting up.');
+    btn.textContent = 'Saved!';
+
+    // Show firewall section
+    if (data.firewallCommands && data.firewallCommands.length > 0) {
+      document.getElementById('fw-commands').textContent = data.firewallCommands.join('\n');
+      const isPS = data.firewallCommands[0].startsWith('New-Net');
+      document.getElementById('fw-hint').textContent = isPS
+        ? 'Run these commands in an Administrator PowerShell to open the required ports.'
+        : 'Run these commands to open the required ports (requires sudo / root).';
+      document.getElementById('fw-section').style.display = 'block';
+      document.getElementById('fw-section').scrollIntoView({ behavior: 'smooth' });
+    } else {
+      // Auto-redirect if no firewall commands to show
+      setTimeout(() => { window.location.href = '/'; }, 2000);
+    }
+
+  } catch (err) {
+    showError('Network error: ' + err.message);
+    btn.disabled = false;
+    btn.textContent = 'Save & Start Node';
+  }
+}
+
+// ── Copy firewall commands ─────────────────────────────────────────────────
+function copyFW() {
+  const text = document.getElementById('fw-commands').textContent;
+  navigator.clipboard.writeText(text).then(() => {
+    const btn = document.querySelector('.copy-btn');
+    const orig = btn.textContent;
+    btn.textContent = 'Copied!';
+    setTimeout(() => btn.textContent = orig, 2000);
+  }).catch(() => {
+    // Fallback: select text
+    const pre = document.getElementById('fw-commands');
+    const range = document.createRange();
+    range.selectNode(pre);
+    window.getSelection().removeAllRanges();
+    window.getSelection().addRange(range);
+  });
+}
+</script>
+</body>
+</html>
