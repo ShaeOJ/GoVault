@@ -1,5 +1,7 @@
 # Build output
 build/bin/
+build/admin/
+build/edgenode/
 *.exe
 
 # Dependencies
