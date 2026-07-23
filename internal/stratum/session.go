@@ -10,6 +10,8 @@ import (
 	"strconv"
 	"sync"
 	"time"
+
+	"govault/internal/upstream"
 )
 
 // Session represents a single miner connection.
@@ -18,6 +20,7 @@ type Session struct {
 	conn        net.Conn
 	server      *Server
 	extranonce1 string
+	remoteIP    string
 	subscribed  bool
 	authorized  bool
 	workerName  string
@@ -36,9 +39,16 @@ type Session struct {
 	sharesAccepted uint64
 	sharesRejected uint64
 	sharesDuped    uint64
+	sharesStale    uint64
 	bestDifficulty float64
 
 	suggestedDiff float64 // from mining.suggest_difficulty (miner's threshold)
+
+	// Per-miner pass-through: dedicated upstream connection for this miner.
+	// When set, shares are submitted directly through this connection and the
+	// miner appears as an independent connection to the upstream pool.
+	dedicatedUpstream *upstream.Client
+	localEN2Size      int // EN2 size from dedicated upstream (overrides server.extranonce2Size)
 
 	// Difficulty transition grace period (matches ckpool diff_change_job_id).
 	// Shares for jobs issued before diffChangeJobID are validated against oldDiff.
@@ -49,10 +59,32 @@ type Session struct {
 	// counters above. These are written by Handle() and read/written by
 	// setProxyDiff() (from the server goroutine) and GetProxyDiagnostics().
 	diffMu sync.Mutex
+
+	// Security guards — single-threaded, owned by Handle().
+	msgLimiter *msgLimiter
+	spamGuard  *spamGuard
 }
 
 func newSession(id string, conn net.Conn, server *Server, extranonce1 string) *Session {
 	now := time.Now()
+	cfg := server.config
+
+	// Build security guards from config; use safe fallbacks for unconfigured installs.
+	msgRate := cfg.MaxMsgPerSec
+	msgBurst := float64(cfg.MaxMsgBurst)
+	if msgRate <= 0 {
+		msgRate = 0 // disabled
+	}
+	if msgBurst <= 0 && msgRate > 0 {
+		msgBurst = msgRate * 2.5
+	}
+
+	invalidThreshold := cfg.InvalidShareThreshold
+	invalidWindow := cfg.InvalidShareWindow
+	if invalidWindow <= 0 {
+		invalidWindow = 10
+	}
+
 	return &Session{
 		ID:           id,
 		conn:         conn,
@@ -62,6 +94,8 @@ func newSession(id string, conn net.Conn, server *Server, extranonce1 string) *S
 		connectedAt:  now,
 		lastActivity: now,
 		reader:       bufio.NewReaderSize(conn, 4096),
+		msgLimiter:   newMsgLimiter(msgRate, msgBurst),
+		spamGuard:    newSpamGuard(invalidWindow, invalidThreshold),
 	}
 }
 
@@ -71,12 +105,23 @@ func (s *Session) Handle() {
 		if r := recover(); r != nil {
 			s.server.log.Errorf("stratum", "session %s panic: %v", s.ID, r)
 		}
+		// Stop dedicated upstream before closing so its goroutines exit cleanly.
+		if s.dedicatedUpstream != nil {
+			s.dedicatedUpstream.Stop()
+		}
 		s.conn.Close()
 		s.server.removeSession(s)
 	}()
 
 	// Initialize vardiff state
 	s.vardiffState = s.server.vardiffMgr.NewState()
+
+	// Auth timeout: disconnect if the miner hasn't authorized within the configured window.
+	authTimeoutSec := s.server.config.AuthTimeoutSec
+	if authTimeoutSec <= 0 {
+		authTimeoutSec = 30
+	}
+	authDeadline := s.connectedAt.Add(time.Duration(authTimeoutSec) * time.Second)
 
 	for {
 		// Use retarget interval as read deadline so idle sessions get
@@ -88,12 +133,18 @@ func (s *Session) Handle() {
 		if err != nil {
 			// Timeout → idle vardiff check (don't disconnect yet)
 			if netErr, ok := err.(net.Error); ok && netErr.Timeout() {
+				// Auth timeout: drop connection if not yet authorized.
+				if !s.authorized && time.Now().After(authDeadline) {
+					s.server.log.Warnf("stratum", "auth timeout for %s, disconnecting", s.conn.RemoteAddr())
+					return
+				}
 				// True inactivity (no data at all for 5 min) → disconnect
 				if time.Since(s.lastActivity) > 5*time.Minute {
 					return
 				}
-				// Idle vardiff: halve difficulty if no qualifying shares arrived
-				if s.authorized && s.vardiffState != nil {
+				// Idle vardiff: halve difficulty if no qualifying shares arrived.
+				// Skip in proxy mode — upstream pool controls difficulty entirely.
+				if s.authorized && s.vardiffState != nil && !s.server.proxyMode {
 					s.diffMu.Lock()
 					curDiff := s.currentDiff
 					s.diffMu.Unlock()
@@ -118,6 +169,23 @@ func (s *Session) Handle() {
 		}
 
 		s.lastActivity = time.Now()
+
+		// Enforce max line size — a legitimate miner never sends kilobytes of JSON.
+		// An oversized line means something is very wrong; disconnect and ban.
+		if maxKB := s.server.config.MaxLineSizeKB; maxKB > 0 && len(line) > maxKB*1024 {
+			s.server.log.Warnf("stratum", "session %s line too large (%d bytes, max %d KB) — banning %s",
+				s.ID, len(line), maxKB, s.remoteIP)
+			s.server.BanIP(s.remoteIP, "oversized stratum message")
+			return
+		}
+
+		// Enforce per-session message rate limit. Legitimate ASIC miners submit at
+		// most a few shares per second; flooding is a clear sign of abuse.
+		if s.server.config.MaxMsgPerSec > 0 && !s.msgLimiter.allow() {
+			s.server.log.Warnf("stratum", "session %s message rate exceeded — banning %s", s.ID, s.remoteIP)
+			s.server.BanIP(s.remoteIP, "message rate limit exceeded")
+			return
+		}
 
 		// Trim trailing whitespace
 		for len(line) > 0 && (line[len(line)-1] == '\n' || line[len(line)-1] == '\r') {
@@ -300,6 +368,113 @@ func (s *Session) handleAuthorize(req *Request) {
 		return
 	}
 
+	password, _ := ParamString(req.Params, 1)
+
+	// Per-miner pass-through mode: create a dedicated upstream connection for
+	// this miner using their own credentials. They appear on the upstream pool
+	// as an independent connection rather than sharing one with other miners.
+	if s.server.OnMinerConnect != nil {
+		uc, err := s.server.OnMinerConnect(s, workerName, password)
+		if err != nil {
+			s.sendResponse(req.ID, false, NewError(ErrUnauthorized, "upstream connect failed: "+err.Error()))
+			s.server.log.Errorf("stratum", "miner %s per-miner upstream failed: %v", workerName, err)
+			return
+		}
+
+		// Disable prefix carving — this miner owns the full EN2 space.
+		uc.SetPerMinerMode()
+		s.dedicatedUpstream = uc
+		s.extranonce1 = uc.Extranonce1()
+		s.localEN2Size = uc.LocalEN2Size()
+
+		// Tighten the session's version-rolling mask to match the upstream's.
+		if uc.VersionRolling() && uc.VersionMask() != "" {
+			if b, err2 := hex.DecodeString(uc.VersionMask()); err2 == nil && len(b) == 4 {
+				upMask := binary.BigEndian.Uint32(b)
+				s.versionMask &= upMask
+			}
+		} else {
+			s.versionRolling = false
+			s.versionMask = 0
+		}
+
+		// Wire per-miner upstream callbacks (all captured on this session).
+		uc.OnJob = func(params *upstream.JobParams) {
+			if !s.server.IsRunning() {
+				return
+			}
+			job := s.server.jobManager.RegisterUpstreamJob(
+				params.JobID, params.PrevHash, params.Coinbase1, params.Coinbase2,
+				params.MerkleBranches, params.Version, params.NBits, params.NTime, params.CleanJobs,
+			)
+			s.server.shareValidator.CleanDuplicates(s.server.jobManager.ActiveJobIDs())
+			s.sendNotify(job, params.CleanJobs)
+			s.server.log.Debugf("stratum", "[per-miner] job %s → %s", params.JobID, s.workerName)
+		}
+		uc.OnDifficulty = func(diff float64) {
+			s.setProxyDiff(diff)
+		}
+		uc.OnDisconnect = func(connErr error) {
+			// Pool dropped this miner's connection — close so they reconnect.
+			s.server.log.Errorf("stratum", "[per-miner] upstream disconnected for %s: %v — kicking miner", s.workerName, connErr)
+			s.conn.Close()
+		}
+		uc.OnReconnect = func() {
+			// New EN1 assigned — tell miner to reconnect and get fresh EN1.
+			s.server.log.Infof("stratum", "[per-miner] upstream reconnected for %s — sending reconnect", s.workerName)
+			s.sendReconnect(3)
+			s.conn.Close()
+		}
+
+		// Notify miner of real EN1 (replaces the placeholder sent at subscribe).
+		s.sendSetExtranonce(s.extranonce1, s.localEN2Size)
+
+		// Apply upstream difficulty.
+		if upDiff := uc.UpstreamDifficulty(); upDiff > 0 {
+			s.diffMu.Lock()
+			s.currentDiff = upDiff
+			s.diffMu.Unlock()
+			s.sendSetDifficulty(upDiff)
+		}
+
+		s.workerName = workerName
+		s.authorized = true
+		s.sendResponse(req.ID, true, nil)
+		s.server.log.Infof("stratum", "miner %s authorized as %s (per-miner upstream, en1=%s en2=%d)",
+			s.conn.RemoteAddr(), workerName, s.extranonce1, s.localEN2Size)
+
+		if s.server.OnMinerConnected != nil {
+			s.server.OnMinerConnected(s.toMinerInfo())
+		}
+
+		// Send earliest available job from this miner's upstream.
+		if earlyJob := uc.DrainEarlyJob(); earlyJob != nil {
+			job := s.server.jobManager.RegisterUpstreamJob(
+				earlyJob.JobID, earlyJob.PrevHash, earlyJob.Coinbase1, earlyJob.Coinbase2,
+				earlyJob.MerkleBranches, earlyJob.Version, earlyJob.NBits, earlyJob.NTime, earlyJob.CleanJobs,
+			)
+			s.sendNotify(job, earlyJob.CleanJobs)
+		} else {
+			s.server.sendCurrentJob(s)
+		}
+		return
+	}
+
+	// Shared upstream mode: forward the miner's credentials to the shared upstream pool
+	// connection so Firepool sees wallet.workername and attributes shares correctly.
+	// OnMinerAuthorize is nil in solo mode — miners are accepted locally.
+	if s.server.OnMinerAuthorize != nil {
+		ok, reason := s.server.OnMinerAuthorize(workerName, password)
+		if !ok {
+			if reason == "" {
+				reason = "authorization rejected by upstream pool"
+			}
+			s.sendResponse(req.ID, false, NewError(ErrUnauthorized, reason))
+			s.server.log.Infof("stratum", "miner %s rejected (%s): %s", s.conn.RemoteAddr(), workerName, reason)
+			return
+		}
+	}
+
 	s.workerName = workerName
 	s.authorized = true
 
@@ -364,7 +539,12 @@ func (s *Session) handleSubmit(req *Request) {
 	versionBits, _ := ParamString(req.Params, 5)
 
 	// Fix extranonce2 length: silently pad or truncate broken clients (matches ckpool behavior).
-	expectedEN2Len := s.server.extranonce2Size * 2
+	// Use per-session EN2 size when set (per-miner upstream mode).
+	en2SizeToUse := s.server.extranonce2Size
+	if s.localEN2Size > 0 {
+		en2SizeToUse = s.localEN2Size
+	}
+	expectedEN2Len := en2SizeToUse * 2
 	if len(en2) != expectedEN2Len {
 		if len(en2) > expectedEN2Len {
 			// Truncate to expected length
@@ -376,6 +556,28 @@ func (s *Session) handleSubmit(req *Request) {
 				en2 = "0" + en2
 			}
 			s.server.log.Debugf("stratum", "padded en2 to %s for %s", en2, s.workerName)
+		}
+	}
+
+	// Validate ntime is within the allowed drift window. Shares with wildly
+	// wrong timestamps are always invalid and indicate a misconfigured or
+	// malicious device. Accept gracefully during the window fill period.
+	if maxDrift := s.server.config.NTimeMaxDriftSec; maxDrift > 0 && len(ntime) == 8 {
+		if ntimeVal, ntErr := strconv.ParseUint(ntime, 16, 32); ntErr == nil {
+			now := time.Now().Unix()
+			delta := int64(ntimeVal) - now
+			if delta < -int64(maxDrift) || delta > int64(maxDrift) {
+				s.server.log.Warnf("stratum", "share from %s rejected: ntime %s is %ds from now (max ±%ds)",
+					s.workerName, ntime, delta, maxDrift)
+				s.sendResponse(req.ID, false, NewError(ErrOther, "ntime out of range"))
+				if s.spamGuard.record(false) {
+					s.server.log.Warnf("stratum", "invalid share threshold exceeded for %s — banning %s",
+						s.workerName, s.remoteIP)
+					s.server.BanIP(s.remoteIP, "invalid share spam")
+					return
+				}
+				return
+			}
 		}
 	}
 
@@ -418,11 +620,23 @@ func (s *Session) handleSubmit(req *Request) {
 			return
 		}
 
-		// Track stale jobs in proxy mode — these are shares we'll never forward
-		if s.server.proxyMode && stratumErr.Code == ErrStaleJob {
-			s.server.proxySharesStale.Add(1)
-			s.server.log.Infof("proxy", "[SHARE-STALE] miner=%s job=%q — share lost (not forwarded)",
-				s.workerName, jobID)
+		// Stale shares are normal — they arrive when an in-flight share lands
+		// after the job has been evicted (server restart, reconnect, rapid job
+		// cycling). Matches ckpool which counts these as "discarded", not
+		// "rejected". Don't fire OnShareRejected so the dashboard rejected
+		// counter stays clean.
+		if stratumErr.Code == ErrStaleJob {
+			s.diffMu.Lock()
+			s.sharesStale++
+			s.diffMu.Unlock()
+			if s.server.proxyMode {
+				s.server.proxySharesStale.Add(1)
+				s.server.log.Infof("proxy", "[SHARE-STALE] miner=%s job=%q — share lost (not forwarded)",
+					s.workerName, jobID)
+			} else {
+				s.server.log.Debugf("stratum", "stale share from %s (job=%q)", s.workerName, jobID)
+			}
+			return
 		}
 
 		s.diffMu.Lock()
@@ -433,7 +647,21 @@ func (s *Session) handleSubmit(req *Request) {
 		}
 		s.server.log.Infof("stratum", "share REJECTED from %s: %s (job=%q en1=%s en2=%s ntime=%s nonce=%s vbits=%s)",
 			s.workerName, stratumErr.Message, jobID, s.extranonce1, en2, ntime, nonce, versionBits)
+
+		// Feed the spam guard with this rejection. If the sliding-window rejection
+		// rate exceeds the threshold, disconnect and ban the IP.
+		if s.server.config.InvalidShareThreshold > 0 && s.spamGuard.record(false) {
+			s.server.log.Warnf("stratum", "invalid share threshold exceeded for %s — banning %s",
+				s.workerName, s.remoteIP)
+			s.server.BanIP(s.remoteIP, "invalid share spam")
+			return // closes connection via deferred cleanup in Handle()
+		}
 		return
+	}
+
+	// Valid share — record as accepted in spam guard.
+	if s.server.config.InvalidShareThreshold > 0 {
+		s.spamGuard.record(true)
 	}
 
 	s.sendResponse(req.ID, true, nil)
@@ -488,12 +716,19 @@ func (s *Session) handleSubmit(req *Request) {
 	}
 
 	// Hashrate: record qualifying shares for estimation.
-	// Use min(actualDiff, sessionDiff). In proxy mode, sessionDiff is locked
-	// to upstream diff so the hashrate estimate matches the pool's estimate.
-	// In solo mode, sessionDiff is the vardiff level.
+	// In proxy mode, use effectiveDiff (upstream diff) — NOT currentDiff.
+	// currentDiff can be overridden by mining.suggest_difficulty to the miner's
+	// hardware filter threshold (e.g. 512 for BM1366), which may be lower than
+	// the upstream pool's actual difficulty (e.g. 1024+). Using currentDiff in
+	// that case causes severe hashrate underestimation.
+	// In solo mode, use currentDiff (the vardiff level).
 	var hashrateDiff float64
 	if meetsTarget {
-		hashrateDiff = s.currentDiff
+		base := s.currentDiff
+		if s.server.proxyMode {
+			base = effectiveDiff // already holds upstream diff
+		}
+		hashrateDiff = base
 		if result.Difficulty < hashrateDiff {
 			hashrateDiff = result.Difficulty
 		}
@@ -506,18 +741,33 @@ func (s *Session) handleSubmit(req *Request) {
 
 	// Proxy mode: instrument and forward qualifying shares upstream
 	if s.server.proxyMode {
-		upDiff := s.server.UpstreamDifficulty()
+		var upDiff float64
+		if s.dedicatedUpstream != nil {
+			upDiff = s.dedicatedUpstream.UpstreamDifficulty()
+		} else {
+			upDiff = s.server.UpstreamDifficulty()
+		}
 		s.server.proxySharesValid.Add(1)
 
 		// Per-share diagnostic: shows every share with all difficulty levels
 		s.server.log.Infof("proxy", "[SHARE-IN] miner=%s actualDiff=%.2f sessionDiff=%.2f upstreamDiff=%.2f meetsSession=%v meetsUpstream=%v",
 			s.workerName, result.Difficulty, effectiveDiff, upDiff, meetsTarget, result.Difficulty >= upDiff)
 
-		if s.server.OnShareForward != nil && upDiff > 0 && result.Difficulty >= upDiff {
+		if (s.dedicatedUpstream != nil || s.server.OnShareForward != nil) && upDiff > 0 && result.Difficulty >= upDiff {
 			s.server.proxySharesFwd.Add(1)
-			minerPrefix := s.extranonce1[len(s.server.upstreamEN1):]
-			fullEN2 := minerPrefix + en2
-			accepted, reason := s.server.OnShareForward(s.workerName, jobID, fullEN2, ntime, nonce, versionBits)
+			var accepted bool
+			var reason string
+			if s.dedicatedUpstream != nil {
+				// Per-miner pass-through: submit directly through miner's own pool
+				// connection. The pool knows this connection's EN1 from subscribe,
+				// so we send only the miner's EN2 (no prefix reconstruction needed).
+				accepted, reason = s.dedicatedUpstream.SubmitShare(s.workerName, jobID, en2, ntime, nonce, versionBits)
+			} else {
+				// Shared upstream: reconstruct full EN2 with the miner's EN1 prefix.
+				minerPrefix := s.extranonce1[len(s.server.upstreamEN1):]
+				fullEN2 := minerPrefix + en2
+				accepted, reason = s.server.OnShareForward(s.workerName, jobID, fullEN2, ntime, nonce, versionBits)
+			}
 			latency := time.Since(shareReceived)
 
 			if accepted {
@@ -527,7 +777,7 @@ func (s *Session) handleSubmit(req *Request) {
 			} else {
 				s.server.proxySharesUpReject.Add(1)
 				s.server.log.Infof("proxy", "[SHARE-FWD] miner=%s REJECTED reason=%q latency=%v job=%s diff=%.2f upDiff=%.2f en2=%s",
-					s.workerName, reason, latency, jobID, result.Difficulty, upDiff, fullEN2)
+					s.workerName, reason, latency, jobID, result.Difficulty, upDiff, en2)
 			}
 		} else if upDiff > 0 && result.Difficulty < upDiff {
 			s.server.proxySharesBelow.Add(1)
@@ -584,17 +834,22 @@ func (s *Session) handleSuggestDifficulty(req *Request) {
 	}
 
 	s.suggestedDiff = diff
-	// Record grace period for in-flight shares
-	s.diffMu.Lock()
-	s.oldDiff = s.currentDiff
-	if curJob := s.server.currentJob(); curJob != nil {
-		s.diffChangeJobID = curJob.ID
-	}
-	s.currentDiff = diff
-	s.diffMu.Unlock()
-	s.sendSetDifficulty(diff)
+
+	// Treat suggest_difficulty as a vardiff floor hint only — do NOT override
+	// currentDiff. AxeOS/ESP-Miner sends the ASIC hardware minimum (e.g. 512
+	// for BM1366), not the desired pool difficulty. Immediately applying it
+	// drops currentDiff from the DB-restored steady-state value (e.g. 15 000)
+	// back to 512 on every reconnect, causing vardiff to re-ramp from scratch
+	// and flooding the hashrate window with low-diff shares → ~40% underestimate.
+	//
+	// suggestedDiff is already used as a vardiff floor via CheckRetarget's
+	// floorDiff parameter. The current difficulty (set at subscribe/authorize
+	// time from UA auto-detect or DB restore) remains in effect.
+	//
+	// In proxy mode the upstream pool is sole authority on difficulty — same ACK.
 	s.sendResponse(req.ID, true, nil)
-	s.server.log.Infof("stratum", "miner %s suggested difficulty: %.6f", s.workerName, diff)
+	s.server.log.Infof("stratum", "miner %s suggested difficulty: %.6f (stored as vardiff floor, currentDiff unchanged at %.6f)",
+		s.workerName, diff, s.currentDiff)
 }
 
 
@@ -635,6 +890,15 @@ func (s *Session) setProxyDiff(diff float64) {
 	s.sendSetDifficulty(diff)
 }
 
+// sendSetExtranonce notifies the miner of a new extranonce1 and extranonce2_size.
+// Used in per-miner pass-through mode to push the real upstream EN1 after
+// the dedicated upstream connection is established (replacing the placeholder
+// sent in the subscribe response).
+func (s *Session) sendSetExtranonce(en1 string, en2Size int) {
+	params := []interface{}{en1, en2Size}
+	s.send(EncodeNotification("mining.set_extranonce", params))
+}
+
 // sendReconnect tells the miner to disconnect and reconnect after waitSec.
 // Supports cgminer, BFGminer, and many firmware variants.
 func (s *Session) sendReconnect(waitSec int) {
@@ -658,6 +922,7 @@ func (s *Session) toMinerInfo() MinerInfo {
 	curDiff := s.currentDiff
 	accepted := s.sharesAccepted
 	rejected := s.sharesRejected
+	stale := s.sharesStale
 	bestDiff := s.bestDifficulty
 	s.diffMu.Unlock()
 
@@ -670,6 +935,7 @@ func (s *Session) toMinerInfo() MinerInfo {
 		CurrentDiff:    curDiff,
 		SharesAccepted: accepted,
 		SharesRejected: rejected,
+		SharesStale:    stale,
 		BestDifficulty: bestDiff,
 	}
 }
@@ -685,6 +951,7 @@ type MinerInfo struct {
 	Hashrate       float64   `json:"hashrate"`
 	SharesAccepted uint64    `json:"sharesAccepted"`
 	SharesRejected uint64    `json:"sharesRejected"`
+	SharesStale    uint64    `json:"sharesStale"`
 	BestDifficulty float64   `json:"bestDifficulty"`
 	LastShareTime  time.Time `json:"lastShareTime"`
 }

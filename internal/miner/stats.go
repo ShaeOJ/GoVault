@@ -111,6 +111,23 @@ func (s *StatsAggregator) ClearShareRecords() {
 	s.mu.Unlock()
 }
 
+// EvictSession removes all share records for a given session from the hashrate
+// window. Call this when a miner disconnects so that its stale records don't
+// inflate the estimate if it reconnects within the 10-minute window.
+func (s *StatsAggregator) EvictSession(sessionID string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	n := 0
+	for _, r := range s.shareRecords {
+		if r.minerID != sessionID {
+			s.shareRecords[n] = r
+			n++
+		}
+	}
+	s.shareRecords = s.shareRecords[:n]
+}
+
 // RecordShare records a share for statistics.
 // difficulty is the session difficulty for qualifying shares (>= pool diff),
 // or 0 for sub-target shares. Only qualifying shares contribute to hashrate.

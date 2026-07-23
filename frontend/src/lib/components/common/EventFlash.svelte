@@ -7,24 +7,14 @@
   let timer: ReturnType<typeof setTimeout> | null = null;
   let unsubs: (() => void)[] = [];
 
-  function triggerFlash(type: 'share' | 'block') {
-    // Block trumps share
-    if (flashType === 'block' && type === 'share') return;
-
+  function triggerFlash(type: 'block') {
     if (timer) clearTimeout(timer);
     flashType = type;
     flashKey++;
-
-    const duration = type === 'block' ? 2000 : 600;
-    timer = setTimeout(() => {
-      flashType = null;
-    }, duration);
+    timer = setTimeout(() => { flashType = null; }, 2000);
   }
 
   onMount(() => {
-    unsubs.push(EventsOn('stratum:share-accepted', () => {
-      triggerFlash('share');
-    }));
     unsubs.push(EventsOn('stratum:block-found', () => {
       triggerFlash('block');
     }));

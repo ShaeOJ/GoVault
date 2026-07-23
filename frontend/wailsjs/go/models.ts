@@ -73,7 +73,16 @@ export namespace config {
 	export class StratumConfig {
 	    port: number;
 	    maxConn: number;
+	    maxConnPerIP: number;
+	    authTimeoutSec: number;
 	    autoStart: boolean;
+	    banDurationMinutes: number;
+	    invalidShareThreshold: number;
+	    invalidShareWindow: number;
+	    maxMsgPerSec: number;
+	    maxMsgBurst: number;
+	    maxLineSizeKB: number;
+	    nTimeMaxDriftSec: number;
 	
 	    static createFrom(source: any = {}) {
 	        return new StratumConfig(source);
@@ -83,7 +92,16 @@ export namespace config {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.port = source["port"];
 	        this.maxConn = source["maxConn"];
+	        this.maxConnPerIP = source["maxConnPerIP"];
+	        this.authTimeoutSec = source["authTimeoutSec"];
 	        this.autoStart = source["autoStart"];
+	        this.banDurationMinutes = source["banDurationMinutes"];
+	        this.invalidShareThreshold = source["invalidShareThreshold"];
+	        this.invalidShareWindow = source["invalidShareWindow"];
+	        this.maxMsgPerSec = source["maxMsgPerSec"];
+	        this.maxMsgBurst = source["maxMsgBurst"];
+	        this.maxLineSizeKB = source["maxLineSizeKB"];
+	        this.nTimeMaxDriftSec = source["nTimeMaxDriftSec"];
 	    }
 	}
 	export class NodeConfig {
@@ -309,6 +327,7 @@ export namespace miner {
 	    // Go type: time
 	    lastShareTime: any;
 	    bestDifficulty: number;
+	    coin: string;
 	
 	    static createFrom(source: any = {}) {
 	        return new MinerInfo(source);
@@ -327,6 +346,7 @@ export namespace miner {
 	        this.sharesRejected = source["sharesRejected"];
 	        this.lastShareTime = this.convertValues(source["lastShareTime"], null);
 	        this.bestDifficulty = source["bestDifficulty"];
+	        this.coin = source["coin"];
 	    }
 	
 		convertValues(a: any, classs: any, asMap: boolean = false): any {

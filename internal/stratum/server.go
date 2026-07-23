@@ -20,6 +20,12 @@ type Server struct {
 	sessions  map[string]*Session
 	sessionMu sync.RWMutex
 
+	// Per-IP connection tracking for rate limiting.
+	ipConns   map[string]int
+	ipConnsMu sync.Mutex
+
+	banList *BanList
+
 	jobManager     *JobManager
 	shareValidator *ShareValidator
 	vardiffMgr     *VardiffManager
@@ -66,6 +72,18 @@ type Server struct {
 	LookupWorkerDiff    func(workerName string) float64
 	OnDiffChanged       func(workerName string, diff float64)
 	OnShareForward      func(workerName, jobID, fullEN2, ntime, nonce, versionBits string) (bool, string)
+
+	// OnMinerAuthorize is called in proxy/edge mode when a miner sends
+	// mining.authorize. If set, the callback forwards the credentials to the
+	// upstream pool and returns (true, "") on success or (false, reason) on
+	// rejection. When nil, all miners are accepted locally (original behaviour).
+	OnMinerAuthorize func(worker, password string) (bool, string)
+
+	// OnMinerConnect is set in per-miner pass-through mode. When non-nil it
+	// takes priority over OnMinerAuthorize. It creates and connects a dedicated
+	// upstream client for this miner using their own credentials, making them
+	// appear as an independent connection to the upstream pool.
+	OnMinerConnect func(session *Session, worker, password string) (*upstream.Client, error)
 }
 
 func NewServer(
@@ -83,6 +101,8 @@ func NewServer(
 
 	s := &Server{
 		sessions:        make(map[string]*Session),
+		ipConns:         make(map[string]int),
+		banList:         newBanList(),
 		jobManager:      jm,
 		shareValidator:  sv,
 		vardiffMgr:      vm,
@@ -189,10 +209,46 @@ func (s *Server) acceptLoop() {
 			tc.SetNoDelay(true)
 		}
 
+		remoteIP, _, _ := net.SplitHostPort(conn.RemoteAddr().String())
+
+		// Reject banned IPs immediately.
+		if s.config.BanDurationMinutes > 0 {
+			if banned, expiry := s.banList.IsBanned(remoteIP); banned {
+				s.log.Warnf("stratum", "rejected banned IP %s (ban expires %s)", remoteIP, expiry.Format("15:04:05"))
+				conn.Close()
+				continue
+			}
+		}
+
+		// Enforce global connection cap.
+		s.sessionMu.RLock()
+		totalConns := len(s.sessions)
+		s.sessionMu.RUnlock()
+		if s.config.MaxConn > 0 && totalConns >= s.config.MaxConn {
+			s.log.Warnf("stratum", "max connections (%d) reached, rejecting %s", s.config.MaxConn, remoteIP)
+			conn.Close()
+			continue
+		}
+
+		// Enforce per-IP connection cap.
+		if s.config.MaxConnPerIP > 0 {
+			s.ipConnsMu.Lock()
+			ipCount := s.ipConns[remoteIP]
+			if ipCount >= s.config.MaxConnPerIP {
+				s.ipConnsMu.Unlock()
+				s.log.Warnf("stratum", "per-IP limit (%d) reached for %s, rejecting", s.config.MaxConnPerIP, remoteIP)
+				conn.Close()
+				continue
+			}
+			s.ipConns[remoteIP] = ipCount + 1
+			s.ipConnsMu.Unlock()
+		}
+
 		en1 := s.generateExtranonce1()
 		sessionID := fmt.Sprintf("s_%08x", s.nextSessionID.Add(1))
 
 		session := newSession(sessionID, conn, s, en1)
+		session.remoteIP = remoteIP
 
 		s.sessionMu.Lock()
 		s.sessions[sessionID] = session
@@ -213,6 +269,16 @@ func (s *Server) removeSession(session *Session) {
 	delete(s.sessions, session.ID)
 	s.sessionMu.Unlock()
 
+	if session.remoteIP != "" {
+		s.ipConnsMu.Lock()
+		if s.ipConns[session.remoteIP] > 1 {
+			s.ipConns[session.remoteIP]--
+		} else {
+			delete(s.ipConns, session.remoteIP)
+		}
+		s.ipConnsMu.Unlock()
+	}
+
 	s.log.Infof("stratum", "session %s disconnected (%s)", session.ID, session.workerName)
 
 	if s.OnDiffChanged != nil && session.authorized && session.workerName != "" {
@@ -228,8 +294,13 @@ func (s *Server) removeSession(session *Session) {
 
 func (s *Server) generateExtranonce1() string {
 	if s.proxyMode {
+		if s.OnMinerConnect != nil {
+			// Per-miner mode: assign a unique placeholder; real EN1 is sent via
+			// mining.set_extranonce once the miner's dedicated upstream connects.
+			return fmt.Sprintf("%08x", s.nextEN1.Add(1))
+		}
 		if s.proxyPrefixBytes == 0 {
-			// No prefix — all miners share the upstream EN2 space.
+			// Shared upstream, no prefix — all miners share the upstream EN2 space.
 			return s.upstreamEN1
 		}
 		mask := uint32((1 << (8 * s.proxyPrefixBytes)) - 1)
@@ -250,6 +321,20 @@ func (s *Server) SetProxyMode(upstreamEN1 string, localEN2Size, prefixBytes int,
 	s.proxyPrefixBytes = prefixBytes
 	s.proxyVersionMask = versionMask
 	s.shareValidator.skipDupeCheck = true // let upstream pool handle duplicates
+}
+
+// SetPerMinerMode configures the server for 1:1 miner→upstream pass-through.
+// Each miner gets their own dedicated upstream connection using their own credentials,
+// so they appear as independent connections to the upstream pool.
+// versionMask: use 0 to default to standard BTC mask (1fffe000).
+func (s *Server) SetPerMinerMode(versionMask uint32) {
+	s.proxyMode = true
+	s.proxyPrefixBytes = 0
+	if versionMask == 0 {
+		versionMask = 0x1fffe000
+	}
+	s.proxyVersionMask = versionMask
+	s.shareValidator.skipDupeCheck = true
 }
 
 // IsProxyMode returns true if the server is in proxy mode.
@@ -476,4 +561,14 @@ func (s *Server) SessionCount() int {
 // UpdatePayoutAddress updates the payout address for new jobs.
 func (s *Server) UpdatePayoutAddress(addr string) {
 	s.jobManager.SetPayoutAddress(addr)
+}
+
+// BanIP temporarily bans ip for the configured duration.
+// No-op when BanDurationMinutes is zero.
+func (s *Server) BanIP(ip, reason string) {
+	if s.config.BanDurationMinutes <= 0 {
+		return
+	}
+	dur := time.Duration(s.config.BanDurationMinutes) * time.Minute
+	s.banList.Ban(ip, reason, dur, s.log)
 }

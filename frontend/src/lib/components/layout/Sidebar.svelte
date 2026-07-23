@@ -1,6 +1,6 @@
 <script lang="ts">
   import Icon from '../common/Icon.svelte';
-  import BlockchainAnimation from '../common/BlockchainAnimation.svelte';
+  import MinerGlobe from '../common/MinerGlobe.svelte';
   import logoUrl from '../../../assets/images/logo.png';
 
   export let currentPage: string = 'dashboard';
@@ -50,8 +50,8 @@
     {/each}
   </nav>
 
-  <!-- Blockchain animation fills gap between nav and footer -->
-  <BlockchainAnimation />
+  <!-- Globe animation fills gap between nav and footer -->
+  <MinerGlobe />
 
   <!-- Status indicator at bottom -->
   <div class="p-3" style="border-top: 1px solid var(--border);">

@@ -10,9 +10,19 @@ func Defaults() *Config {
 			UseSSL:   false,
 		},
 		Stratum: StratumConfig{
-			Port:      10333,
-			MaxConn:   100,
-			AutoStart: false,
+			Port:           10333,
+			MaxConn:        100,
+			MaxConnPerIP:   50,
+			AuthTimeoutSec: 30,
+			AutoStart:      false,
+			// Security defaults: match Miningcore's recommended settings.
+			BanDurationMinutes:    10,
+			InvalidShareThreshold: 0.50, // ban after >50% rejected in window
+			InvalidShareWindow:    10,   // evaluate over last 10 shares
+			MaxMsgPerSec:          20,   // 20 msg/s sustained, 50-burst
+			MaxMsgBurst:           50,
+			MaxLineSizeKB:         8,    // 8 KB max JSON line
+			NTimeMaxDriftSec:      7200, // ±2 hours
 		},
 		Mining: MiningConfig{
 			Coin:          "btc",

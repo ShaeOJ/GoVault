@@ -415,8 +415,7 @@ func (a *App) startProxy() error {
 
 	// Wire share forwarding: stratum → upstream
 	a.stratum.OnShareForward = func(workerName, jobID, fullEN2, ntime, nonce, versionBits string) (bool, string) {
-		// Use upstream authorized worker name, not local miner name
-		return uc.SubmitShare(uc.WorkerName(), jobID, fullEN2, ntime, nonce, versionBits)
+		return uc.SubmitShare(workerName, jobID, fullEN2, ntime, nonce, versionBits)
 	}
 
 	if err := a.stratum.Start(); err != nil {
@@ -474,6 +473,7 @@ func (a *App) wireStratumCallbacks() {
 
 	a.stratum.OnMinerDisconnected = func(id string) {
 		a.registry.Unregister(id)
+		a.stats.EvictSession(id)
 		if a.db != nil {
 			a.db.DisconnectMiner(id, time.Now().Unix())
 		}
@@ -1362,6 +1362,9 @@ func (a *App) statsLoop() {
 func (a *App) refreshNodeInfo() {
 	// In proxy mode, network info comes from upstream job nBits
 	if a.config.MiningMode == "proxy" {
+		return
+	}
+	if a.nodeClient == nil {
 		return
 	}
 	if info, err := a.nodeClient.GetMiningInfo(); err == nil {

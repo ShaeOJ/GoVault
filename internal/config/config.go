@@ -40,9 +40,20 @@ type NodeConfig struct {
 }
 
 type StratumConfig struct {
-	Port      int  `json:"port"`
-	MaxConn   int  `json:"maxConn"`
-	AutoStart bool `json:"autoStart"`
+	Port           int  `json:"port"`
+	MaxConn        int  `json:"maxConn"`
+	MaxConnPerIP   int  `json:"maxConnPerIP"`
+	AuthTimeoutSec int  `json:"authTimeoutSec"`
+	AutoStart      bool `json:"autoStart"`
+
+	// Security / anti-spam
+	BanDurationMinutes   int     `json:"banDurationMinutes"`   // 0 = banning disabled
+	InvalidShareThreshold float64 `json:"invalidShareThreshold"` // rejection fraction 0–1, 0 = disabled
+	InvalidShareWindow   int     `json:"invalidShareWindow"`   // sliding window size (shares)
+	MaxMsgPerSec         float64 `json:"maxMsgPerSec"`         // per-connection msg rate, 0 = disabled
+	MaxMsgBurst          int     `json:"maxMsgBurst"`          // burst capacity for rate limiter
+	MaxLineSizeKB        int     `json:"maxLineSizeKB"`        // max JSON line length, 0 = disabled
+	NTimeMaxDriftSec     int     `json:"nTimeMaxDriftSec"`     // max ntime drift vs now, 0 = disabled
 }
 
 type MiningConfig struct {

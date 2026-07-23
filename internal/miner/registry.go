@@ -18,6 +18,7 @@ type MinerInfo struct {
 	SharesRejected uint64    `json:"sharesRejected"`
 	LastShareTime  time.Time `json:"lastShareTime"`
 	BestDifficulty float64   `json:"bestDifficulty"`
+	Coin           string    `json:"coin"`
 }
 
 // Registry manages connected miners.

@@ -199,6 +199,13 @@ func (c *Client) DrainEarlyJob() *JobParams {
 	return j
 }
 
+// SetPerMinerMode disables prefix carving so the miner gets the full EN2 space.
+// Call this after Connect() when using one upstream connection per miner.
+func (c *Client) SetPerMinerMode() {
+	c.prefixBytes = 0
+	c.localEN2Size = c.extranonce2Size
+}
+
 // AssignMinerPrefix allocates a hex prefix for a local miner's EN2 space.
 // Prefix size varies (0-2 bytes) to ensure miners always get at least 4-byte EN2.
 func (c *Client) AssignMinerPrefix() (prefix string, en2Size int) {
@@ -209,6 +216,31 @@ func (c *Client) AssignMinerPrefix() (prefix string, en2Size int) {
 	val := c.nextMinerPrefix.Add(1) & mask
 	format := fmt.Sprintf("%%0%dx", c.prefixBytes*2) // e.g. "%02x" for 1 byte, "%04x" for 2
 	return fmt.Sprintf(format, val), c.localEN2Size
+}
+
+// AuthorizeWorker sends an additional mining.authorize to the upstream pool
+// for a miner connecting through the edge node. This allows each miner to be
+// independently tracked and paid by the pool under their own worker name.
+// Thread-safe: multiple miners can authorize concurrently.
+func (c *Client) AuthorizeWorker(worker, password string) (bool, error) {
+	if !c.connected.Load() {
+		return false, fmt.Errorf("upstream not connected")
+	}
+	if password == "" {
+		password = "x"
+	}
+	resp, err := c.call("mining.authorize", []interface{}{worker, password}, 10*time.Second)
+	if err != nil {
+		return false, fmt.Errorf("authorize %s: %w", worker, err)
+	}
+	if resp == nil {
+		return false, fmt.Errorf("upstream disconnected during auth")
+	}
+	var result bool
+	if err := json.Unmarshal(resp, &result); err != nil {
+		return false, fmt.Errorf("parse auth response: %w", err)
+	}
+	return result, nil
 }
 
 // SubmitShare forwards a share to the upstream pool.
@@ -320,15 +352,17 @@ func (c *Client) subscribe() error {
 	c.extranonce1 = en1
 	c.extranonce2Size = en2Size
 
-	// Reserve prefix bytes from EN2 to give each miner a unique search space.
-	// Each miner gets a unique EN1 (upstream_en1 + prefix), preventing nonce
-	// overlap on the upstream pool. Requires at least 4-byte local EN2 for
-	// firmware compatibility (many ASIC miners hardcode 4-byte EN2).
-	c.prefixBytes = 2
-	if en2Size-c.prefixBytes < 4 {
-		c.prefixBytes = en2Size - 4
-		if c.prefixBytes < 0 {
-			c.prefixBytes = 0
+	// Prefix carving: only steal bytes from EN2 when the upstream grants ≥5 bytes.
+	// With 4-byte EN2 (the common case for BTC/BCH pools), prefixBytes=0 so miners
+	// receive the standard 4-byte upstream EN1 unchanged. Some ASIC firmware
+	// (e.g. LuckyMiner) silently drops extra EN1 bytes, producing coinbase mismatches
+	// and near-zero share difficulty. Collision risk between miners sharing the full
+	// 4-byte EN2 space is negligible for home pools (< 100 miners).
+	c.prefixBytes = 0
+	if en2Size >= 5 {
+		c.prefixBytes = en2Size - 3 // keep ≥3 local bytes for miners
+		if c.prefixBytes > 2 {
+			c.prefixBytes = 2 // cap at 2 prefix bytes
 		}
 	}
 	c.localEN2Size = en2Size - c.prefixBytes
