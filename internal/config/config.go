@@ -89,17 +89,31 @@ func configDir() (string, error) {
 	return filepath.Join(filepath.Dir(exe), "data"), nil
 }
 
-func Load() (*Config, error) {
+// configFilePath returns the config.json path. GOVAULT_CONFIG_FILE overrides it
+// (default: <exe>/data/config.json) — appliance builds point it at a persistent,
+// writable partition so dashboard edits survive reboots. Default behaviour is
+// unchanged when the env var is unset.
+func configFilePath() (string, error) {
+	if p := os.Getenv("GOVAULT_CONFIG_FILE"); p != "" {
+		return p, nil
+	}
 	dir, err := configDir()
 	if err != nil {
-		return nil, fmt.Errorf("config dir: %w", err)
+		return "", err
+	}
+	return filepath.Join(dir, "config.json"), nil
+}
+
+func Load() (*Config, error) {
+	path, err := configFilePath()
+	if err != nil {
+		return nil, fmt.Errorf("config path: %w", err)
 	}
 
-	if err := os.MkdirAll(dir, 0755); err != nil {
+	if err := os.MkdirAll(filepath.Dir(path), 0755); err != nil {
 		return nil, fmt.Errorf("create config dir: %w", err)
 	}
 
-	path := filepath.Join(dir, "config.json")
 	cfg := Defaults()
 	cfg.path = path
 
@@ -203,10 +217,21 @@ func (c *Config) GetPath() string {
 	return c.path
 }
 
+// dataDir is where the DB and logs live. GOVAULT_DATA_DIR overrides it (default:
+// the config.json directory) — appliance builds point it at tmpfs so the SQLite
+// DB and logs stay off the (vfat, wear-sensitive) config partition. Default
+// behaviour is unchanged when the env var is unset.
+func (c *Config) dataDir() string {
+	if d := os.Getenv("GOVAULT_DATA_DIR"); d != "" {
+		return d
+	}
+	return filepath.Dir(c.path)
+}
+
 func (c *Config) LogDir() string {
-	return filepath.Join(filepath.Dir(c.path), "logs")
+	return filepath.Join(c.dataDir(), "logs")
 }
 
 func (c *Config) DBPath() string {
-	return filepath.Join(filepath.Dir(c.path), "govault.db")
+	return filepath.Join(c.dataDir(), "govault.db")
 }
