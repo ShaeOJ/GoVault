@@ -213,6 +213,7 @@ func (s *Server) Start() error {
 	mux.HandleFunc("/api/coins", api(h.coins))
 	mux.HandleFunc("/api/hashrate", api(h.hashrate))
 	mux.HandleFunc("/api/fleet", api(h.fleet))
+	mux.HandleFunc("/api/fan", api(h.fan))
 	mux.HandleFunc("/api/test-node", api(h.testNode))
 	mux.HandleFunc("/api/test-upstream", api(h.testUpstream))
 	mux.HandleFunc("/api/setup", api(h.setup))

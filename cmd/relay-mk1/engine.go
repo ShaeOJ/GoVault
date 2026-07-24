@@ -5,10 +5,13 @@ import (
 	"embed"
 	"encoding/binary"
 	"encoding/hex"
+	"encoding/json"
 	"fmt"
 	"math/big"
 	"net"
 	"os"
+	"strconv"
+	"strings"
 	"time"
 
 	"govault/internal/api"
@@ -750,6 +753,50 @@ func (e *Engine) GetFleetOverview() map[string]interface{} {
 		"dailyCost":       daily,
 		"electricityCost": cost,
 	}
+}
+
+// fan control files shared with relayfan (the appliance fan daemon):
+// relayfan reads fanControlFile each tick and writes fanStatusFile each tick.
+const (
+	fanControlFile = "/run/relay/fan.mode"
+	fanStatusFile  = "/run/relay/fan.status"
+)
+
+// GetFanStatus reads relayfan's status file (mode/duty/tempC/rpm). If relayfan
+// isn't running (fan-less unit, or non-appliance host), reports unavailable.
+func (e *Engine) GetFanStatus() map[string]interface{} {
+	b, err := os.ReadFile(fanStatusFile)
+	if err != nil {
+		return map[string]interface{}{"available": false}
+	}
+	var st map[string]interface{}
+	if json.Unmarshal(b, &st) != nil {
+		return map[string]interface{}{"available": false}
+	}
+	st["available"] = true
+	return st
+}
+
+// SetFanMode validates a desired fan mode ("auto", "off", or "0".."100") and
+// writes it to the control file for relayfan to pick up on its next tick.
+func (e *Engine) SetFanMode(mode string) error {
+	mode = strings.ToLower(strings.TrimSpace(mode))
+	switch mode {
+	case "auto", "off":
+	default:
+		n, err := strconv.Atoi(mode)
+		if err != nil || n < 0 || n > 100 {
+			return fmt.Errorf("fan mode must be auto, off, or a duty 0-100")
+		}
+	}
+	if err := os.MkdirAll("/run/relay", 0o755); err != nil {
+		return err
+	}
+	tmp := fanControlFile + ".tmp"
+	if err := os.WriteFile(tmp, []byte(mode+"\n"), 0o644); err != nil {
+		return err
+	}
+	return os.Rename(tmp, fanControlFile)
 }
 
 func (e *Engine) GetConfig() *config.Config { return e.cfg }

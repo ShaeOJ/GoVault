@@ -24,6 +24,42 @@ type fleetProvider interface {
 	GetFleetOverview() map[string]interface{}
 }
 
+// fanProvider is optionally implemented by an engine that controls a fan.
+type fanProvider interface {
+	GetFanStatus() map[string]interface{}
+	SetFanMode(mode string) error
+}
+
+// fan handles GET /api/fan (current status) and POST /api/fan {"mode":"auto|off|0-100"}.
+func (h *handlers) fan(w http.ResponseWriter, r *http.Request) {
+	if r.Method == http.MethodOptions {
+		cors(w)
+		w.WriteHeader(http.StatusNoContent)
+		return
+	}
+	fp, ok := h.provider.(fanProvider)
+	if !ok {
+		jsonOK(w, map[string]interface{}{"available": false})
+		return
+	}
+	if r.Method == http.MethodPost {
+		var req struct {
+			Mode string `json:"mode"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			jsonError(w, "invalid JSON: "+err.Error())
+			return
+		}
+		if err := fp.SetFanMode(req.Mode); err != nil {
+			jsonError(w, err.Error())
+			return
+		}
+		jsonOK(w, map[string]interface{}{"ok": true})
+		return
+	}
+	jsonOK(w, fp.GetFanStatus())
+}
+
 // fleet handles GET /api/fleet.
 func (h *handlers) fleet(w http.ResponseWriter, r *http.Request) {
 	if fp, ok := h.provider.(fleetProvider); ok {

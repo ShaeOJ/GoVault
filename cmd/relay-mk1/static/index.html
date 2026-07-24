@@ -124,6 +124,25 @@
     <div class="card"><div class="bar" style="background:var(--dim)"></div><div class="lbl">Est. Daily Cost</div><div class="val" id="f-cost" style="color:var(--text)">—</div><div class="sub" id="f-cost-sub">set $/kWh in setup</div></div>
   </div>
 
+  <!-- Fan control (only shown when the appliance fan daemon reports in) -->
+  <div class="panel" id="fan-panel" style="display:none">
+    <div class="chart-head">
+      <h3 style="margin:0">Fan Control</h3>
+      <div class="periods" id="fan-modes">
+        <button data-m="auto" class="sel">AUTO</button><button data-m="off">OFF</button><button data-m="fixed">FIXED</button>
+      </div>
+    </div>
+    <div style="display:flex;gap:24px;align-items:center;flex-wrap:wrap;margin-top:10px">
+      <div><div class="lbl">Duty</div><div class="val" id="fan-duty" style="color:var(--accent);font-size:26px">—</div></div>
+      <div><div class="lbl">Temp</div><div class="val" id="fan-temp" style="color:var(--gold);font-size:26px">—</div></div>
+      <div><div class="lbl">RPM</div><div class="val" id="fan-rpm" style="color:var(--text);font-size:26px">—</div></div>
+      <div id="fan-slider-wrap" style="flex:1;min-width:220px;display:none">
+        <div class="lbl">Set Duty: <span id="fan-set-val">50</span>%</div>
+        <input type="range" id="fan-slider" min="0" max="100" value="50" style="width:100%">
+      </div>
+    </div>
+  </div>
+
   <!-- Chart -->
   <div class="panel">
     <div class="chart-head">
@@ -186,6 +205,37 @@ async function pollFleet(){
       $('f-cost-sub').textContent=f.electricityCost>0?('@ $'+f.electricityCost+'/kWh'):'set $/kWh in setup';
     } else { $('fleet-row').style.display='none'; }
   }catch(e){}
+}
+
+// ── fan control (appliance only; hidden if no fan daemon) ──
+let fanUserMode=null; // null until user picks; then we stop letting status override the buttons
+function fanSelBtn(m){ document.querySelectorAll('#fan-modes button').forEach(b=>b.classList.toggle('sel',b.dataset.m===m)); }
+async function fanPost(mode){ try{ await fetch('/api/fan',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({mode})}); }catch(e){} }
+document.querySelectorAll('#fan-modes button').forEach(b=>b.addEventListener('click',()=>{
+  const m=b.dataset.m; fanUserMode=m; fanSelBtn(m);
+  const slider=(m==='fixed');
+  $('fan-slider-wrap').style.display=slider?'block':'none';
+  if(slider){ fanPost($('fan-slider').value); } else { fanPost(m); }
+}));
+$('fan-slider').addEventListener('input',()=>{ $('fan-set-val').textContent=$('fan-slider').value; });
+$('fan-slider').addEventListener('change',()=>{ fanUserMode='fixed'; fanPost($('fan-slider').value); });
+async function pollFan(){
+  try{
+    const f=await (await fetch('/api/fan')).json();
+    if(!f || f.available===false){ $('fan-panel').style.display='none'; return; }
+    $('fan-panel').style.display='block';
+    $('fan-duty').textContent=(f.duty!=null?f.duty+'%':'—');
+    $('fan-temp').textContent=(f.tempC>0?f.tempC+'°C':'—');
+    const rpm=(f.rpm||[]).filter(x=>x>0);
+    $('fan-rpm').textContent=rpm.length?Math.round(rpm.reduce((a,b)=>a+b,0)/rpm.length).toLocaleString():'—';
+    // Reflect the live mode in the buttons until the user takes control.
+    if(fanUserMode===null && f.mode){
+      const m=(f.mode==='auto'||f.mode==='off')?f.mode:'fixed';
+      fanSelBtn(m);
+      $('fan-slider-wrap').style.display=(m==='fixed')?'block':'none';
+      if(m==='fixed' && f.mode!=='auto' && f.mode!=='off'){ $('fan-slider').value=f.mode; $('fan-set-val').textContent=f.mode; }
+    }
+  }catch(e){ $('fan-panel').style.display='none'; }
 }
 
 async function poll(){
@@ -293,8 +343,8 @@ async function drawChart(){
 $('periods').addEventListener('click',e=>{ const b=e.target.closest('button'); if(!b)return; period=b.dataset.p; [...$('periods').children].forEach(x=>x.classList.toggle('sel',x===b)); drawChart(); });
 window.addEventListener('resize',()=>drawChart());
 
-poll(); pollMiners(); pollFleet(); drawChart();
-setInterval(poll,2000); setInterval(pollMiners,4000); setInterval(pollFleet,30000); setInterval(drawChart,20000);
+poll(); pollMiners(); pollFleet(); pollFan(); drawChart();
+setInterval(poll,2000); setInterval(pollMiners,4000); setInterval(pollFleet,30000); setInterval(pollFan,3000); setInterval(drawChart,20000);
 </script>
 </body>
 </html>
