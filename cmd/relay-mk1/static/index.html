@@ -105,7 +105,7 @@
     <div class="card"><div class="bar" style="background:var(--accent)"></div><div class="lbl">Total Hashrate</div><div class="val" id="c-hr" style="color:var(--accent);text-shadow:0 0 5px rgba(var(--accent-rgb),.35)">0 H/s</div><div class="sub">all connected miners</div></div>
     <div class="card"><div class="bar" style="background:var(--accent)"></div><div class="lbl">Active Miners</div><div class="val" id="c-miners" style="color:var(--accent)">0</div><div class="sub">devices connected</div></div>
     <div class="card"><div class="bar" style="background:var(--gold)"></div><div class="lbl">Best Difficulty</div><div class="val" id="c-best" style="color:var(--gold)">0</div><div class="sub" id="c-best-sub"></div></div>
-    <div class="card"><div class="bar" style="background:var(--dim)"></div><div class="lbl">Est. Time to Block</div><div class="val" id="c-ettb" style="color:var(--text)">N/A</div><div class="sub">solo probability</div></div>
+    <div class="card"><div class="bar" style="background:var(--dim)"></div><div class="lbl">Est. Time to Block</div><div class="val" id="c-ettb" style="color:var(--text)">N/A</div><div class="sub">your hashrate vs network</div></div>
   </div>
 
   <!-- Row 2 -->
@@ -199,7 +199,7 @@ async function poll(){
     $('c-miners').textContent=(s.activeMiners||0);
     $('c-best').textContent=fDiff(s.bestDifficulty||0);
     $('c-best-sub').textContent=(s.bestDifficulty>0&&s.networkDifficulty>0)?('1 in '+fRatio(s.networkDifficulty/s.bestDifficulty)+' vs network'):'';
-    $('c-ettb').textContent=proxy?'—':fDur(s.estTimeToBlock||0);
+    $('c-ettb').textContent=fDur(s.estTimeToBlock||0);
     // row 2 (mode aware)
     if(proxy){
       $('c-a-lbl').textContent='Pool Difficulty'; $('c-a').textContent=fDiff(s.upstreamDiff||0); $('c-a-sub').textContent='upstream target';
@@ -271,7 +271,7 @@ $('periods').addEventListener('click',e=>{ const b=e.target.closest('button'); i
 window.addEventListener('resize',()=>drawChart());
 
 poll(); pollMiners(); pollFleet(); drawChart();
-setInterval(poll,2000); setInterval(pollMiners,4000); setInterval(pollFleet,30000); setInterval(drawChart,60000);
+setInterval(poll,2000); setInterval(pollMiners,4000); setInterval(pollFleet,30000); setInterval(drawChart,20000);
 </script>
 </body>
 </html>
