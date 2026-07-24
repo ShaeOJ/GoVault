@@ -53,6 +53,9 @@ type Server struct {
 	upstreamDiffMu   sync.RWMutex
 	proxyVersionMask uint32 // version-rolling mask from upstream (0 = no rolling)
 
+	upLatMs float64 // EMA of upstream share round-trip latency (ms)
+	upLatMu sync.Mutex
+
 	// Proxy diagnostic counters
 	proxySharesIn       atomic.Uint64 // ALL shares received from miners (proxy mode)
 	proxySharesValid    atomic.Uint64 // passed validation
@@ -398,6 +401,25 @@ func (s *Server) UpstreamDifficulty() float64 {
 	s.upstreamDiffMu.RLock()
 	defer s.upstreamDiffMu.RUnlock()
 	return s.upstreamDiff
+}
+
+// recordUpstreamLatency feeds an EMA of the upstream share round-trip time.
+func (s *Server) recordUpstreamLatency(d time.Duration) {
+	ms := float64(d.Microseconds()) / 1000.0
+	s.upLatMu.Lock()
+	if s.upLatMs == 0 {
+		s.upLatMs = ms
+	} else {
+		s.upLatMs = s.upLatMs*0.8 + ms*0.2
+	}
+	s.upLatMu.Unlock()
+}
+
+// AvgUpstreamLatencyMs returns the smoothed upstream share latency (pool ping).
+func (s *Server) AvgUpstreamLatencyMs() float64 {
+	s.upLatMu.Lock()
+	defer s.upLatMu.Unlock()
+	return s.upLatMs
 }
 
 // ProxyDiagnostics holds proxy share pipeline counters.

@@ -19,6 +19,17 @@ type MinerInfo struct {
 	LastShareTime  time.Time `json:"lastShareTime"`
 	BestDifficulty float64   `json:"bestDifficulty"`
 	Coin           string    `json:"coin"`
+
+	// Telemetry — filled from the miner's AxeOS API when reachable (0/empty if
+	// not an AxeOS device or unreachable). Set by the engine, not the registry.
+	Telemetry bool    `json:"telemetry,omitempty"`
+	Temp      float64 `json:"temp,omitempty"`
+	VrTemp    float64 `json:"vrTemp,omitempty"`
+	Power     float64 `json:"power,omitempty"`
+	Voltage   float64 `json:"voltage,omitempty"` // mV
+	ASICModel string  `json:"asicModel,omitempty"`
+	Firmware  string  `json:"firmware,omitempty"`
+	PingMs    float64 `json:"pingMs,omitempty"`
 }
 
 // Registry manages connected miners.

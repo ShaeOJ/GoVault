@@ -769,6 +769,7 @@ func (s *Session) handleSubmit(req *Request) {
 				accepted, reason = s.server.OnShareForward(s.workerName, jobID, fullEN2, ntime, nonce, versionBits)
 			}
 			latency := time.Since(shareReceived)
+			s.server.recordUpstreamLatency(latency)
 
 			if accepted {
 				s.server.proxySharesUpAccept.Add(1)

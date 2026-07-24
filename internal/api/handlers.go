@@ -66,6 +66,10 @@ func (h *handlers) getConfig(w http.ResponseWriter, r *http.Request) {
 			"url":        cfg.Proxy.URL,
 			"workerName": cfg.Proxy.WorkerName,
 		},
+		"app": map[string]interface{}{
+			"logLevel":        cfg.App.LogLevel,
+			"electricityCost": cfg.App.ElectricityCost,
+		},
 	})
 }
 

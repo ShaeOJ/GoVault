@@ -42,7 +42,8 @@
 <div class="wrap">
   <div class="brand"><span class="co">RETEK INC.</span><span class="unit">SALVAGE &amp; RECLAMATION DIV. · RELAY UNIT MK.I</span></div>
   <h1>Relay Setup</h1>
-  <div class="sub">Configure this relay to <b>solo</b>-mine against your own node, or <b>proxy</b> your miners to an upstream pool. Saved to the SD card — survives reboots.</div>
+  <div class="sub">Configure this relay to <b>solo</b>-mine against your own node, or <b>proxy</b> your miners to an upstream pool. Saved to the SD card — survives reboots. Changing a non-mining setting (e.g. electricity rate) won't disconnect miners.</div>
+  <a id="back-link" href="/" style="display:none;color:var(--accent);font-size:12px;text-decoration:none;margin-bottom:14px">← Back to dashboard</a>
 
   <div id="msg" class="msg"></div>
 
@@ -61,6 +62,7 @@
       <div class="field"><label for="sport">Local stratum port</label><input type="number" id="sport" min="1" max="65535" value="3333"></div>
     </div>
     <div class="hint">Point your miners at <code id="surl">stratum+tcp://&lt;this-ip&gt;:3333</code></div>
+    <div class="field" style="margin-top:12px"><label for="ecost">Electricity cost ($/kWh — for the fleet cost estimate)</label><input type="number" id="ecost" step="0.01" min="0" value="0.10"></div>
   </div>
 
   <div class="card" id="solo-card">
@@ -126,7 +128,9 @@ async function load(){
     if(cfg.stratum){ const p=cfg.stratum.port||3333; document.getElementById('sport').value=p; document.getElementById('surl').textContent='stratum+tcp://<this-ip>:'+p; }
     if(cfg.node){ document.getElementById('nhost').value=cfg.node.host||'127.0.0.1'; document.getElementById('nport').value=cfg.node.port||8332; document.getElementById('nuser').value=cfg.node.username||''; document.getElementById('nssl').checked=!!cfg.node.useSSL; }
     if(cfg.proxy){ document.getElementById('purl').value=cfg.proxy.url||''; document.getElementById('pworker').value=cfg.proxy.workerName||''; }
+    if(cfg.app&&cfg.app.electricityCost!=null){ document.getElementById('ecost').value=cfg.app.electricityCost; }
   } catch(e){ setMode('solo'); }
+  fetch('/api/configured').then(r=>r.json()).then(j=>{ if(j&&j.configured) document.getElementById('back-link').style.display='inline-block'; }).catch(()=>{});
 }
 
 function nodeBody(){ return { host:document.getElementById('nhost').value.trim(), port:+document.getElementById('nport').value, username:document.getElementById('nuser').value.trim(), password:document.getElementById('npass').value, useSSL:document.getElementById('nssl').checked }; }
@@ -154,6 +158,7 @@ async function save(){
   cfg.stratum = cfg.stratum||{}; cfg.stratum.port=+document.getElementById('sport').value; cfg.stratum.autoStart=true;
   cfg.node = nodeBody();
   cfg.proxy = {url:document.getElementById('purl').value.trim(), workerName:document.getElementById('pworker').value.trim(), password:document.getElementById('ppass').value};
+  cfg.app = cfg.app||{}; cfg.app.electricityCost = parseFloat(document.getElementById('ecost').value)||0;
   try{
     const res = await fetch('/api/config',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(cfg)});
     const j = await res.json().catch(()=>({}));

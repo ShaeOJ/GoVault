@@ -44,8 +44,9 @@ type Engine struct {
 	// svcMu guards stratum/upstream/monitor pointers.
 	svcMu sync.RWMutex
 
-	// Fleet power cache (queries each miner's AxeOS API; 30s TTL).
-	fleetCache miner.FleetPowerStats
+	// Per-miner AxeOS telemetry cache, keyed by IP (30s TTL). Feeds both the
+	// fleet overview and the extended miner stats.
+	fleetCache map[string]miner.MinerTelemetry
 	fleetTime  time.Time
 	fleetMu    sync.Mutex
 
@@ -170,7 +171,21 @@ func (e *Engine) Start() error {
 			fmt.Printf("stratum not started: %v (configure via dashboard :%d)\n", err, e.apiPort)
 		}
 	}
+	// Mark configured if config.json is complete, so a reboot goes straight to
+	// the dashboard instead of re-showing the first-run setup — even if mining
+	// hasn't started yet (e.g. the node/pool is briefly unreachable).
+	if e.isConfigured() {
+		e.apiServer.SetConfigured(true)
+	}
 	return nil
+}
+
+// isConfigured reports whether config.json holds a usable mining config.
+func (e *Engine) isConfigured() bool {
+	if e.cfg.MiningMode == "proxy" {
+		return e.cfg.Proxy.URL != ""
+	}
+	return e.cfg.Mining.PayoutAddress != ""
 }
 
 // Stop tears everything down and persists stats.
@@ -487,20 +502,33 @@ func (e *Engine) applyConfig(newCfg *config.Config) error {
 		newCfg.Proxy.Password = e.cfg.Proxy.Password
 	}
 	logLevel := newCfg.App.LogLevel
-	newCfg.App = e.cfg.App
+	cost := newCfg.App.ElectricityCost
+	newCfg.App = e.cfg.App // preserve theme etc.
 	if logLevel != "" {
 		newCfg.App.LogLevel = logLevel
 	}
+	newCfg.App.ElectricityCost = cost // from the settings form ($/kWh; 0 = unset)
 	if err := newCfg.Validate(); err != nil {
 		return err
 	}
-	nodeChanged := newCfg.Node != e.cfg.Node
+
+	// Diff against the running config to decide how disruptive the change is.
+	old := *e.cfg
+	nodeChanged := newCfg.Node != old.Node
+	// A stratum restart is only needed for changes that define the mining
+	// session itself. Everything else applies without kicking miners.
+	restart := newCfg.MiningMode != old.MiningMode ||
+		newCfg.Mining.Coin != old.Mining.Coin ||
+		newCfg.Stratum.Port != old.Stratum.Port ||
+		newCfg.Proxy != old.Proxy ||
+		nodeChanged
+	payoutChanged := newCfg.Mining.PayoutAddress != old.Mining.PayoutAddress
 
 	if err := e.cfg.Update(newCfg); err != nil {
 		return err
 	}
 	if e.log != nil {
-		e.log.SetLevel(e.cfg.App.LogLevel)
+		e.log.SetLevel(e.cfg.App.LogLevel) // live — no restart
 	}
 	if nodeChanged && e.nodeClient != nil {
 		e.nodeClient.Close()
@@ -509,14 +537,33 @@ func (e *Engine) applyConfig(newCfg *config.Config) error {
 			e.cfg.Node.Username, e.cfg.Node.Password, e.cfg.Node.UseSSL,
 		)
 	}
-	e.StopStratum()
-	if err := e.StartStratum(); err != nil {
-		// Config is already persisted; a start failure (node/pool not reachable
-		// yet) shouldn't read as "save failed". Log it and let the dashboard
-		// show the mining state — it'll start on the next reboot or edit.
-		if e.log != nil {
-			e.log.Errorf("engine", "config saved; mining not started yet: %v", err)
+
+	if restart {
+		e.StopStratum()
+		if err := e.StartStratum(); err != nil {
+			// Config is already persisted; a start failure (node/pool not
+			// reachable yet) shouldn't read as "save failed".
+			if e.log != nil {
+				e.log.Errorf("engine", "config saved; mining not started yet: %v", err)
+			}
 		}
+	} else if payoutChanged {
+		// Live payout update — miners keep hashing, stats intact.
+		e.svcMu.RLock()
+		srv := e.stratum
+		e.svcMu.RUnlock()
+		if srv != nil && srv.IsRunning() {
+			srv.UpdatePayoutAddress(e.cfg.Mining.PayoutAddress)
+		}
+		if e.log != nil {
+			e.log.Info("engine", "payout address updated live (no restart)")
+		}
+	} else if e.log != nil {
+		e.log.Info("engine", "settings updated (no mining restart needed)")
+	}
+
+	if e.isConfigured() {
+		e.apiServer.SetConfigured(true)
 	}
 	return nil
 }
@@ -548,6 +595,7 @@ func (e *Engine) GetDashboardStats() miner.DashboardStats {
 		ds.ProxySharesFwd = diag.SharesFwd
 		ds.ProxySharesAccepted = diag.SharesAccepted
 		ds.ProxySharesRejected = diag.SharesRejected
+		ds.PoolPingMs = srv.AvgUpstreamLatencyMs()
 	}
 	return ds
 }
@@ -566,10 +614,26 @@ func (e *Engine) GetMiners() []miner.MinerInfo {
 			live[s.ID] = s
 		}
 	}
+	tel := e.fleetTelemetry()
 	for i := range miners {
 		miners[i].Hashrate = e.stats.EstimateMinerHashrate(miners[i].ID)
 		if l, ok := live[miners[i].ID]; ok {
 			miners[i].CurrentDiff = l.CurrentDiff
+		}
+		// Merge AxeOS telemetry by source IP.
+		host, _, err := net.SplitHostPort(miners[i].IPAddress)
+		if err != nil {
+			host = miners[i].IPAddress
+		}
+		if t, ok := tel[host]; ok && t.Responded {
+			miners[i].Telemetry = true
+			miners[i].Temp = t.Temp
+			miners[i].VrTemp = t.VrTemp
+			miners[i].Power = t.Power
+			miners[i].Voltage = t.Voltage
+			miners[i].ASICModel = t.ASICModel
+			miners[i].Firmware = t.Version
+			miners[i].PingMs = t.PingMs
 		}
 	}
 	return miners
@@ -617,14 +681,11 @@ func (e *Engine) GetHashrateHistory(period string) []miner.HashratePoint {
 	return e.stats.GetHashrateHistory(period)
 }
 
-// GetFleetOverview queries connected miners' AxeOS APIs for power draw and
-// derives efficiency (J/TH) and estimated daily cost. Cached 30s so the
-// dashboard poll doesn't hammer the miners.
-func (e *Engine) GetFleetOverview() map[string]interface{} {
+// connectedIPs returns the distinct source IPs of connected miners.
+func (e *Engine) connectedIPs() []string {
 	e.svcMu.RLock()
 	srv := e.stratum
 	e.svcMu.RUnlock()
-
 	var ips []string
 	if srv != nil && srv.IsRunning() {
 		seen := make(map[string]bool)
@@ -639,32 +700,52 @@ func (e *Engine) GetFleetOverview() map[string]interface{} {
 			}
 		}
 	}
+	return ips
+}
 
+// fleetTelemetry returns cached per-miner AxeOS telemetry (30s TTL), querying
+// the currently-connected miners when stale. Shared by GetFleetOverview and
+// GetMiners so the miners are polled at most once per 30s.
+func (e *Engine) fleetTelemetry() map[string]miner.MinerTelemetry {
 	e.fleetMu.Lock()
-	if time.Since(e.fleetTime) > 30*time.Second {
+	if e.fleetCache == nil || time.Since(e.fleetTime) > 30*time.Second {
 		e.fleetMu.Unlock()
-		power := e.discovery.QueryFleetPower(ips)
+		tel := e.discovery.QueryFleetTelemetry(e.connectedIPs())
 		e.fleetMu.Lock()
-		e.fleetCache = power
+		e.fleetCache = tel
 		e.fleetTime = time.Now()
 	}
-	power := e.fleetCache
+	tel := e.fleetCache
 	e.fleetMu.Unlock()
+	return tel
+}
 
+// GetFleetOverview derives total power, efficiency (J/TH) and est. daily cost
+// from the per-miner telemetry.
+func (e *Engine) GetFleetOverview() map[string]interface{} {
+	tel := e.fleetTelemetry()
+	var watts float64
+	responded := 0
+	for _, t := range tel {
+		if t.Responded {
+			responded++
+			watts += t.Power
+		}
+	}
 	hashrate := e.stats.EstimateHashrate()
 	cost := e.cfg.App.ElectricityCost
 	daily := 0.0
-	if power.TotalWatts > 0 && cost > 0 {
-		daily = power.TotalWatts * 24 / 1000 * cost
+	if watts > 0 && cost > 0 {
+		daily = watts * 24 / 1000 * cost
 	}
 	eff := 0.0
-	if power.TotalWatts > 0 && hashrate > 0 {
-		eff = power.TotalWatts / (hashrate / 1e12)
+	if watts > 0 && hashrate > 0 {
+		eff = watts / (hashrate / 1e12)
 	}
 	return map[string]interface{}{
-		"totalWatts":      power.TotalWatts,
-		"responded":       power.Responded,
-		"queried":         power.Queried,
+		"totalWatts":      watts,
+		"responded":       responded,
+		"queried":         len(tel),
 		"efficiency":      eff,
 		"dailyCost":       daily,
 		"electricityCost": cost,

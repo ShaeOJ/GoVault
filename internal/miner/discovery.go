@@ -106,6 +106,79 @@ func (d *Discovery) QueryFleetPower(ips []string) FleetPowerStats {
 	return stats
 }
 
+// MinerTelemetry is per-miner data read from an AxeOS device, plus the HTTP
+// round-trip time as a LAN ping.
+type MinerTelemetry struct {
+	IP        string  `json:"ip"`
+	Responded bool    `json:"responded"`
+	PingMs    float64 `json:"pingMs"`
+	Power     float64 `json:"power"`
+	Voltage   float64 `json:"voltage"` // mV
+	Current   float64 `json:"current"` // mA
+	Temp      float64 `json:"temp"`
+	VrTemp    float64 `json:"vrTemp"`
+	HashRate  float64 `json:"hashRate"` // GH/s (AxeOS units)
+	BestDiff  string  `json:"bestDiff"`
+	ASICModel string  `json:"asicModel"`
+	Version   string  `json:"version"`
+	Hostname  string  `json:"hostname"`
+}
+
+// QueryFleetTelemetry queries each IP's AxeOS /api/system/info concurrently and
+// returns per-miner telemetry keyed by IP. Non-AxeOS / unreachable devices come
+// back with Responded=false. The HTTP round-trip is recorded as PingMs.
+func (d *Discovery) QueryFleetTelemetry(ips []string) map[string]MinerTelemetry {
+	out := make(map[string]MinerTelemetry, len(ips))
+	if len(ips) == 0 {
+		return out
+	}
+	var mu sync.Mutex
+	var wg sync.WaitGroup
+	for _, ip := range ips {
+		wg.Add(1)
+		go func(ip string) {
+			defer wg.Done()
+			t := MinerTelemetry{IP: ip}
+			start := time.Now()
+			resp, err := d.client.Get(fmt.Sprintf("http://%s/api/system/info", ip))
+			if err != nil {
+				mu.Lock()
+				out[ip] = t
+				mu.Unlock()
+				return
+			}
+			defer resp.Body.Close()
+			t.PingMs = float64(time.Since(start).Microseconds()) / 1000.0
+			if resp.StatusCode == 200 {
+				if body, err := io.ReadAll(resp.Body); err == nil {
+					var info axeOSSystemInfo
+					if json.Unmarshal(body, &info) == nil {
+						t.Responded = true
+						t.Power = info.Power
+						if t.Power <= 0 && info.Voltage > 0 && info.Current > 0 {
+							t.Power = (info.Voltage * info.Current) / 1_000_000
+						}
+						t.Voltage = info.Voltage
+						t.Current = info.Current
+						t.Temp = info.Temp
+						t.VrTemp = info.VrTemp
+						t.HashRate = info.HashRate
+						t.BestDiff = fmt.Sprintf("%v", info.BestDiff)
+						t.ASICModel = info.ASICModel
+						t.Version = info.Version
+						t.Hostname = info.Hostname
+					}
+				}
+			}
+			mu.Lock()
+			out[ip] = t
+			mu.Unlock()
+		}(ip)
+	}
+	wg.Wait()
+	return out
+}
+
 // Discovery scans the local network for compatible mining devices.
 type Discovery struct {
 	client  *http.Client

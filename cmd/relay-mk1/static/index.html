@@ -85,6 +85,7 @@
         <option value="monochrome">◻ Monochrome</option>
         <option value="steampunk">⛭ Steampunk</option>
       </select>
+      <span class="uptime" id="ping"></span>
       <span class="uptime" id="uptime">UPTIME —</span>
       <span class="badge" id="status"><span class="dot" id="dot"></span><span id="status-text">offline</span></span>
     </div>
@@ -96,7 +97,7 @@
       <div class="subtitle" id="subtitle">—</div>
     </div>
     <div class="actions">
-      <a class="btn accent" href="/setup.html">Setup</a>
+      <a class="btn accent" href="/setup.html">⚙ Settings</a>
     </div>
   </div>
 
@@ -162,6 +163,9 @@ function $(id){return document.getElementById(id)}
 
 let period='1h', hostIP=location.hostname;
 
+// first-run: if the node has never been configured, go straight to setup.
+fetch('/api/configured').then(r=>r.json()).then(j=>{ if(j&&j.configured===false) location.replace('/setup.html'); }).catch(()=>{});
+
 // ── theme ──
 const themeSel=$('theme');
 function applyTheme(t){ document.body.className=t; }
@@ -193,6 +197,7 @@ async function poll(){
     $('uptime').textContent='UPTIME '+fDur(node.uptime||0);
     $('status').className='badge'+(running?' on':''); $('status-text').textContent=running?'online':'offline';
     $('subtitle').textContent=(proxy?'Proxy':'Solo')+' mining · stratum+tcp://'+hostIP+':'+(j.stratumPort||3333);
+    $('ping').textContent=(proxy&&s.poolPingMs>0)?('POOL '+Math.round(s.poolPingMs)+'ms'):'';
     $('stratum-url').textContent='stratum+tcp://'+hostIP+':'+(j.stratumPort||3333);
     // row 1
     $('c-hr').textContent=fHash(s.totalHashrate||0);
@@ -227,13 +232,31 @@ async function pollMiners(){
     } else $('top-panel').style.display='none';
     // table
     if(m.length){
-      $('miners-wrap').innerHTML='<table><thead><tr><th>Worker</th><th>Type</th><th class="r">Diff</th><th class="r">Hashrate</th><th class="r">Best</th></tr></thead><tbody>'+
-        m.map(x=>'<tr><td>'+esc(x.workerName||x.id)+'</td><td class="muted">'+esc((x.userAgent||'').split('/')[0]||'—')+'</td><td class="r">'+fDiff(x.currentDiff||0)+'</td><td class="r">'+fHash(x.hashrate||0)+'</td><td class="r">'+fDiff(x.bestDifficulty||0)+'</td></tr>').join('')+
-        '</tbody></table>';
+      const rows=m.map(x=>{
+        const tel=x.telemetry;
+        const asic=(tel&&x.asicModel)?x.asicModel:(((x.userAgent||'').split('/')[1])||'—');
+        const fw=(tel&&x.firmware)?x.firmware:((x.userAgent||'').split('/').pop()||'');
+        const temp=(tel&&x.temp>0)?('<span style="color:'+tempCol(x.temp)+'">'+x.temp.toFixed(0)+'°C</span>'+(x.vrTemp>0?' <span class="muted">/ '+x.vrTemp.toFixed(0)+'</span>':'')):'—';
+        const volt=(tel&&x.voltage>0)?' <span class="muted">'+(x.voltage/1000).toFixed(2)+'V</span>':'';
+        const pow=(tel&&x.power>0)?(x.power.toFixed(1)+'W'+volt):'—';
+        const ping=(tel&&x.pingMs>0)?(x.pingMs.toFixed(0)+'ms'):'—';
+        return '<tr title="'+esc(x.workerName||x.id)+(fw?'  ·  fw '+esc(fw):'')+'">'+
+          '<td>'+esc(x.workerName||x.id)+'</td>'+
+          '<td class="muted">'+esc(asic)+'</td>'+
+          '<td class="r">'+temp+'</td>'+
+          '<td class="r">'+pow+'</td>'+
+          '<td class="r">'+fHash(x.hashrate||0)+'</td>'+
+          '<td class="r">'+fDiff(x.currentDiff||0)+'</td>'+
+          '<td class="r">'+fDiff(x.bestDifficulty||0)+'</td>'+
+          '<td class="r">'+fNum(x.sharesAccepted||0)+'<span class="muted">/'+fNum(x.sharesRejected||0)+'</span></td>'+
+          '<td class="r muted">'+ping+'</td></tr>';
+      }).join('');
+      $('miners-wrap').innerHTML='<div style="overflow-x:auto"><table><thead><tr><th>Worker</th><th>ASIC</th><th class="r">Temp</th><th class="r">Power</th><th class="r">Hashrate</th><th class="r">Diff</th><th class="r">Best</th><th class="r">Shares</th><th class="r">Ping</th></tr></thead><tbody>'+rows+'</tbody></table></div>';
     } else $('miners-wrap').innerHTML='<div class="muted" style="font-size:13px">No miners connected. Point one at <code>stratum+tcp://'+hostIP+':'+($('stratum-url').textContent.split(':').pop()||3333)+'</code></div>';
   }catch(e){}
 }
 function esc(s){ return String(s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
+function tempCol(t){ return t>=85?'var(--err)':t>=70?'var(--gold)':'var(--accent)'; }
 
 // ── hand-drawn hashrate chart (no external libs — appliance is offline) ──
 async function drawChart(){

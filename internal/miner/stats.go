@@ -34,6 +34,7 @@ type DashboardStats struct {
 	ProxySharesFwd      uint64  `json:"proxySharesFwd"`
 	ProxySharesAccepted uint64  `json:"proxySharesAccepted"`
 	ProxySharesRejected uint64  `json:"proxySharesRejected"`
+	PoolPingMs          float64 `json:"poolPingMs"` // avg upstream share round-trip (proxy)
 }
 
 // StatsAggregator collects and aggregates mining statistics.
