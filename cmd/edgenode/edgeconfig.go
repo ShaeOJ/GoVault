@@ -94,6 +94,12 @@ func LoadEdgeConfig() *EdgeConfig {
 }
 
 func edgeConfigPath() string {
+	// EDGE_CONFIG_PATH relocates edge.json off the default data/ dir. Appliance
+	// builds (e.g. relay-mk1) set this to a persistent, writable location so
+	// dashboard edits survive reboots while the volatile DB/logs stay on tmpfs.
+	if p := os.Getenv("EDGE_CONFIG_PATH"); p != "" {
+		return p
+	}
 	exe, err := os.Executable()
 	if err != nil {
 		return "data/edge.json"
