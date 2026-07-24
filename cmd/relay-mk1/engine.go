@@ -7,6 +7,7 @@ import (
 	"encoding/hex"
 	"fmt"
 	"math/big"
+	"net"
 	"os"
 	"time"
 
@@ -38,9 +39,15 @@ type Engine struct {
 	upstream   *upstream.Client
 	registry   *miner.Registry
 	stats      *miner.StatsAggregator
+	discovery  *miner.Discovery
 
 	// svcMu guards stratum/upstream/monitor pointers.
 	svcMu sync.RWMutex
+
+	// Fleet power cache (queries each miner's AxeOS API; 30s TTL).
+	fleetCache miner.FleetPowerStats
+	fleetTime  time.Time
+	fleetMu    sync.Mutex
 
 	db     *database.DB
 	buffer *database.Buffer
@@ -85,6 +92,7 @@ func NewEngine(staticFS embed.FS, apiPort int, logLevel string) (*Engine, error)
 		cfg:       cfg,
 		registry:  miner.NewRegistry(),
 		stats:     miner.NewStatsAggregator(),
+		discovery: miner.NewDiscovery(),
 		stopStats: make(chan struct{}),
 		staticFS:  staticFS,
 		apiPort:   apiPort,
@@ -607,6 +615,60 @@ func (e *Engine) GetPairStatus() []api.PairStatus {
 // GetHashrateHistory feeds the dashboard hashrate chart (period: 1h|6h|24h|7d).
 func (e *Engine) GetHashrateHistory(period string) []miner.HashratePoint {
 	return e.stats.GetHashrateHistory(period)
+}
+
+// GetFleetOverview queries connected miners' AxeOS APIs for power draw and
+// derives efficiency (J/TH) and estimated daily cost. Cached 30s so the
+// dashboard poll doesn't hammer the miners.
+func (e *Engine) GetFleetOverview() map[string]interface{} {
+	e.svcMu.RLock()
+	srv := e.stratum
+	e.svcMu.RUnlock()
+
+	var ips []string
+	if srv != nil && srv.IsRunning() {
+		seen := make(map[string]bool)
+		for _, s := range srv.GetSessions() {
+			host, _, err := net.SplitHostPort(s.IPAddress)
+			if err != nil {
+				host = s.IPAddress
+			}
+			if host != "" && !seen[host] {
+				seen[host] = true
+				ips = append(ips, host)
+			}
+		}
+	}
+
+	e.fleetMu.Lock()
+	if time.Since(e.fleetTime) > 30*time.Second {
+		e.fleetMu.Unlock()
+		power := e.discovery.QueryFleetPower(ips)
+		e.fleetMu.Lock()
+		e.fleetCache = power
+		e.fleetTime = time.Now()
+	}
+	power := e.fleetCache
+	e.fleetMu.Unlock()
+
+	hashrate := e.stats.EstimateHashrate()
+	cost := e.cfg.App.ElectricityCost
+	daily := 0.0
+	if power.TotalWatts > 0 && cost > 0 {
+		daily = power.TotalWatts * 24 / 1000 * cost
+	}
+	eff := 0.0
+	if power.TotalWatts > 0 && hashrate > 0 {
+		eff = power.TotalWatts / (hashrate / 1e12)
+	}
+	return map[string]interface{}{
+		"totalWatts":      power.TotalWatts,
+		"responded":       power.Responded,
+		"queried":         power.Queried,
+		"efficiency":      eff,
+		"dailyCost":       daily,
+		"electricityCost": cost,
+	}
 }
 
 func (e *Engine) GetConfig() *config.Config { return e.cfg }

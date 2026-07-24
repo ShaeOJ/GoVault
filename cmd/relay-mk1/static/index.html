@@ -5,14 +5,18 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>ReTek Relay Unit Mk.I</title>
 <style>
-  :root{
-    --bg:#0a0e0a; --bg2:#0f1a0f; --card:#121f12; --cardh:#1a2f1a;
-    --accent:#39ff14; --accent-rgb:57,255,20; --gold:#ffe600; --err:#ff3333;
-    --text:#e0ffe0; --dim:#7a9f7a; --border:rgba(57,255,20,0.12);
-    --mono:ui-monospace,"JetBrains Mono","Cascadia Code",Menlo,Consolas,monospace;
-  }
+  :root{ --mono:ui-monospace,"JetBrains Mono","Cascadia Code",Menlo,Consolas,monospace; }
+  /* themes (ported from the desktop app) */
+  body,body.nuclear   { --bg:#0a0e0a; --bg2:#0f1a0f; --card:#121f12; --cardh:#1a2f1a; --accent:#39ff14; --accent-rgb:57,255,20;  --gold:#ffe600; --err:#ff3333; --text:#e0ffe0; --dim:#7a9f7a; --border:rgba(57,255,20,0.12); }
+  body.tron           { --bg:#0a0a0f; --bg2:#0f0f1a; --card:#12121f; --cardh:#1a1a2f; --accent:#00d4ff; --accent-rgb:0,212,255;   --gold:#ff6600; --err:#ff3355; --text:#e0f0ff; --dim:#7a8faf; --border:rgba(0,212,255,0.12); }
+  body.vault-tec      { --bg:#0d0f08; --bg2:#141a0e; --card:#1a1f12; --cardh:#252d1a; --accent:#f5a623; --accent-rgb:245,166,35;  --gold:#00ff41; --err:#ff3333; --text:#fff5e0; --dim:#9f9070; --border:rgba(245,166,35,0.12); }
+  body.bitcoin        { --bg:#0f0c08; --bg2:#1a1408; --card:#1f1a0f; --cardh:#2f2518; --accent:#f7931a; --accent-rgb:247,147,26;  --gold:#ffd700; --err:#ff4444; --text:#fff0d0; --dim:#9f8a60; --border:rgba(247,147,26,0.12); }
+  body.monochrome     { --bg:#080808; --bg2:#111111; --card:#161616; --cardh:#1e1e1e; --accent:#cccccc; --accent-rgb:204,204,204; --gold:#ddaa00; --err:#ee4444; --text:#e0e0e0; --dim:#707070; --border:rgba(204,204,204,0.12); }
+  body.steampunk      { --bg:#0c0a08; --bg2:#141210; --card:#1a1714; --cardh:#252118; --accent:#cd7f32; --accent-rgb:205,127,50;  --gold:#b08030; --err:#a04030; --text:#e8dcc8; --dim:#8a7e6a; --border:rgba(205,127,50,0.12); }
   *{box-sizing:border-box}
-  body{margin:0;background:var(--bg);color:var(--text);font:14px/1.5 var(--mono);-webkit-font-smoothing:antialiased}
+  body{margin:0;background:var(--bg);color:var(--text);font:14px/1.5 var(--mono);-webkit-font-smoothing:antialiased;transition:background .3s,color .3s}
+  select.theme-sel{background:var(--card);color:var(--dim);border:1px solid var(--border);border-radius:8px;padding:6px 8px;font:inherit;font-size:12px;cursor:pointer}
+  select.theme-sel:hover{color:var(--text);border-color:rgba(var(--accent-rgb),.4)}
   a{color:var(--accent);text-decoration:none}
   .wrap{max-width:1080px;margin:0 auto;padding:20px 18px 60px}
   /* header */
@@ -73,6 +77,14 @@
       <div class="unit">SALVAGE &amp; RECLAMATION DIV. · RELAY UNIT MK.I &nbsp;·&nbsp; <span id="node-name">—</span></div>
     </div>
     <div class="hright">
+      <select class="theme-sel" id="theme" title="Theme">
+        <option value="nuclear">☢ Nuclear</option>
+        <option value="tron">▞ Tron</option>
+        <option value="vault-tec">⚙ Vault-Tec</option>
+        <option value="bitcoin">₿ Bitcoin</option>
+        <option value="monochrome">◻ Monochrome</option>
+        <option value="steampunk">⛭ Steampunk</option>
+      </select>
       <span class="uptime" id="uptime">UPTIME —</span>
       <span class="badge" id="status"><span class="dot" id="dot"></span><span id="status-text">offline</span></span>
     </div>
@@ -102,6 +114,13 @@
     <div class="card" id="cell-b"><div class="bar" style="background:var(--gold)"></div><div class="lbl" id="c-b-lbl">Block Chance</div><div class="val" id="c-b" style="color:var(--gold)">N/A</div><div class="sub" id="c-b-sub">per day</div></div>
     <div class="card"><div class="bar" style="background:var(--accent)"></div><div class="lbl">Pool Shares</div><div class="val" id="c-shares" style="color:var(--accent)">0</div><div class="sub" id="c-shares-sub"></div></div>
     <div class="card"><div class="bar" style="background:var(--dim)"></div><div class="lbl">Network Difficulty</div><div class="val" id="c-netdiff" style="color:var(--text)">0</div><div class="sub" id="c-height"></div></div>
+  </div>
+
+  <!-- Fleet overview (power, from miners' AxeOS APIs) -->
+  <div class="grid" id="fleet-row" style="display:none;grid-template-columns:repeat(3,1fr)">
+    <div class="card"><div class="bar" style="background:var(--gold)"></div><div class="lbl">Fleet Power</div><div class="val" id="f-power" style="color:var(--gold)">—</div><div class="sub" id="f-power-sub"></div></div>
+    <div class="card"><div class="bar" style="background:var(--accent)"></div><div class="lbl">Efficiency</div><div class="val" id="f-eff" style="color:var(--accent)">—</div><div class="sub">watts per TH/s</div></div>
+    <div class="card"><div class="bar" style="background:var(--dim)"></div><div class="lbl">Est. Daily Cost</div><div class="val" id="f-cost" style="color:var(--text)">—</div><div class="sub" id="f-cost-sub">set $/kWh in setup</div></div>
   </div>
 
   <!-- Chart -->
@@ -142,6 +161,28 @@ function fRatio(r){ if(r<=0)return'N/A'; if(r>=1e12)return(r/1e12).toFixed(2)+'T
 function $(id){return document.getElementById(id)}
 
 let period='1h', hostIP=location.hostname;
+
+// ── theme ──
+const themeSel=$('theme');
+function applyTheme(t){ document.body.className=t; }
+(function(){ const t=localStorage.getItem('relay-theme')||'nuclear'; if(themeSel)themeSel.value=t; applyTheme(t); })();
+if(themeSel) themeSel.addEventListener('change',()=>{ applyTheme(themeSel.value); localStorage.setItem('relay-theme',themeSel.value); drawChart(); });
+function cssv(n,f){ const v=getComputedStyle(document.body).getPropertyValue(n).trim(); return v||f; }
+
+// ── fleet overview (power from miners' AxeOS APIs) ──
+async function pollFleet(){
+  try{
+    const f=await (await fetch('/api/fleet')).json();
+    if(f && f.responded>0 && f.totalWatts>0){
+      $('fleet-row').style.display='grid';
+      $('f-power').textContent=(f.totalWatts>=1000?(f.totalWatts/1000).toFixed(2)+' kW':f.totalWatts.toFixed(0)+' W');
+      $('f-power-sub').textContent=f.responded+'/'+f.queried+' miners reporting';
+      $('f-eff').textContent=f.efficiency>0?f.efficiency.toFixed(1)+' J/TH':'—';
+      $('f-cost').textContent=f.dailyCost>0?('$'+f.dailyCost.toFixed(2)):'—';
+      $('f-cost-sub').textContent=f.electricityCost>0?('@ $'+f.electricityCost+'/kWh'):'set $/kWh in setup';
+    } else { $('fleet-row').style.display='none'; }
+  }catch(e){}
+}
 
 async function poll(){
   try{
@@ -213,23 +254,24 @@ async function drawChart(){
   let u=units.find(x=>maxY>=x[0])||units[units.length-1];
   const X=t=>padL+(maxT===minT?0:(t-minT)/(maxT-minT))*w, Y=v=>padT+h-(v/maxY)*h;
   // grid + y labels
-  ctx.font='10px '+getComputedStyle(document.body).fontFamily; ctx.fillStyle='#7a9f7a'; ctx.strokeStyle='rgba(57,255,20,0.08)'; ctx.lineWidth=1;
+  const accent=cssv('--accent','#39ff14'), rgb=cssv('--accent-rgb','57,255,20'), dimc=cssv('--dim','#7a9f7a');
+  ctx.font='10px '+getComputedStyle(document.body).fontFamily; ctx.fillStyle=dimc; ctx.strokeStyle='rgba('+rgb+',0.08)'; ctx.lineWidth=1;
   for(let g=0;g<=4;g++){ const yy=padT+h-(g/4)*h, val=(maxY*g/4); ctx.beginPath(); ctx.moveTo(padL,yy); ctx.lineTo(W-padR,yy); ctx.stroke(); ctx.fillText((val/u[0]).toFixed(1)+' '+u[1], 4, yy+3); }
   // area + line
   ctx.beginPath(); data.forEach((p,i)=>{ const x=X(p.t),y=Y(p.h); i?ctx.lineTo(x,y):ctx.moveTo(x,y); });
-  const grad=ctx.createLinearGradient(0,padT,0,padT+h); grad.addColorStop(0,'rgba(57,255,20,0.22)'); grad.addColorStop(1,'rgba(57,255,20,0.01)');
+  const grad=ctx.createLinearGradient(0,padT,0,padT+h); grad.addColorStop(0,'rgba('+rgb+',0.22)'); grad.addColorStop(1,'rgba('+rgb+',0.01)');
   const lastX=X(xs[xs.length-1]); ctx.lineTo(lastX,padT+h); ctx.lineTo(X(xs[0]),padT+h); ctx.closePath(); ctx.fillStyle=grad; ctx.fill();
   ctx.beginPath(); data.forEach((p,i)=>{ const x=X(p.t),y=Y(p.h); i?ctx.lineTo(x,y):ctx.moveTo(x,y); });
-  ctx.strokeStyle='#39ff14'; ctx.lineWidth=1.6; ctx.shadowColor='rgba(57,255,20,0.5)'; ctx.shadowBlur=4; ctx.stroke(); ctx.shadowBlur=0;
+  ctx.strokeStyle=accent; ctx.lineWidth=1.6; ctx.shadowColor='rgba('+rgb+',0.5)'; ctx.shadowBlur=4; ctx.stroke(); ctx.shadowBlur=0;
   // x labels (first / mid / last time)
-  ctx.fillStyle='#7a9f7a'; [0,Math.floor(data.length/2),data.length-1].forEach(i=>{ if(!data[i])return; const d=new Date(data[i].t*1000); const lbl=d.toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'}); const x=X(data[i].t); ctx.fillText(lbl, Math.min(Math.max(x-16,padL), W-padR-30), H-6); });
+  ctx.fillStyle=dimc; [0,Math.floor(data.length/2),data.length-1].forEach(i=>{ if(!data[i])return; const d=new Date(data[i].t*1000); const lbl=d.toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'}); const x=X(data[i].t); ctx.fillText(lbl, Math.min(Math.max(x-16,padL), W-padR-30), H-6); });
 }
 
 $('periods').addEventListener('click',e=>{ const b=e.target.closest('button'); if(!b)return; period=b.dataset.p; [...$('periods').children].forEach(x=>x.classList.toggle('sel',x===b)); drawChart(); });
 window.addEventListener('resize',()=>drawChart());
 
-poll(); pollMiners(); drawChart();
-setInterval(poll,2000); setInterval(pollMiners,4000); setInterval(drawChart,60000);
+poll(); pollMiners(); pollFleet(); drawChart();
+setInterval(poll,2000); setInterval(pollMiners,4000); setInterval(pollFleet,30000); setInterval(drawChart,60000);
 </script>
 </body>
 </html>

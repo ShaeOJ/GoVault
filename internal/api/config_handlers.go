@@ -18,6 +18,21 @@ type hashrateProvider interface {
 	GetHashrateHistory(period string) []miner.HashratePoint
 }
 
+// fleetProvider is optionally implemented by an engine to feed the dashboard
+// fleet overview (power/efficiency/cost from miners' AxeOS APIs).
+type fleetProvider interface {
+	GetFleetOverview() map[string]interface{}
+}
+
+// fleet handles GET /api/fleet.
+func (h *handlers) fleet(w http.ResponseWriter, r *http.Request) {
+	if fp, ok := h.provider.(fleetProvider); ok {
+		jsonOK(w, fp.GetFleetOverview())
+		return
+	}
+	jsonOK(w, map[string]interface{}{})
+}
+
 // hashrate handles GET /api/hashrate?period=1h|6h|24h|7d.
 func (h *handlers) hashrate(w http.ResponseWriter, r *http.Request) {
 	period := r.URL.Query().Get("period")
