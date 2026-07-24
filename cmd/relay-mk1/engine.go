@@ -604,6 +604,11 @@ func (e *Engine) GetPairStatus() []api.PairStatus {
 	return []api.PairStatus{ps}
 }
 
+// GetHashrateHistory feeds the dashboard hashrate chart (period: 1h|6h|24h|7d).
+func (e *Engine) GetHashrateHistory(period string) []miner.HashratePoint {
+	return e.stats.GetHashrateHistory(period)
+}
+
 func (e *Engine) GetConfig() *config.Config { return e.cfg }
 func (e *Engine) Uptime() time.Duration     { return time.Since(e.startedAt) }
 func (e *Engine) NodeID() string            { return e.nodeID }

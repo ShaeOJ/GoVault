@@ -1,1142 +1,235 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
 <head>
-<meta charset="UTF-8">
+<meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>ReTek Relay Unit Mk.I</title>
 <style>
-:root {
-  --bg:         #060a10;
-  --surface:    #0a1220;
-  --surface2:   #0e1828;
-  --surface3:   #111f30;
-  --border:     rgba(0,160,255,0.14);
-  --accent:     #ffd700;
-  --accent2:    #ccaa00;
-  --accent-dim: rgba(255,215,0,0.12);
-  --blue:       #00aaff;
-  --blue-dim:   rgba(0,170,255,0.10);
-  --green:      #39ff82;
-  --green-dim:  rgba(57,255,130,0.10);
-  --muted:      #2e4a6a;
-  --text:       #b8cce0;
-  --text-dim:   #4a6a8a;
-  --red:        #ff4455;
-  --red-dim:    rgba(255,68,85,0.10);
-  --orange:     #ff8c00;
-  --drawer-w:   380px;
-}
-* { box-sizing: border-box; margin: 0; padding: 0; }
-
-body {
-  background: var(--bg);
-  color: var(--text);
-  font-family: 'Courier New', Courier, monospace;
-  font-size: 14px;
-  min-height: 100vh;
-  background-image:
-    repeating-linear-gradient(90deg, rgba(0,160,255,0.025) 0px, transparent 1px, transparent 48px),
-    repeating-linear-gradient(0deg,  rgba(0,160,255,0.025) 0px, transparent 1px, transparent 48px);
-}
-body::after {
-  content: '';
-  position: fixed; inset: 0; pointer-events: none; z-index: 999;
-  background: repeating-linear-gradient(0deg, transparent, transparent 3px, rgba(0,0,0,0.07) 3px, rgba(0,0,0,0.07) 4px);
-}
-::-webkit-scrollbar { width: 6px; height: 6px; }
-::-webkit-scrollbar-track { background: var(--bg); }
-::-webkit-scrollbar-thumb { background: rgba(0,160,255,0.2); border-radius: 3px; }
-::-webkit-scrollbar-thumb:hover { background: rgba(0,160,255,0.4); }
-
-/* ── Header ── */
-header {
-  background: var(--surface);
-  border-bottom: 1px solid var(--border);
-  padding: 12px 24px;
-  display: flex; align-items: center; justify-content: space-between;
-  flex-wrap: wrap; gap: 8px; position: sticky; top: 0; z-index: 100;
-  overflow: hidden;
-}
-header::before {
-  content: '';
-  position: absolute; bottom: 0; left: 0; right: 0; height: 1px;
-  background: linear-gradient(90deg, transparent 0%, var(--accent) 30%, var(--blue) 70%, transparent 100%);
-  opacity: 0.4;
-}
-header::after {
-  content: 'VAULT-TEC INDUSTRIES ·· SECURE SYSTEMS DIVISION';
-  position: absolute; bottom: 2px; right: 24px;
-  font-size: 8px; color: rgba(255,215,0,0.12); letter-spacing: 3px;
-  pointer-events: none;
-}
-.logo { display: flex; align-items: center; gap: 14px; }
-.logo-img { height: 34px; width: auto; filter: drop-shadow(0 0 10px rgba(255,215,0,0.5)); }
-.logo-text { display: flex; flex-direction: column; gap: 2px; }
-.logo-title { font-size: 13px; color: var(--accent); letter-spacing: 3px; font-weight: bold; text-shadow: 0 0 12px rgba(255,215,0,0.5); }
-.logo-sub   { font-size: 9px; color: var(--text-dim); letter-spacing: 2px; text-transform: uppercase; }
-.header-right { display: flex; align-items: center; gap: 16px; }
-.uptime { font-size: 11px; color: var(--text-dim); letter-spacing: 1px; }
-.status-badge {
-  display: flex; align-items: center; gap: 6px;
-  padding: 4px 12px; font-size: 10px; font-weight: bold;
-  letter-spacing: 2px; text-transform: uppercase; border: 1px solid;
-}
-.status-badge.online  { color: var(--blue); border-color: rgba(0,170,255,0.3); background: rgba(0,170,255,0.07); }
-.status-badge.offline { color: var(--red);  border-color: rgba(255,68,85,0.3);  background: rgba(255,68,85,0.07); }
-
-/* ── Layout ── */
-.page-body {
-  display: flex; min-height: calc(100vh - 59px);
-  transition: padding-right 300ms ease;
-}
-.page-body.drawer-open { padding-right: var(--drawer-w); }
-main { flex: 1; padding: 20px 24px; max-width: 1440px; min-width: 0; }
-
-/* ── Stat cards row ── */
-.stat-row {
-  display: grid;
-  grid-template-columns: repeat(4, 1fr);
-  gap: 12px;
-  margin-bottom: 16px;
-}
-@media (max-width: 900px) { .stat-row { grid-template-columns: repeat(2, 1fr); } }
-@media (max-width: 540px) { .stat-row { grid-template-columns: 1fr; } }
-
-.stat-card {
-  background: var(--surface);
-  border: 1px solid var(--border);
-  padding: 14px 16px;
-  display: flex; align-items: center; gap: 12px;
-  position: relative;
-  transition: border-color 200ms, background 200ms;
-}
-.stat-card:hover { border-color: rgba(0,160,255,0.3); background: var(--surface2); }
-.stat-card::before {
-  content: '';
-  position: absolute; top: -1px; left: -1px;
-  width: 8px; height: 8px;
-  border-top: 1px solid var(--accent);
-  border-left: 1px solid var(--accent);
-  opacity: 0.5;
-}
-.stat-icon {
-  width: 36px; height: 36px; flex-shrink: 0;
-  display: flex; align-items: center; justify-content: center;
-  background: var(--accent-dim);
-  border: 1px solid rgba(255,215,0,0.15);
-}
-.stat-icon svg { width: 17px; height: 17px; color: var(--accent); }
-.stat-icon.blue { background: var(--blue-dim); border-color: rgba(0,170,255,0.2); }
-.stat-icon.blue svg { color: var(--blue); }
-.stat-icon.green { background: var(--green-dim); border-color: rgba(57,255,130,0.2); }
-.stat-icon.green svg { color: var(--green); }
-.stat-icon.red { background: var(--red-dim); border-color: rgba(255,68,85,0.2); }
-.stat-icon.red svg { color: var(--red); }
-.stat-body { flex: 1; min-width: 0; }
-.stat-label { font-size: 9px; color: var(--text-dim); text-transform: uppercase; letter-spacing: 2px; margin-bottom: 4px; }
-.stat-value { font-size: 22px; color: var(--accent); font-weight: bold; text-shadow: 0 0 10px rgba(255,215,0,0.35); line-height: 1; }
-.stat-value.blue-val { color: var(--blue); text-shadow: 0 0 10px rgba(0,170,255,0.35); }
-.stat-value.green-val { color: var(--green); text-shadow: 0 0 10px rgba(57,255,130,0.3); }
-.stat-sub { font-size: 10px; color: var(--muted); margin-top: 4px; }
-
-/* ── Panel ── */
-.panel {
-  background: var(--surface);
-  border: 1px solid var(--border);
-  position: relative;
-  padding: 16px;
-  margin-bottom: 16px;
-}
-.panel::before {
-  content: '';
-  position: absolute; top: -1px; left: -1px;
-  width: 12px; height: 12px;
-  border-top: 2px solid var(--accent);
-  border-left: 2px solid var(--accent);
-  opacity: 0.6;
-}
-.panel::after {
-  content: '';
-  position: absolute; bottom: -1px; right: -1px;
-  width: 12px; height: 12px;
-  border-bottom: 2px solid var(--accent);
-  border-right: 2px solid var(--accent);
-  opacity: 0.6;
-}
-.panel-title {
-  display: flex; align-items: center; gap: 8px;
-  font-size: 9px; color: var(--text-dim); text-transform: uppercase;
-  letter-spacing: 2.5px; margin-bottom: 14px; padding-bottom: 10px;
-  border-bottom: 1px solid var(--border);
-}
-.panel-title .icon { width: 13px; height: 13px; color: var(--accent); flex-shrink: 0; }
-.panel-title-right { margin-left: auto; color: var(--text-dim); font-size: 9px; letter-spacing: 1px; }
-
-/* ── Hashrate Chart ── */
-.chart-svg-wrap { min-height: 120px; position: relative; overflow: hidden; }
-#hr-chart { width: 100%; height: 120px; display: block; overflow: visible; }
-.chart-footer {
-  display: flex; gap: 24px; margin-top: 10px;
-  font-size: 10px; color: var(--text-dim); letter-spacing: 1px;
-}
-.chart-footer span b { color: var(--accent); font-weight: normal; }
-
-/* ── Section header ── */
-.section-hdr {
-  display: flex; align-items: center; gap: 10px;
-  font-size: 9px; color: var(--text-dim); text-transform: uppercase;
-  letter-spacing: 2.5px; margin-bottom: 10px; margin-top: 4px;
-}
-.section-hdr::after { content: ''; flex: 1; height: 1px; background: linear-gradient(90deg, var(--border), transparent); }
-.section-hdr .count { color: var(--blue); font-size: 10px; letter-spacing: 1px; margin-left: auto; }
-
-/* ── Tables ── */
-.table-wrap { overflow-x: auto; margin-bottom: 4px; }
-table { width: 100%; border-collapse: collapse; background: var(--surface); border: 1px solid var(--border); }
-thead tr { background: rgba(0,160,255,0.04); }
-th {
-  padding: 9px 12px; text-align: left; font-size: 9px; color: var(--text-dim);
-  text-transform: uppercase; letter-spacing: 1.5px; border-bottom: 1px solid var(--border);
-  white-space: nowrap;
-}
-td { padding: 9px 12px; font-size: 12px; border-bottom: 1px solid rgba(0,160,255,0.05); white-space: nowrap; }
-tr:last-child td { border-bottom: none; }
-tbody tr { cursor: default; transition: background 120ms; }
-tbody tr:hover td { background: rgba(0,160,255,0.04); }
-tbody tr.clickable { cursor: pointer; }
-tbody tr.clickable:hover td { background: rgba(255,215,0,0.05); }
-tbody tr.selected td { background: rgba(255,215,0,0.07) !important; }
-
-.c-gold   { color: var(--accent); font-weight: bold; text-shadow: 0 0 6px rgba(255,215,0,0.3); }
-.c-blue   { color: var(--blue); }
-.c-green  { color: var(--green); }
-.c-red    { color: var(--red); }
-.c-dim    { color: var(--text-dim); font-size: 11px; }
-.c-muted  { color: var(--muted); font-size: 11px; }
-.c-text   { color: var(--text); }
-
-.worker-cell { max-width: 180px; overflow: hidden; text-overflow: ellipsis; }
-.ua-cell { max-width: 120px; overflow: hidden; text-overflow: ellipsis; }
-
-/* Accept rate bar */
-.rate-bar-wrap { display: flex; align-items: center; gap: 6px; }
-.rate-bar { width: 40px; height: 4px; background: rgba(255,68,85,0.25); position: relative; border-radius: 2px; }
-.rate-bar-fill { position: absolute; left: 0; top: 0; height: 100%; background: var(--green); transition: width 500ms; border-radius: 2px; }
-
-/* Status dots */
-.dot { display: inline-block; width: 7px; height: 7px; border-radius: 50%; margin-right: 5px; vertical-align: middle; flex-shrink: 0; }
-.dot.blue   { background: var(--blue);  box-shadow: 0 0 6px var(--blue);  animation: pulse 3s ease-in-out infinite; }
-.dot.yellow { background: var(--accent); }
-.dot.red    { background: var(--red); }
-@keyframes pulse { 0%,100%{ opacity:1; } 50%{ opacity:0.5; } }
-
-/* Coin badges */
-.coin-badge {
-  display: inline-block; padding: 1px 6px; font-size: 9px; font-weight: bold;
-  letter-spacing: 1px; border: 1px solid; text-transform: uppercase;
-}
-.coin-bch  { color: #39ff82; border-color: rgba(57,255,130,0.35); background: rgba(57,255,130,0.07); }
-.coin-dgb  { color: #00aaff; border-color: rgba(0,170,255,0.35); background: rgba(0,170,255,0.07); }
-.coin-xec  { color: #ff8c00; border-color: rgba(255,140,0,0.35); background: rgba(255,140,0,0.07); }
-.coin-btc  { color: #ffd700; border-color: rgba(255,215,0,0.35); background: rgba(255,215,0,0.07); }
-.coin-fix  { color: #cc66ff; border-color: rgba(204,102,255,0.35); background: rgba(204,102,255,0.07); }
-.coin-nmc  { color: #66ccff; border-color: rgba(102,204,255,0.35); background: rgba(102,204,255,0.07); }
-.coin-default { color: var(--text-dim); border-color: var(--border); }
-
-/* Empty state */
-.empty { text-align: center; padding: 40px 20px; color: var(--muted); font-size: 12px; }
-.empty-icon { font-size: 28px; margin-bottom: 8px; opacity: 0.5; }
-
-/* ── Miner Detail Drawer ── */
-.drawer {
-  position: fixed; top: 59px; right: 0; bottom: 0;
-  width: var(--drawer-w); background: var(--surface2);
-  border-left: 1px solid rgba(0,160,255,0.25);
-  z-index: 50; overflow-y: auto;
-  transform: translateX(100%);
-  transition: transform 300ms cubic-bezier(0.4,0,0.2,1);
-  box-shadow: -8px 0 32px rgba(0,0,0,0.5);
-}
-.drawer.open { transform: translateX(0); }
-
-.drawer-header {
-  padding: 14px 16px;
-  border-bottom: 1px solid var(--border);
-  display: flex; align-items: center; gap: 10px;
-  background: var(--surface); position: sticky; top: 0; z-index: 2;
-}
-.drawer-title { flex: 1; font-size: 9px; color: var(--text-dim); letter-spacing: 3px; text-transform: uppercase; }
-.drawer-close {
-  background: none; border: none; color: var(--text-dim); cursor: pointer;
-  font-size: 16px; line-height: 1; padding: 2px 6px; transition: color 150ms;
-}
-.drawer-close:hover { color: var(--red); }
-
-.drawer-body { padding: 16px; }
-
-.d-section { margin-bottom: 16px; }
-.d-label {
-  font-size: 8px; color: var(--text-dim); text-transform: uppercase;
-  letter-spacing: 2.5px; margin-bottom: 6px;
-  display: flex; align-items: center; gap: 6px;
-}
-.d-label::after { content: ''; flex: 1; height: 1px; background: var(--border); }
-.d-value { font-size: 14px; color: var(--text); }
-.d-value-lg { font-size: 26px; font-weight: bold; }
-.d-value-lg.gold  { color: var(--accent); text-shadow: 0 0 14px rgba(255,215,0,0.4); }
-.d-value-lg.blue  { color: var(--blue);   text-shadow: 0 0 14px rgba(0,170,255,0.4); }
-.d-value-lg.green { color: var(--green);  text-shadow: 0 0 12px rgba(57,255,130,0.4); }
-
-.d-grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
-.d-stat { background: var(--surface3); border: 1px solid var(--border); padding: 10px 12px; }
-.d-stat-label { font-size: 8px; color: var(--text-dim); text-transform: uppercase; letter-spacing: 1.5px; margin-bottom: 4px; }
-.d-stat-val { font-size: 15px; font-weight: bold; }
-.d-stat-val.gold  { color: var(--accent); }
-.d-stat-val.blue  { color: var(--blue); }
-.d-stat-val.green { color: var(--green); }
-
-.wallet-box {
-  background: var(--bg); border: 1px solid var(--border);
-  padding: 8px 10px; font-size: 11px; color: var(--blue);
-  word-break: break-all; line-height: 1.5;
-}
-.worker-tag {
-  display: inline-block; margin-top: 6px;
-  padding: 2px 8px; font-size: 9px; letter-spacing: 1px;
-  background: rgba(255,215,0,0.08); border: 1px solid rgba(255,215,0,0.2);
-  color: var(--accent);
-}
-
-.share-bar-full {
-  height: 6px; background: rgba(255,68,85,0.2); border-radius: 3px; margin-top: 6px; position: relative;
-}
-.share-bar-fill-full {
-  position: absolute; left: 0; top: 0; height: 100%; border-radius: 3px; background: var(--green);
-}
-.share-counts { display: flex; justify-content: space-between; font-size: 10px; margin-top: 4px; color: var(--text-dim); }
-
-.d-row { display: flex; justify-content: space-between; align-items: center; padding: 5px 0; border-bottom: 1px solid rgba(0,160,255,0.05); }
-.d-row:last-child { border-bottom: none; }
-.d-row-key { font-size: 10px; color: var(--text-dim); }
-.d-row-val { font-size: 11px; color: var(--text); text-align: right; }
-
-/* ── Admin ── */
-.admin-card { background: var(--surface); border: 1px solid var(--border); padding: 16px 18px; margin-bottom: 12px; position: relative; }
-.admin-card::before { content: ''; position: absolute; top: -1px; left: -1px; width: 8px; height: 8px; border-top: 1px solid var(--accent); border-left: 1px solid var(--accent); opacity: 0.5; }
-.admin-label { font-size: 9px; color: var(--text-dim); text-transform: uppercase; letter-spacing: 2px; margin-bottom: 8px; }
-.admin-desc { font-size: 11px; color: var(--muted); margin-bottom: 10px; line-height: 1.5; }
-.field-row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
-.admin-card input[type="text"],
-.admin-card input[type="password"] {
-  background: var(--bg); border: 1px solid rgba(0,160,255,0.2); color: var(--text);
-  padding: 6px 10px; font-family: inherit; font-size: 12px; outline: none;
-  transition: border-color 200ms;
-}
-.admin-card input:focus { border-color: rgba(0,160,255,0.5); }
-.btn {
-  padding: 6px 16px; cursor: pointer; font-weight: bold; font-size: 10px;
-  white-space: nowrap; letter-spacing: 2px; text-transform: uppercase;
-  font-family: inherit; border: none; transition: all 150ms;
-}
-.btn-accent { background: var(--accent); color: var(--bg); }
-.btn-accent:hover { background: var(--accent2); box-shadow: 0 0 12px rgba(255,215,0,0.3); }
-.btn-accent:disabled { opacity: 0.4; cursor: not-allowed; }
-.btn-danger { background: transparent; color: var(--red); border: 1px solid rgba(255,68,85,0.4) !important; }
-.btn-danger:hover { background: rgba(255,68,85,0.08); }
-.btn-muted { background: transparent; color: var(--text-dim); border: 1px solid rgba(0,160,255,0.15) !important; }
-.btn-muted:hover { border-color: rgba(0,160,255,0.35) !important; color: var(--text); }
-.terminal-output {
-  background: var(--bg); border: 1px solid var(--border); padding: 10px 12px;
-  font-family: inherit; font-size: 11px; max-height: 200px; overflow-y: auto;
-  white-space: pre-wrap; color: var(--text-dim); margin-top: 10px; line-height: 1.6;
-}
-
-/* ── Modal ── */
-.modal-bg { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.85); align-items: center; justify-content: center; z-index: 200; }
-.modal-bg.open { display: flex; }
-.modal {
-  background: var(--surface); border: 1px solid rgba(0,160,255,0.4);
-  box-shadow: 0 0 40px rgba(0,160,255,0.08); padding: 28px; width: 320px; max-width: 94vw; position: relative;
-}
-.modal::before { content: ''; position: absolute; top: -1px; left: -1px; width: 12px; height: 12px; border-top: 2px solid var(--accent); border-left: 2px solid var(--accent); opacity: 0.7; }
-.modal::after  { content: ''; position: absolute; bottom: -1px; right: -1px; width: 12px; height: 12px; border-bottom: 2px solid var(--accent); border-right: 2px solid var(--accent); opacity: 0.7; }
-.modal-title { color: var(--accent); font-size: 11px; letter-spacing: 4px; margin-bottom: 20px; text-shadow: 0 0 10px rgba(255,215,0,0.4); }
-.modal input[type="password"] {
-  width: 100%; background: var(--bg); border: 1px solid rgba(0,160,255,0.2); color: var(--text);
-  padding: 8px 10px; font-family: inherit; font-size: 13px; outline: none; margin-bottom: 6px;
-}
-.modal input:focus { border-color: rgba(0,160,255,0.5); }
-.modal-error { color: var(--red); font-size: 10px; min-height: 16px; margin-bottom: 12px; letter-spacing: 0.5px; }
-.modal-btns { display: flex; gap: 10px; justify-content: flex-end; }
-
-/* ── Footer ── */
-footer {
-  text-align: center; padding: 20px; color: var(--muted); font-size: 10px;
-  letter-spacing: 1px; border-top: 1px solid var(--border); margin-top: 12px;
-  position: relative;
-}
-footer::before { content: ''; position: absolute; top: 0; left: 0; right: 0; height: 1px; background: linear-gradient(90deg, transparent, rgba(0,160,255,0.3), transparent); }
-.footer-net { display: flex; justify-content: center; gap: 28px; flex-wrap: wrap; margin-top: 10px; color: var(--text-dim); }
-.footer-net span b { color: var(--text); font-weight: normal; }
+  :root{
+    --bg:#0a0e0a; --bg2:#0f1a0f; --card:#121f12; --cardh:#1a2f1a;
+    --accent:#39ff14; --accent-rgb:57,255,20; --gold:#ffe600; --err:#ff3333;
+    --text:#e0ffe0; --dim:#7a9f7a; --border:rgba(57,255,20,0.12);
+    --mono:ui-monospace,"JetBrains Mono","Cascadia Code",Menlo,Consolas,monospace;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--text);font:14px/1.5 var(--mono);-webkit-font-smoothing:antialiased}
+  a{color:var(--accent);text-decoration:none}
+  .wrap{max-width:1080px;margin:0 auto;padding:20px 18px 60px}
+  /* header */
+  header{display:flex;align-items:center;justify-content:space-between;gap:12px;border-bottom:1px solid var(--border);padding-bottom:16px;margin-bottom:8px;flex-wrap:wrap}
+  .logo .co{color:var(--accent);font-weight:700;letter-spacing:2px;text-shadow:0 0 6px rgba(var(--accent-rgb),.4)}
+  .logo .unit{color:var(--dim);letter-spacing:1px;font-size:11px}
+  .hright{display:flex;align-items:center;gap:14px}
+  .uptime{color:var(--dim);font-size:12px}
+  .badge{display:inline-flex;align-items:center;gap:7px;border:1px solid var(--border);border-radius:20px;padding:5px 12px;font-size:12px;text-transform:uppercase;letter-spacing:1px}
+  .dot{width:8px;height:8px;border-radius:50%;background:var(--err);box-shadow:0 0 6px var(--err)}
+  .badge.on{border-color:rgba(var(--accent-rgb),.4);color:var(--accent)} .badge.on .dot{background:var(--accent);box-shadow:0 0 8px var(--accent);animation:pulse 1.6s ease-in-out infinite}
+  @keyframes pulse{0%,100%{opacity:1}50%{opacity:.35}}
+  .titlerow{display:flex;align-items:flex-end;justify-content:space-between;margin:18px 0 14px;flex-wrap:wrap;gap:10px}
+  h1{font-size:22px;margin:0;text-transform:uppercase;letter-spacing:1px}
+  .subtitle{color:var(--dim);font-size:13px;margin-top:2px}
+  .actions{display:flex;gap:8px}
+  .btn{background:rgba(var(--accent-rgb),.06);border:1px solid var(--border);color:var(--dim);border-radius:8px;padding:8px 13px;font:inherit;font-size:12px;text-transform:uppercase;letter-spacing:1px;cursor:pointer}
+  .btn:hover{border-color:rgba(var(--accent-rgb),.5);color:var(--text)}
+  .btn.accent{color:var(--accent);border-color:rgba(var(--accent-rgb),.5)}
+  /* stat grid */
+  .grid{display:grid;grid-template-columns:repeat(4,1fr);gap:14px;margin-bottom:14px}
+  @media(max-width:720px){.grid{grid-template-columns:repeat(2,1fr)}}
+  .card{position:relative;background:var(--card);border:1px solid var(--border);border-radius:12px;padding:15px 15px 15px 18px;overflow:hidden;transition:background .2s}
+  .card:hover{background:var(--cardh)}
+  .card .bar{position:absolute;left:0;top:0;bottom:0;width:3px}
+  .card .lbl{font-size:11px;text-transform:uppercase;letter-spacing:1px;color:var(--dim)}
+  .card .val{font-size:25px;font-weight:700;margin-top:6px;line-height:1.1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .card .sub{font-size:11px;color:var(--dim);margin-top:5px;min-height:14px}
+  .sub .rej{color:var(--err)}
+  /* panels */
+  .panel{background:var(--card);border:1px solid var(--border);border-radius:12px;padding:18px;margin-bottom:14px}
+  .panel h3{font-size:12px;text-transform:uppercase;letter-spacing:1.5px;color:var(--dim);margin:0 0 14px}
+  .chart-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:10px}
+  .periods{display:flex;gap:4px}
+  .periods button{background:none;border:none;color:var(--dim);font:inherit;font-size:12px;padding:4px 10px;border-radius:6px;cursor:pointer}
+  .periods button.sel{background:rgba(var(--accent-rgb),.15);color:var(--accent)}
+  #chart{width:100%;height:240px;display:block}
+  .chart-empty{height:240px;display:flex;align-items:center;justify-content:center;color:var(--dim);font-size:13px}
+  /* miners */
+  .mrow{display:flex;align-items:center;gap:12px;background:var(--bg2);border-radius:8px;padding:9px 12px;margin-bottom:8px}
+  .mrow .rank{width:20px;text-align:center;color:var(--dim);font-size:12px}
+  .mrow .name{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--text)}
+  .mrow .hr{color:var(--dim);font-size:12px}
+  .mrow .bd{font-weight:700;color:var(--accent)}
+  table{width:100%;border-collapse:collapse;font-size:13px}
+  th{text-align:left;color:var(--dim);font-weight:400;font-size:11px;text-transform:uppercase;letter-spacing:1px;padding:6px 8px;border-bottom:1px solid var(--border)}
+  td{padding:8px;border-bottom:1px solid rgba(var(--accent-rgb),.05)}
+  td.r,th.r{text-align:right}
+  .muted{color:var(--dim)}
+  footer{color:var(--dim);font-size:11px;text-align:center;margin-top:24px;letter-spacing:1px}
 </style>
 </head>
 <body>
+<div class="wrap">
+  <header>
+    <div class="logo">
+      <div class="co">RETEK INC.</div>
+      <div class="unit">SALVAGE &amp; RECLAMATION DIV. · RELAY UNIT MK.I &nbsp;·&nbsp; <span id="node-name">—</span></div>
+    </div>
+    <div class="hright">
+      <span class="uptime" id="uptime">UPTIME —</span>
+      <span class="badge" id="status"><span class="dot" id="dot"></span><span id="status-text">offline</span></span>
+    </div>
+  </header>
 
-<header>
-  <div class="logo">
-    <div class="logo-text">
-      <div class="logo-title">RETEK INC.</div>
-      <div class="logo-sub">RELAY UNIT MK.I &nbsp;·&nbsp; <span id="node-name">—</span></div>
+  <div class="titlerow">
+    <div>
+      <h1>Dashboard</h1>
+      <div class="subtitle" id="subtitle">—</div>
+    </div>
+    <div class="actions">
+      <a class="btn accent" href="/setup.html">Setup</a>
     </div>
   </div>
-  <div class="header-right">
-    <span class="uptime" id="uptime-display">UPTIME: —</span>
-    <div class="status-badge offline" id="status-badge">
-      <span class="dot red" id="status-dot"></span>
-      <span id="status-text">OFFLINE</span>
-    </div>
+
+  <!-- Row 1 -->
+  <div class="grid">
+    <div class="card"><div class="bar" style="background:var(--accent)"></div><div class="lbl">Total Hashrate</div><div class="val" id="c-hr" style="color:var(--accent);text-shadow:0 0 5px rgba(var(--accent-rgb),.35)">0 H/s</div><div class="sub">all connected miners</div></div>
+    <div class="card"><div class="bar" style="background:var(--accent)"></div><div class="lbl">Active Miners</div><div class="val" id="c-miners" style="color:var(--accent)">0</div><div class="sub">devices connected</div></div>
+    <div class="card"><div class="bar" style="background:var(--gold)"></div><div class="lbl">Best Difficulty</div><div class="val" id="c-best" style="color:var(--gold)">0</div><div class="sub" id="c-best-sub"></div></div>
+    <div class="card"><div class="bar" style="background:var(--dim)"></div><div class="lbl">Est. Time to Block</div><div class="val" id="c-ettb" style="color:var(--text)">N/A</div><div class="sub">solo probability</div></div>
   </div>
-</header>
 
-<div class="page-body" id="page-body">
-<main>
+  <!-- Row 2 -->
+  <div class="grid">
+    <div class="card" id="cell-a"><div class="bar" style="background:var(--accent)"></div><div class="lbl" id="c-a-lbl">Blocks Found</div><div class="val" id="c-a" style="color:var(--accent)">0</div><div class="sub" id="c-a-sub"></div></div>
+    <div class="card" id="cell-b"><div class="bar" style="background:var(--gold)"></div><div class="lbl" id="c-b-lbl">Block Chance</div><div class="val" id="c-b" style="color:var(--gold)">N/A</div><div class="sub" id="c-b-sub">per day</div></div>
+    <div class="card"><div class="bar" style="background:var(--accent)"></div><div class="lbl">Pool Shares</div><div class="val" id="c-shares" style="color:var(--accent)">0</div><div class="sub" id="c-shares-sub"></div></div>
+    <div class="card"><div class="bar" style="background:var(--dim)"></div><div class="lbl">Network Difficulty</div><div class="val" id="c-netdiff" style="color:var(--text)">0</div><div class="sub" id="c-height"></div></div>
+  </div>
 
-  <!-- ── Stat cards row ── -->
-  <div class="stat-row" style="margin-top:4px">
-
-    <div class="stat-card">
-      <div class="stat-icon">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
-      </div>
-      <div class="stat-body">
-        <div class="stat-label">Total Hashrate</div>
-        <div class="stat-value" id="s-hashrate">—</div>
-        <div class="stat-sub" id="s-hashrate-sub">&nbsp;</div>
-      </div>
-    </div>
-
-    <div class="stat-card">
-      <div class="stat-icon blue">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
-      </div>
-      <div class="stat-body">
-        <div class="stat-label">Active Miners</div>
-        <div class="stat-value blue-val" id="s-miners">—</div>
-        <div class="stat-sub" id="s-miners-sub">&nbsp;</div>
-      </div>
-    </div>
-
-    <div class="stat-card">
-      <div class="stat-icon green">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="19" x2="12" y2="5"/><polyline points="5 12 12 5 19 12"/></svg>
-      </div>
-      <div class="stat-body">
-        <div class="stat-label">Shares Forwarded</div>
-        <div class="stat-value green-val" id="s-fwd">—</div>
-        <div class="stat-sub" id="s-fwd-sub">&nbsp;</div>
+  <!-- Chart -->
+  <div class="panel">
+    <div class="chart-head">
+      <h3 style="margin:0">Hashrate Over Time</h3>
+      <div class="periods" id="periods">
+        <button data-p="1h" class="sel">1h</button><button data-p="6h">6h</button><button data-p="24h">24h</button><button data-p="7d">7d</button>
       </div>
     </div>
-
-    <div class="stat-card">
-      <div class="stat-icon">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>
-      </div>
-      <div class="stat-body">
-        <div class="stat-label">Best Difficulty</div>
-        <div class="stat-value" id="s-bestdiff">—</div>
-        <div class="stat-sub" id="s-bestdiff-sub">&nbsp;</div>
-      </div>
-    </div>
-
+    <canvas id="chart"></canvas>
+    <div class="chart-empty" id="chart-empty">Waiting for hashrate data…</div>
   </div>
 
-  <!-- ── Hashrate chart ── -->
-  <div class="panel chart-panel" style="margin-bottom:16px">
-    <div class="panel-title">
-      <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
-      HASHRATE MONITOR
-      <span class="panel-title-right" id="chart-window-label">5m WINDOW · 5s SAMPLES</span>
-    </div>
-    <div class="chart-svg-wrap">
-      <svg id="hr-chart" viewBox="0 0 600 120" preserveAspectRatio="none">
-        <text x="300" y="65" text-anchor="middle" fill="rgba(74,106,138,0.6)" font-size="12" font-family="Courier New">COLLECTING DATA…</text>
-      </svg>
-    </div>
-    <div class="chart-footer">
-      <span>NOW&nbsp;<b id="chart-now">—</b></span>
-      <span>PEAK&nbsp;<b id="chart-peak">—</b></span>
-      <span>AVG&nbsp;<b id="chart-avg">—</b></span>
-    </div>
+  <!-- Top miners -->
+  <div class="panel" id="top-panel" style="display:none">
+    <h3>Top Share Difficulty</h3>
+    <div id="top-miners"></div>
   </div>
 
-  <!-- ── Pool Connections ── -->
-  <div class="section-hdr">
-    <svg style="width:11px;height:11px;flex-shrink:0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg>
-    POOL CONNECTIONS
-    <span class="count" id="pools-count"></span>
-  </div>
-  <div class="table-wrap" id="pools-wrap" style="margin-bottom:20px">
-    <div class="empty"><div class="empty-icon">⛓</div>No pools configured.</div>
+  <!-- Miners table -->
+  <div class="panel">
+    <h3>Connected Miners (<span id="miner-count">0</span>)</h3>
+    <div id="miners-wrap"><div class="muted" style="font-size:13px">No miners connected.</div></div>
   </div>
 
-  <!-- ── Connected Miners ── -->
-  <div class="section-hdr">
-    <svg style="width:11px;height:11px;flex-shrink:0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="20" height="14" rx="2" ry="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg>
-    CONNECTED MINERS
-    <span class="count" id="miner-count">0 ONLINE</span>
-  </div>
-  <div id="miners-tip" style="font-size:10px;color:var(--text-dim);margin-bottom:8px;display:none">
-    Click any row to view miner details →
-  </div>
-  <div class="table-wrap" id="miners-wrap">
-    <div class="empty"><div class="empty-icon">⛏</div>No miners connected yet.<br>Point your miner at this node's stratum port.</div>
-  </div>
-
-  <!-- ── Admin (hidden until unlocked) ── -->
-  <div id="admin-section" style="display:none">
-    <div class="section-hdr" style="margin-top:24px">
-      <svg style="width:11px;height:11px;flex-shrink:0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.07 4.93a10 10 0 0 1 0 14.14M4.93 4.93a10 10 0 0 0 0 14.14"/></svg>
-      ADMIN
-      <button onclick="lockAdmin()" style="margin-left:8px;background:none;border:none;color:var(--text-dim);cursor:pointer;font-size:9px;letter-spacing:2px;text-transform:uppercase;font-family:inherit;padding:0">LOCK</button>
-    </div>
-    <div class="admin-card">
-      <div class="admin-label">Nginx Reverse Proxy</div>
-      <div class="admin-desc">Exposes the dashboard on port 80/443 with a domain name. On Linux this installs nginx + certbot and issues an SSL certificate automatically.</div>
-      <div class="field-row">
-        <input type="text" id="nginx-domain" placeholder="domain (e.g. edge.example.com)" style="flex:1;min-width:220px">
-        <button class="btn btn-accent" id="nginx-btn" onclick="setupNginx()">SETUP NGINX</button>
-      </div>
-      <div class="terminal-output" id="nginx-output" style="display:none"></div>
-    </div>
-    <div class="admin-card">
-      <div style="display:flex;align-items:center;gap:16px;flex-wrap:wrap">
-        <div style="flex:1">
-          <div class="admin-label">Restart Service</div>
-          <div class="admin-desc" style="margin:0">Triggers a graceful shutdown. systemd / NSSM will restart the process automatically.</div>
-        </div>
-        <button class="btn btn-danger" id="restart-btn" onclick="restartNode()">RESTART</button>
-      </div>
-    </div>
-  </div>
-
-</main>
-
-<!-- ── Miner Detail Drawer ── -->
-<div class="drawer" id="miner-drawer">
-  <div class="drawer-header">
-    <span class="drawer-title">Miner Detail</span>
-    <button class="drawer-close" onclick="closeDrawer()" title="Close">✕</button>
-  </div>
-  <div class="drawer-body" id="drawer-body">
-    <!-- populated by JS -->
-  </div>
-</div>
-
-</div><!-- /page-body -->
-
-<footer>
-  <span>RETEK INC. · RELAY UNIT MK.I</span>
-  &nbsp;·&nbsp;
-  <span>ID: <span id="footer-nodeid">—</span></span>
-  &nbsp;·&nbsp;
-  <span>REFRESH: 5s</span>
-  <div class="footer-net">
-    <span>LOCAL&nbsp;<b id="net-local">—</b></span>
-    <span>PUBLIC&nbsp;<b id="net-public">—</b></span>
-  </div>
-  <div style="margin-top:12px">
-    <button id="admin-unlock-btn" onclick="openAdminUnlock()"
-      style="background:none;border:none;color:rgba(0,160,255,0.18);cursor:pointer;font-size:15px;padding:4px 8px;transition:color 300ms"
-      onmouseover="this.style.color='rgba(0,160,255,0.55)'"
-      onmouseout="this.style.color='rgba(0,160,255,0.18)'"
-      title="Admin">⚙</button>
-  </div>
-</footer>
-
-<!-- Admin unlock modal -->
-<div class="modal-bg" id="unlock-modal">
-  <div class="modal">
-    <div class="modal-title">ADMIN ACCESS</div>
-    <div class="admin-label" style="margin-bottom:6px">Token</div>
-    <input type="password" id="unlock-input" placeholder="Enter admin token…"
-      onkeydown="if(event.key==='Enter')doAdminUnlock()">
-    <div class="modal-error" id="unlock-error"></div>
-    <div class="modal-btns">
-      <button class="btn btn-muted" onclick="closeAdminUnlock()">CANCEL</button>
-      <button class="btn btn-accent" onclick="doAdminUnlock()">UNLOCK</button>
-    </div>
-  </div>
+  <footer>RETEK INC. · RELAY UNIT MK.I &nbsp;·&nbsp; <span id="stratum-url">—</span></footer>
 </div>
 
 <script>
-// ─── Formatters ──────────────────────────────────────────────────────────────
+// ── format helpers (mirrors the desktop app) ──
+function fHash(h){ if(h<=0)return'0 H/s'; const u=['H/s','KH/s','MH/s','GH/s','TH/s','PH/s','EH/s']; let i=0,v=h; while(v>=1000&&i<u.length-1){v/=1000;i++} return v.toFixed(2)+' '+u[i]; }
+function fDiff(d){ if(d<=0)return'0'; if(d>=1e15)return(d/1e15).toFixed(2)+'P'; if(d>=1e12)return(d/1e12).toFixed(2)+'T'; if(d>=1e9)return(d/1e9).toFixed(2)+'G'; if(d>=1e6)return(d/1e6).toFixed(2)+'M'; if(d>=1e3)return(d/1e3).toFixed(2)+'K'; if(d>=1)return d.toFixed(2); return d.toFixed(6); }
+function fNum(n){ if(n>=1e12)return(n/1e12).toFixed(2)+'T'; if(n>=1e9)return(n/1e9).toFixed(2)+'B'; if(n>=1e6)return(n/1e6).toFixed(2)+'M'; return Math.round(n).toLocaleString(); }
+function fDur(s){ if(s<=0)return'N/A'; if(s<60)return Math.floor(s)+'s'; if(s<3600)return Math.floor(s/60)+'m'; if(s<86400)return Math.floor(s/3600)+'h '+Math.floor((s%3600)/60)+'m'; if(s<86400*365){const d=Math.floor(s/86400);return d+'d '+Math.floor((s%86400)/3600)+'h';} const y=Math.floor(s/(86400*365)); if(y>=1000)return(y/1000).toFixed(1)+'K years'; return '~'+y.toLocaleString()+' years'; }
+function fChance(p){ if(p<=0)return'N/A'; if(p>=0.01)return p.toFixed(2)+'%'; const o=100/p; if(o>=1e12)return'1 in '+(o/1e12).toFixed(2)+'T'; if(o>=1e9)return'1 in '+(o/1e9).toFixed(2)+'B'; if(o>=1e6)return'1 in '+(o/1e6).toFixed(2)+'M'; if(o>=1e3)return'1 in '+(o/1e3).toFixed(2)+'K'; return'1 in '+o.toFixed(0); }
+function fRatio(r){ if(r<=0)return'N/A'; if(r>=1e12)return(r/1e12).toFixed(2)+'T'; if(r>=1e9)return(r/1e9).toFixed(2)+'G'; if(r>=1e6)return(r/1e6).toFixed(2)+'M'; if(r>=1e3)return(r/1e3).toFixed(2)+'K'; return r.toFixed(2); }
+function $(id){return document.getElementById(id)}
 
-const fmt = {
-  hashrate(h) {
-    if (!h || h <= 0) return '0 H/s';
-    const u = ['H/s','KH/s','MH/s','GH/s','TH/s','PH/s','EH/s'];
-    let i = 0; while (h >= 1000 && i < u.length - 1) { h /= 1000; i++; }
-    return h.toFixed(2) + ' ' + u[i];
-  },
-  diff(d) {
-    if (!d || d <= 0) return '—';
-    if (d >= 1e15) return (d/1e15).toFixed(2) + 'P';
-    if (d >= 1e12) return (d/1e12).toFixed(2) + 'T';
-    if (d >= 1e9)  return (d/1e9).toFixed(2)  + 'G';
-    if (d >= 1e6)  return (d/1e6).toFixed(2)  + 'M';
-    if (d >= 1e3)  return (d/1e3).toFixed(1)  + 'K';
-    return d.toFixed(2);
-  },
-  uptime(s) {
-    if (!s) return '—';
-    const h = Math.floor(s/3600), m = Math.floor((s%3600)/60), sec = s%60;
-    if (h > 0) return `${h}h ${m}m`;
-    if (m > 0) return `${m}m ${sec}s`;
-    return `${sec}s`;
-  },
-  age(connectedAt) {
-    if (!connectedAt) return '—';
-    const s = Math.floor((Date.now() - new Date(connectedAt).getTime()) / 1000);
-    if (s < 0) return '0s';
-    if (s < 60) return s + 's';
-    if (s < 3600) return Math.floor(s/60) + 'm ' + (s%60) + 's';
-    return Math.floor(s/3600) + 'h ' + Math.floor((s%3600)/60) + 'm';
-  },
-  worker(w) {
-    if (!w) return '—';
-    if (w.length <= 22) return w;
-    return w.slice(0, 8) + '…' + w.slice(-8);
-  },
-  sps(n) {
-    if (n <= 0) return '—';
-    if (n < 0.1) return '<0.1/s';
-    return n.toFixed(1) + '/s';
-  },
-  pct(a, t) {
-    if (!t) return 100;
-    return Math.round(a / t * 100);
-  }
-};
+let period='1h', hostIP=location.hostname;
 
-function el(id) { return document.getElementById(id); }
-
-// ─── Coin badge helper ────────────────────────────────────────────────────────
-
-function coinBadge(coin) {
-  const c = (coin || '').toUpperCase();
-  let cls = 'coin-default';
-  if (c === 'BCH') cls = 'coin-bch';
-  else if (c === 'DGB') cls = 'coin-dgb';
-  else if (c === 'XEC') cls = 'coin-xec';
-  else if (c === 'BTC') cls = 'coin-btc';
-  else if (c === 'FIX') cls = 'coin-fix';
-  else if (c === 'NMC') cls = 'coin-nmc';
-  return `<span class="coin-badge ${cls}">${c || '?'}</span>`;
-}
-
-// Parse wallet.worker format. Returns {wallet, worker}.
-function parseWorker(workerName) {
-  if (!workerName) return { wallet: '', worker: '' };
-  const dot = workerName.lastIndexOf('.');
-  if (dot > 0 && dot < workerName.length - 1) {
-    return { wallet: workerName.slice(0, dot), worker: workerName.slice(dot + 1) };
-  }
-  return { wallet: workerName, worker: '' };
-}
-
-// ─── Hashrate chart ───────────────────────────────────────────────────────────
-
-const HR_MAX_PTS = 60;
-let hrHistory = [];
-
-function pushHashrate(h) {
-  hrHistory.push({ t: Date.now(), h: h || 0 });
-  if (hrHistory.length > HR_MAX_PTS) hrHistory = hrHistory.slice(-HR_MAX_PTS);
-}
-
-function drawChart() {
-  const svg = el('hr-chart');
-  const W = 600, H = 120;
-  const data = hrHistory;
-
-  if (data.length < 2) {
-    svg.innerHTML = `<text x="300" y="65" text-anchor="middle" fill="rgba(74,106,138,0.6)" font-size="12" font-family="Courier New">COLLECTING DATA…</text>`;
-    el('chart-now').textContent = '—';
-    el('chart-peak').textContent = '—';
-    el('chart-avg').textContent = '—';
-    return;
-  }
-
-  const maxH   = Math.max(...data.map(d => d.h), 1);
-  const avgH   = data.reduce((a, d) => a + d.h, 0) / data.length;
-  const lastH  = data[data.length - 1].h;
-  const peakH  = Math.max(...data.map(d => d.h));
-
-  el('chart-now').textContent  = fmt.hashrate(lastH);
-  el('chart-peak').textContent = fmt.hashrate(peakH);
-  el('chart-avg').textContent  = fmt.hashrate(avgH);
-
-  const pts = data.map((d, i) => {
-    const x = (i / (Math.max(data.length - 1, 1))) * W;
-    const y = H - Math.max((d.h / maxH) * H * 0.88, 0) - 4;
-    return [x.toFixed(1), y.toFixed(1)];
-  });
-
-  const polyPts = pts.map(p => p.join(',')).join(' ');
-
-  const gridLines = [0.25, 0.5, 0.75].map(frac => {
-    const y = (H - frac * H * 0.88 - 4).toFixed(1);
-    const label = fmt.hashrate(maxH * frac);
-    return `<line x1="0" y1="${y}" x2="${W}" y2="${y}" stroke="rgba(0,160,255,0.07)" stroke-width="1"/>
-            <text x="4" y="${+y - 3}" fill="rgba(74,106,138,0.5)" font-size="8" font-family="Courier New">${label}</text>`;
-  }).join('');
-
-  const lastPt = pts[pts.length - 1];
-  const markerX = parseFloat(lastPt[0]);
-  const markerY = parseFloat(lastPt[1]);
-
-  svg.innerHTML = `
-    <defs>
-      <linearGradient id="hg" x1="0" y1="0" x2="0" y2="1">
-        <stop offset="0%"   stop-color="rgba(255,215,0,0.28)"/>
-        <stop offset="60%"  stop-color="rgba(255,215,0,0.07)"/>
-        <stop offset="100%" stop-color="rgba(255,215,0,0.01)"/>
-      </linearGradient>
-    </defs>
-    ${gridLines}
-    <polygon points="${polyPts} ${W},${H} 0,${H}" fill="url(#hg)"/>
-    <polyline points="${polyPts}" fill="none" stroke="rgba(255,215,0,0.75)" stroke-width="1.5" stroke-linejoin="round"/>
-    <circle cx="${markerX}" cy="${markerY}" r="3" fill="var(--accent)" opacity="0.9"/>
-    <circle cx="${markerX}" cy="${markerY}" r="6" fill="none" stroke="rgba(255,215,0,0.3)" stroke-width="1"/>
-  `;
-}
-
-// ─── Share rate tracking ──────────────────────────────────────────────────────
-
-let prevShares = {}; // id → {accepted, time}
-
-function calcSPS(id, accepted) {
-  const now = Date.now();
-  const prev = prevShares[id];
-  let sps = 0;
-  if (prev && accepted >= prev.accepted) {
-    const dt = (now - prev.time) / 1000;
-    if (dt >= 1) sps = (accepted - prev.accepted) / dt;
-  }
-  prevShares[id] = { accepted, time: now };
-  return sps;
-}
-
-// ─── Render: Pools ───────────────────────────────────────────────────────────
-
-function renderPools(pairs) {
-  const wrap = el('pools-wrap');
-  if (!pairs || pairs.length === 0) {
-    el('pools-count').textContent = '';
-    wrap.innerHTML = '<div class="empty"><div class="empty-icon">⛓</div>No pools configured. Run --init to set up endpoints.</div>';
-    return;
-  }
-
-  const online = pairs.filter(p => p.connected).length;
-  el('pools-count').textContent = `${online}/${pairs.length} CONNECTED`;
-
-  const rows = pairs.map(p => {
-    let dotCls, statusHtml;
-    if (p.connected && p.authorized) {
-      dotCls = 'blue'; statusHtml = '<span class="c-blue">CONNECTED</span>';
-    } else if (p.connected) {
-      dotCls = 'yellow'; statusHtml = '<span style="color:var(--accent)">AUTHORIZING</span>';
-    } else {
-      dotCls = 'red'; statusHtml = '<span class="c-red">RECONNECTING</span>';
+async function poll(){
+  try{
+    const j=await (await fetch('/api/stats')).json();
+    const s=j.stats||{}, node=j.node||{};
+    const running=!!s.stratumRunning, proxy=s.miningMode==='proxy';
+    $('node-name').textContent=node.name||'relay-mk1';
+    $('uptime').textContent='UPTIME '+fDur(node.uptime||0);
+    $('status').className='badge'+(running?' on':''); $('status-text').textContent=running?'online':'offline';
+    $('subtitle').textContent=(proxy?'Proxy':'Solo')+' mining · stratum+tcp://'+hostIP+':'+(j.stratumPort||3333);
+    $('stratum-url').textContent='stratum+tcp://'+hostIP+':'+(j.stratumPort||3333);
+    // row 1
+    $('c-hr').textContent=fHash(s.totalHashrate||0);
+    $('c-miners').textContent=(s.activeMiners||0);
+    $('c-best').textContent=fDiff(s.bestDifficulty||0);
+    $('c-best-sub').textContent=(s.bestDifficulty>0&&s.networkDifficulty>0)?('1 in '+fRatio(s.networkDifficulty/s.bestDifficulty)+' vs network'):'';
+    $('c-ettb').textContent=proxy?'—':fDur(s.estTimeToBlock||0);
+    // row 2 (mode aware)
+    if(proxy){
+      $('c-a-lbl').textContent='Pool Difficulty'; $('c-a').textContent=fDiff(s.upstreamDiff||0); $('c-a-sub').textContent='upstream target';
+      $('c-b-lbl').textContent='Upstream Shares'; $('c-b').textContent=fNum(s.proxySharesFwd||0);
+      $('c-b-sub').innerHTML=fNum(s.proxySharesAccepted||0)+' accepted · <span class="'+((s.proxySharesRejected||0)>0?'rej':'')+'">'+fNum(s.proxySharesRejected||0)+' rejected</span>';
+    }else{
+      $('c-a-lbl').textContent='Blocks Found'; $('c-a').textContent=(s.blocksFound||0); $('c-a-sub').textContent='solo blocks';
+      $('c-b-lbl').textContent='Block Chance'; $('c-b').textContent=fChance(s.blockChance||0); $('c-b-sub').textContent='per day';
     }
-
-    const miners  = p.minerCount || 0;
-    const hr      = p.totalHashrate || 0;
-    const hrStr   = hr > 0 ? `<span class="c-gold">${fmt.hashrate(hr)}</span>` : '<span class="c-muted">—</span>';
-
-    return `<tr>
-      <td>${coinBadge(p.coin)}</td>
-      <td class="c-dim">${(p.mode || '—').toUpperCase()}</td>
-      <td class="c-text" style="font-family:monospace">:${p.localPort || '—'}</td>
-      <td><span class="dot ${dotCls}"></span>${statusHtml}</td>
-      <td>${hrStr}</td>
-      <td class="c-dim">${fmt.diff(p.upstreamDiff)}</td>
-      <td class="c-dim">${fmt.diff(p.networkDiff)}</td>
-      <td class="c-blue" style="font-weight:bold">${miners}</td>
-      <td class="c-dim">${(p.blockHeight || 0).toLocaleString()}</td>
-    </tr>`;
-  }).join('');
-
-  wrap.innerHTML = `<table>
-    <thead><tr>
-      <th>Coin</th><th>Mode</th><th>Port</th><th>Status</th>
-      <th>Hashrate</th><th>Pool Diff</th><th>Net Diff</th><th>Miners</th><th>Height</th>
-    </tr></thead>
-    <tbody>${rows}</tbody>
-  </table>`;
+    $('c-shares').textContent=fNum(s.poolShares||0);
+    $('c-shares-sub').innerHTML=fNum(s.sharesAccepted||0)+' accepted · <span class="'+((s.sharesRejected||0)>0?'rej':'')+'">'+fNum(s.sharesRejected||0)+' rejected</span>';
+    $('c-netdiff').textContent=fDiff(s.networkDifficulty||0);
+    $('c-height').textContent=s.blockHeight?('height '+fNum(s.blockHeight)):'';
+  }catch(e){}
 }
 
-// ─── Render: Miners ───────────────────────────────────────────────────────────
+async function pollMiners(){
+  try{
+    const m=await (await fetch('/api/miners')).json()||[];
+    $('miner-count').textContent=m.length;
+    // top by best difficulty
+    const top=[...m].filter(x=>x.bestDifficulty>0).sort((a,b)=>b.bestDifficulty-a.bestDifficulty).slice(0,3);
+    if(top.length){ $('top-panel').style.display='';
+      $('top-miners').innerHTML=top.map((x,i)=>'<div class="mrow"><span class="rank" style="color:'+(i===0?'var(--gold)':'var(--dim)')+'">#'+(i+1)+'</span><span class="name">'+esc(x.workerName||x.id)+'</span><span class="bd" style="color:'+(i===0?'var(--gold)':'var(--accent)')+'">'+fDiff(x.bestDifficulty)+'</span></div>').join('');
+    } else $('top-panel').style.display='none';
+    // table
+    if(m.length){
+      $('miners-wrap').innerHTML='<table><thead><tr><th>Worker</th><th>Type</th><th class="r">Diff</th><th class="r">Hashrate</th><th class="r">Best</th></tr></thead><tbody>'+
+        m.map(x=>'<tr><td>'+esc(x.workerName||x.id)+'</td><td class="muted">'+esc((x.userAgent||'').split('/')[0]||'—')+'</td><td class="r">'+fDiff(x.currentDiff||0)+'</td><td class="r">'+fHash(x.hashrate||0)+'</td><td class="r">'+fDiff(x.bestDifficulty||0)+'</td></tr>').join('')+
+        '</tbody></table>';
+    } else $('miners-wrap').innerHTML='<div class="muted" style="font-size:13px">No miners connected. Point one at <code>stratum+tcp://'+hostIP+':'+($('stratum-url').textContent.split(':').pop()||3333)+'</code></div>';
+  }catch(e){}
+}
+function esc(s){ return String(s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
 
-let _minersCache = [];
-let _selectedMinerID = null;
-
-function renderMiners(miners) {
-  _minersCache = miners || [];
-  el('miner-count').textContent = (miners.length) + ' ONLINE';
-  const wrap = el('miners-wrap');
-  const tip  = el('miners-tip');
-
-  if (!miners || miners.length === 0) {
-    wrap.innerHTML = '<div class="empty"><div class="empty-icon">⛏</div>No miners connected yet.<br>Point your miner at this node\'s stratum port.</div>';
-    tip.style.display = 'none';
-    return;
-  }
-
-  tip.style.display = 'block';
-
-  const sorted = [...miners].sort((a, b) => (b.hashrate || 0) - (a.hashrate || 0));
-
-  const rows = sorted.map(m => {
-    const accepted = m.sharesAccepted || 0;
-    const rejected = m.sharesRejected || 0;
-    const total    = accepted + rejected;
-    const rate     = fmt.pct(accepted, total);
-    const sps      = calcSPS(m.id || m.workerName, accepted);
-
-    const rateColor = rate >= 95 ? 'var(--green)' : rate >= 80 ? 'var(--accent)' : 'var(--red)';
-    const hasBest   = (m.bestDifficulty || 0) > 0;
-    const ip        = (m.ipAddress || '').split(':')[0];
-    const ua        = m.userAgent || '—';
-    const uaShort   = ua.length > 15 ? ua.slice(0, 15) + '…' : ua;
-    const isSelected = m.id === _selectedMinerID ? ' selected' : '';
-    const { worker } = parseWorker(m.workerName);
-    const workerTag  = worker ? `<span style="font-size:9px;color:var(--text-dim)">.${worker}</span>` : '';
-
-    return `<tr class="clickable${isSelected}" onclick="openDrawer('${m.id}')">
-      <td class="worker-cell" title="${m.workerName || ''}">${coinBadge(m.coin)} <span class="c-gold">${fmt.worker(m.workerName)}</span></td>
-      <td class="c-text" style="font-weight:bold">${fmt.hashrate(m.hashrate)}</td>
-      <td class="c-dim">${fmt.diff(m.currentDiff)}</td>
-      <td ${hasBest ? 'class="c-gold"' : 'class="c-muted"'}>
-        ${hasBest ? '★ ' + fmt.diff(m.bestDifficulty) : '—'}
-      </td>
-      <td class="c-green" style="font-size:11px">${fmt.sps(sps)}</td>
-      <td>
-        <div class="rate-bar-wrap">
-          <span class="c-blue">${accepted.toLocaleString()}</span>
-          <div class="rate-bar"><div class="rate-bar-fill" style="width:${rate}%;background:${rateColor}"></div></div>
-          <span style="color:${rejected > 0 ? 'var(--red)' : 'var(--muted)'};font-size:11px">${rejected > 0 ? rejected : '0'}</span>
-        </div>
-      </td>
-      <td class="ua-cell c-muted" title="${ua}">${uaShort}</td>
-      <td class="c-dim">${ip}</td>
-      <td class="c-dim">${fmt.age(m.connectedAt)}</td>
-    </tr>`;
-  }).join('');
-
-  wrap.innerHTML = `<table>
-    <thead><tr>
-      <th>Worker</th>
-      <th>Hashrate</th>
-      <th>Diff</th>
-      <th>★ Best</th>
-      <th>Sh/s</th>
-      <th>Acc&nbsp;/&nbsp;Rej</th>
-      <th>Device</th>
-      <th>IP</th>
-      <th>Up</th>
-    </tr></thead>
-    <tbody>${rows}</tbody>
-  </table>`;
+// ── hand-drawn hashrate chart (no external libs — appliance is offline) ──
+async function drawChart(){
+  const cv=$('chart'), empty=$('chart-empty');
+  let data=[];
+  try{ data=await (await fetch('/api/hashrate?period='+period)).json()||[]; }catch(e){}
+  if(!data.length){ cv.style.display='none'; empty.style.display='flex'; return; }
+  cv.style.display='block'; empty.style.display='none';
+  const dpr=window.devicePixelRatio||1, W=cv.clientWidth, H=240;
+  cv.width=W*dpr; cv.height=H*dpr; const ctx=cv.getContext('2d'); ctx.scale(dpr,dpr);
+  ctx.clearRect(0,0,W,H);
+  const padL=54,padR=10,padT=12,padB=22, w=W-padL-padR, h=H-padT-padB;
+  const xs=data.map(p=>p.t), ys=data.map(p=>p.h);
+  const minT=Math.min(...xs), maxT=Math.max(...xs)||minT+1;
+  let maxY=Math.max(...ys)||1; maxY*=1.15;
+  // unit for axis
+  const units=[[1e18,'EH/s'],[1e15,'PH/s'],[1e12,'TH/s'],[1e9,'GH/s'],[1e6,'MH/s'],[1e3,'KH/s'],[1,'H/s']];
+  let u=units.find(x=>maxY>=x[0])||units[units.length-1];
+  const X=t=>padL+(maxT===minT?0:(t-minT)/(maxT-minT))*w, Y=v=>padT+h-(v/maxY)*h;
+  // grid + y labels
+  ctx.font='10px '+getComputedStyle(document.body).fontFamily; ctx.fillStyle='#7a9f7a'; ctx.strokeStyle='rgba(57,255,20,0.08)'; ctx.lineWidth=1;
+  for(let g=0;g<=4;g++){ const yy=padT+h-(g/4)*h, val=(maxY*g/4); ctx.beginPath(); ctx.moveTo(padL,yy); ctx.lineTo(W-padR,yy); ctx.stroke(); ctx.fillText((val/u[0]).toFixed(1)+' '+u[1], 4, yy+3); }
+  // area + line
+  ctx.beginPath(); data.forEach((p,i)=>{ const x=X(p.t),y=Y(p.h); i?ctx.lineTo(x,y):ctx.moveTo(x,y); });
+  const grad=ctx.createLinearGradient(0,padT,0,padT+h); grad.addColorStop(0,'rgba(57,255,20,0.22)'); grad.addColorStop(1,'rgba(57,255,20,0.01)');
+  const lastX=X(xs[xs.length-1]); ctx.lineTo(lastX,padT+h); ctx.lineTo(X(xs[0]),padT+h); ctx.closePath(); ctx.fillStyle=grad; ctx.fill();
+  ctx.beginPath(); data.forEach((p,i)=>{ const x=X(p.t),y=Y(p.h); i?ctx.lineTo(x,y):ctx.moveTo(x,y); });
+  ctx.strokeStyle='#39ff14'; ctx.lineWidth=1.6; ctx.shadowColor='rgba(57,255,20,0.5)'; ctx.shadowBlur=4; ctx.stroke(); ctx.shadowBlur=0;
+  // x labels (first / mid / last time)
+  ctx.fillStyle='#7a9f7a'; [0,Math.floor(data.length/2),data.length-1].forEach(i=>{ if(!data[i])return; const d=new Date(data[i].t*1000); const lbl=d.toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'}); const x=X(data[i].t); ctx.fillText(lbl, Math.min(Math.max(x-16,padL), W-padR-30), H-6); });
 }
 
-// ─── Miner Detail Drawer ──────────────────────────────────────────────────────
+$('periods').addEventListener('click',e=>{ const b=e.target.closest('button'); if(!b)return; period=b.dataset.p; [...$('periods').children].forEach(x=>x.classList.toggle('sel',x===b)); drawChart(); });
+window.addEventListener('resize',()=>drawChart());
 
-function openDrawer(minerID) {
-  const m = _minersCache.find(x => x.id === minerID);
-  if (!m) return;
-  _selectedMinerID = minerID;
-
-  const { wallet, worker } = parseWorker(m.workerName);
-  const accepted  = m.sharesAccepted || 0;
-  const rejected  = m.sharesRejected || 0;
-  const total     = accepted + rejected;
-  const rate      = fmt.pct(accepted, total);
-  const rateColor = rate >= 95 ? 'var(--green)' : rate >= 80 ? 'var(--accent)' : 'var(--red)';
-  const ip        = (m.ipAddress || '').split(':')[0];
-  const ua        = m.userAgent || '—';
-
-  const walletSection = wallet ? `
-    <div class="d-section">
-      <div class="d-label">Wallet</div>
-      <div class="wallet-box">${wallet}</div>
-      ${worker ? `<div class="worker-tag">.${worker}</div>` : ''}
-    </div>` : '';
-
-  const lastShare = m.lastShareTime && m.lastShareTime !== '0001-01-01T00:00:00Z'
-    ? fmt.age(m.lastShareTime) + ' ago'
-    : 'none yet';
-
-  el('drawer-body').innerHTML = `
-    <div class="d-section">
-      <div style="display:flex;align-items:center;gap:8px;margin-bottom:10px">
-        ${coinBadge(m.coin)}
-        <span style="font-size:13px;color:var(--text)">${fmt.worker(m.workerName)}</span>
-      </div>
-      <div class="d-label">Hashrate</div>
-      <div class="d-value-lg gold">${fmt.hashrate(m.hashrate)}</div>
-    </div>
-
-    ${walletSection}
-
-    <div class="d-section">
-      <div class="d-label">Performance</div>
-      <div class="d-grid2">
-        <div class="d-stat">
-          <div class="d-stat-label">Current Diff</div>
-          <div class="d-stat-val blue">${fmt.diff(m.currentDiff)}</div>
-        </div>
-        <div class="d-stat">
-          <div class="d-stat-label">★ Best Diff</div>
-          <div class="d-stat-val gold">${(m.bestDifficulty||0) > 0 ? fmt.diff(m.bestDifficulty) : '—'}</div>
-        </div>
-      </div>
-    </div>
-
-    <div class="d-section">
-      <div class="d-label">Shares</div>
-      <div class="d-grid2">
-        <div class="d-stat">
-          <div class="d-stat-label">Accepted</div>
-          <div class="d-stat-val green">${accepted.toLocaleString()}</div>
-        </div>
-        <div class="d-stat">
-          <div class="d-stat-label">Rejected</div>
-          <div class="d-stat-val" style="color:${rejected > 0 ? 'var(--red)' : 'var(--muted)'}">${rejected.toLocaleString()}</div>
-        </div>
-      </div>
-      <div class="share-bar-full">
-        <div class="share-bar-fill-full" style="width:${rate}%;background:${rateColor}"></div>
-      </div>
-      <div class="share-counts">
-        <span>Acceptance</span>
-        <span style="color:${rateColor};font-weight:bold">${rate}%</span>
-      </div>
-    </div>
-
-    <div class="d-section">
-      <div class="d-label">Connection</div>
-      <div class="d-row">
-        <span class="d-row-key">IP Address</span>
-        <span class="d-row-val" style="color:var(--blue)">${ip || '—'}</span>
-      </div>
-      <div class="d-row">
-        <span class="d-row-key">Device / UA</span>
-        <span class="d-row-val">${ua}</span>
-      </div>
-      <div class="d-row">
-        <span class="d-row-key">Connected</span>
-        <span class="d-row-val">${fmt.age(m.connectedAt)} ago</span>
-      </div>
-      <div class="d-row">
-        <span class="d-row-key">Last Share</span>
-        <span class="d-row-val">${lastShare}</span>
-      </div>
-    </div>
-  `;
-
-  el('miner-drawer').classList.add('open');
-  el('page-body').classList.add('drawer-open');
-  // Re-render to show selected highlight
-  renderMiners(_minersCache);
-}
-
-function closeDrawer() {
-  el('miner-drawer').classList.remove('open');
-  el('page-body').classList.remove('drawer-open');
-  _selectedMinerID = null;
-  renderMiners(_minersCache);
-}
-
-// ─── Main refresh ─────────────────────────────────────────────────────────────
-
-async function refresh() {
-  try {
-    const cfgRes = await fetch('/api/configured');
-    if (cfgRes.ok) {
-      const cfgData = await cfgRes.json();
-      if (!cfgData.configured) { window.location.href = '/setup.html'; return; }
-    }
-
-    const [statsRes, minersRes, pairsRes] = await Promise.all([
-      fetch('/api/stats'),
-      fetch('/api/miners'),
-      fetch('/api/pairs')
-    ]);
-
-    const statsData = await statsRes.json();
-    const miners    = await minersRes.json();
-    const pairs     = await pairsRes.json();
-    const { node, stats } = statsData;
-
-    // Network info (fetch once)
-    if (!refresh._netFetched) {
-      refresh._netFetched = true;
-      fetch('/api/network').then(r => r.json()).then(net => {
-        el('net-local').textContent  = (net.localIPs || []).join(', ') || '—';
-        el('net-public').textContent = net.publicIP || '—';
-      }).catch(() => {});
-    }
-
-    // Header
-    el('node-name').textContent    = node?.name || '—';
-    el('uptime-display').textContent = 'UPTIME: ' + fmt.uptime(node?.uptime || 0);
-    el('footer-nodeid').textContent = node?.id || '—';
-
-    // Status badge
-    const anyOnline = Array.isArray(pairs) && pairs.some(p => p.connected);
-    const badge = el('status-badge'), dot = el('status-dot');
-    if (anyOnline) {
-      badge.className = 'status-badge online'; dot.className = 'dot blue';
-      el('status-text').textContent = 'ONLINE';
-    } else {
-      badge.className = 'status-badge offline'; dot.className = 'dot red';
-      el('status-text').textContent = 'OFFLINE';
-    }
-
-    // Stat cards
-    const hr   = stats?.totalHashrate || 0;
-    const best = stats?.bestDifficulty || 0;
-    const nm   = stats?.activeMiners || 0;
-    const fwd  = stats?.proxySharesFwd || 0;
-    const acc  = stats?.proxySharesAccepted || 0;
-    const rej  = stats?.proxySharesRejected || 0;
-
-    el('s-hashrate').textContent     = fmt.hashrate(hr);
-    el('s-hashrate-sub').textContent = nm > 0 ? `across ${nm} miner${nm===1?'':'s'}` : 'no miners';
-    el('s-miners').textContent       = nm;
-    el('s-miners-sub').textContent   = nm === 1 ? '1 device active' : `${nm} devices active`;
-    el('s-fwd').textContent          = fwd.toLocaleString();
-    el('s-fwd-sub').textContent      = `✓ ${acc.toLocaleString()}  ✗ ${rej.toLocaleString()}`;
-    el('s-bestdiff').textContent     = fmt.diff(best);
-    el('s-bestdiff-sub').textContent = best > 0 ? 'all-time best share' : 'no shares yet';
-
-    // Chart
-    pushHashrate(hr);
-    drawChart();
-
-    // Tables
-    renderPools(pairs || []);
-    renderMiners(miners || []);
-
-    // If drawer is open, refresh its data
-    if (_selectedMinerID) {
-      const updated = (miners || []).find(x => x.id === _selectedMinerID);
-      if (updated) openDrawer(_selectedMinerID);
-    }
-
-  } catch(e) {
-    el('status-badge').className = 'status-badge offline';
-    el('status-dot').className   = 'dot red';
-    el('status-text').textContent = 'ERROR';
-    console.error('refresh:', e);
-  }
-}
-
-refresh();
-setInterval(refresh, 5000);
-
-// ─── Admin unlock ─────────────────────────────────────────────────────────────
-
-let _adminToken = null;
-
-function openAdminUnlock() {
-  el('unlock-input').value = '';
-  el('unlock-error').textContent = '';
-  el('unlock-modal').classList.add('open');
-  setTimeout(() => el('unlock-input').focus(), 60);
-}
-function closeAdminUnlock() { el('unlock-modal').classList.remove('open'); }
-
-async function doAdminUnlock() {
-  const token = el('unlock-input').value.trim();
-  if (!token) { el('unlock-error').textContent = 'Enter a token.'; return; }
-  el('unlock-error').textContent = 'Verifying…';
-  try {
-    const res = await fetch('/api/admin/settings', { headers: { 'X-Admin-Token': token } });
-    if (res.status === 200) {
-      _adminToken = token;
-      localStorage.setItem('edgeAdminToken', token);
-      closeAdminUnlock();
-      el('admin-section').style.display = 'block';
-      el('admin-unlock-btn').style.display = 'none';
-    } else {
-      el('unlock-error').textContent = 'Invalid token.';
-    }
-  } catch (e) {
-    el('unlock-error').textContent = 'Error: ' + e.message;
-  }
-}
-
-function lockAdmin() {
-  _adminToken = null;
-  localStorage.removeItem('edgeAdminToken');
-  el('admin-section').style.display = 'none';
-  el('admin-unlock-btn').style.display = '';
-}
-
-(async function() {
-  const saved = localStorage.getItem('edgeAdminToken');
-  if (!saved) return;
-  try {
-    const res = await fetch('/api/admin/settings', { headers: { 'X-Admin-Token': saved } });
-    if (res.status === 200) {
-      _adminToken = saved;
-      el('admin-section').style.display = 'block';
-      el('admin-unlock-btn').style.display = 'none';
-    } else {
-      localStorage.removeItem('edgeAdminToken');
-    }
-  } catch (e) {}
-})();
-
-async function setupNginx() {
-  if (!_adminToken) return;
-  const domain = el('nginx-domain').value.trim();
-  const btn = el('nginx-btn'), out = el('nginx-output');
-  btn.disabled = true; btn.textContent = 'RUNNING…';
-  out.style.display = 'block';
-  out.textContent = 'Setting up nginx' + (domain ? ' for ' + domain : '') + '…\n';
-  try {
-    const res = await fetch('/api/admin/nginx', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'X-Admin-Token': _adminToken },
-      body: JSON.stringify({ domain })
-    });
-    const data = await res.json();
-    out.textContent = data.error ? (data.output || '') + '\nERROR: ' + data.error : (data.output || 'Done.');
-  } catch (e) {
-    out.textContent += '\nError: ' + e.message;
-  } finally {
-    btn.disabled = false; btn.textContent = 'SETUP NGINX';
-    out.scrollTop = out.scrollHeight;
-  }
-}
-
-async function restartNode() {
-  if (!_adminToken) return;
-  if (!confirm('Restart the relay unit? It will restart automatically.')) return;
-  const btn = el('restart-btn');
-  btn.disabled = true; btn.textContent = 'RESTARTING…';
-  try {
-    await fetch('/api/admin/restart', { method: 'POST', headers: { 'X-Admin-Token': _adminToken } });
-    btn.textContent = 'RESTARTED ✓';
-    setTimeout(() => { btn.disabled = false; btn.textContent = 'RESTART'; }, 8000);
-  } catch (e) {
-    btn.disabled = false; btn.textContent = 'RESTART';
-    alert('Error: ' + e.message);
-  }
-}
+poll(); pollMiners(); drawChart();
+setInterval(poll,2000); setInterval(pollMiners,4000); setInterval(drawChart,60000);
 </script>
 </body>
 </html>

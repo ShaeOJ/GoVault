@@ -7,9 +7,29 @@ import (
 
 	"govault/internal/coin"
 	"govault/internal/config"
+	"govault/internal/miner"
 	"govault/internal/node"
 	"govault/internal/upstream"
 )
+
+// hashrateProvider is optionally implemented by an engine to feed the dashboard
+// hashrate chart. Kept separate from StatsProvider so edgenode need not add it.
+type hashrateProvider interface {
+	GetHashrateHistory(period string) []miner.HashratePoint
+}
+
+// hashrate handles GET /api/hashrate?period=1h|6h|24h|7d.
+func (h *handlers) hashrate(w http.ResponseWriter, r *http.Request) {
+	period := r.URL.Query().Get("period")
+	if period == "" {
+		period = "1h"
+	}
+	if hp, ok := h.provider.(hashrateProvider); ok {
+		jsonOK(w, hp.GetHashrateHistory(period))
+		return
+	}
+	jsonOK(w, []miner.HashratePoint{})
+}
 
 // These handlers back the appliance's full setup/settings page (cmd/relay-mk1):
 // a complete solo/proxy config form plus connectivity tests. They are additive —
