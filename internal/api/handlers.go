@@ -49,11 +49,23 @@ func (h *handlers) pairs(w http.ResponseWriter, r *http.Request) {
 
 func (h *handlers) getConfig(w http.ResponseWriter, r *http.Request) {
 	cfg := h.provider.GetConfig()
+	// Node/proxy are returned without passwords so the setup form can pre-fill
+	// safely; a blank password field on save means "keep the existing one".
 	jsonOK(w, map[string]interface{}{
 		"miningMode": cfg.MiningMode,
 		"mining":     cfg.Mining,
 		"stratum":    cfg.Stratum,
 		"vardiff":    cfg.Vardiff,
+		"node": map[string]interface{}{
+			"host":   cfg.Node.Host,
+			"port":   cfg.Node.Port,
+			"username": cfg.Node.Username,
+			"useSSL": cfg.Node.UseSSL,
+		},
+		"proxy": map[string]interface{}{
+			"url":        cfg.Proxy.URL,
+			"workerName": cfg.Proxy.WorkerName,
+		},
 	})
 }
 

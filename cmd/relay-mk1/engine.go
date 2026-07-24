@@ -141,6 +141,7 @@ func (e *Engine) Start() error {
 		return e.cfg.Save()
 	}
 	e.apiServer.OnSetup = func(req api.SetupRequest) error { return e.applySetup(req) }
+	e.apiServer.OnConfigUpdate = func(newCfg *config.Config) error { return e.applyConfig(newCfg) }
 	e.apiServer.OnRestart = func() {
 		if e.log != nil {
 			e.log.Info("engine", "restart requested — exiting for supervisor restart")
@@ -477,6 +478,51 @@ func (e *Engine) applySetup(req api.SetupRequest) error {
 	}
 	e.StopStratum()
 	return e.StartStratum()
+}
+
+// applyConfig persists a full config from the web setup/settings form and
+// restarts mining with it. Blank password fields keep the existing secret;
+// App fields other than log level are preserved.
+func (e *Engine) applyConfig(newCfg *config.Config) error {
+	if newCfg.Node.Password == "" {
+		newCfg.Node.Password = e.cfg.Node.Password
+	}
+	if newCfg.Proxy.Password == "" {
+		newCfg.Proxy.Password = e.cfg.Proxy.Password
+	}
+	logLevel := newCfg.App.LogLevel
+	newCfg.App = e.cfg.App
+	if logLevel != "" {
+		newCfg.App.LogLevel = logLevel
+	}
+	if err := newCfg.Validate(); err != nil {
+		return err
+	}
+	nodeChanged := newCfg.Node != e.cfg.Node
+
+	if err := e.cfg.Update(newCfg); err != nil {
+		return err
+	}
+	if e.log != nil {
+		e.log.SetLevel(e.cfg.App.LogLevel)
+	}
+	if nodeChanged && e.nodeClient != nil {
+		e.nodeClient.Close()
+		e.nodeClient = node.NewClient(
+			e.cfg.Node.Host, e.cfg.Node.Port,
+			e.cfg.Node.Username, e.cfg.Node.Password, e.cfg.Node.UseSSL,
+		)
+	}
+	e.StopStratum()
+	if err := e.StartStratum(); err != nil {
+		// Config is already persisted; a start failure (node/pool not reachable
+		// yet) shouldn't read as "save failed". Log it and let the dashboard
+		// show the mining state — it'll start on the next reboot or edit.
+		if e.log != nil {
+			e.log.Errorf("engine", "config saved; mining not started yet: %v", err)
+		}
+	}
+	return nil
 }
 
 // === api.StatsProvider ===

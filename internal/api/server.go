@@ -92,6 +92,10 @@ type Server struct {
 	OnSetup    func(req SetupRequest) error
 	configured bool
 
+	// OnConfigUpdate applies a full config (solo/proxy) from POST /api/config.
+	// Nil on nodes that don't support web config editing (e.g. edgenode).
+	OnConfigUpdate func(*config.Config) error
+
 	// Admin management fields (optional — only active when AdminToken is set).
 	AdminToken     string
 	OnSettings     func(req SettingsRequest) error
@@ -205,7 +209,10 @@ func (s *Server) Start() error {
 	mux.HandleFunc("/api/stats", api(h.stats))
 	mux.HandleFunc("/api/miners", api(h.miners))
 	mux.HandleFunc("/api/pairs", api(h.pairs))
-	mux.HandleFunc("/api/config", api(h.getConfig))
+	mux.HandleFunc("/api/config", api(h.configRouter))
+	mux.HandleFunc("/api/coins", api(h.coins))
+	mux.HandleFunc("/api/test-node", api(h.testNode))
+	mux.HandleFunc("/api/test-upstream", api(h.testUpstream))
 	mux.HandleFunc("/api/setup", api(h.setup))
 	mux.HandleFunc("/api/configured", api(h.configured))
 	mux.HandleFunc("/api/network", api(h.network))

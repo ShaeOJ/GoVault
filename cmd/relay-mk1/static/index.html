@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>GoVault Edge Node</title>
+<title>ReTek Relay Unit Mk.I</title>
 <style>
 :root {
   --bg:         #060a10;
@@ -384,10 +384,9 @@ footer::before { content: ''; position: absolute; top: 0; left: 0; right: 0; hei
 
 <header>
   <div class="logo">
-    <img src="https://firepool.ca/assets/img/logo.png" alt="GoVault" class="logo-img">
     <div class="logo-text">
-      <div class="logo-title">GOVAULT</div>
-      <div class="logo-sub">EDGE NODE &nbsp;·&nbsp; <span id="node-name">—</span></div>
+      <div class="logo-title">RETEK INC.</div>
+      <div class="logo-sub">RELAY UNIT MK.I &nbsp;·&nbsp; <span id="node-name">—</span></div>
     </div>
   </div>
   <div class="header-right">
@@ -536,7 +535,7 @@ footer::before { content: ''; position: absolute; top: 0; left: 0; right: 0; hei
 </div><!-- /page-body -->
 
 <footer>
-  <span>GOVAULT EDGE NODE</span>
+  <span>RETEK INC. · RELAY UNIT MK.I</span>
   &nbsp;·&nbsp;
   <span>ID: <span id="footer-nodeid">—</span></span>
   &nbsp;·&nbsp;
@@ -1126,7 +1125,7 @@ async function setupNginx() {
 
 async function restartNode() {
   if (!_adminToken) return;
-  if (!confirm('Restart the edge node? systemd / NSSM will restart it automatically.')) return;
+  if (!confirm('Restart the relay unit? It will restart automatically.')) return;
   const btn = el('restart-btn');
   btn.disabled = true; btn.textContent = 'RESTARTING…';
   try {
