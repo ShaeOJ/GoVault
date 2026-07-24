@@ -3,6 +3,7 @@ package main
 import (
 	"crypto/rand"
 	"embed"
+	"encoding/binary"
 	"encoding/hex"
 	"fmt"
 	"math/big"
@@ -271,44 +272,87 @@ func (e *Engine) startProxy() error {
 	if p.URL == "" {
 		return fmt.Errorf("proxy mode: upstream URL not configured")
 	}
-	coinDef := coin.Get(e.cfg.Mining.Coin)
-	e.log.Infof("engine", "starting stratum (proxy, per-miner pass-through) → %s", p.URL)
+	if p.WorkerName == "" {
+		return fmt.Errorf("proxy mode: worker/wallet not configured")
+	}
+	password := p.Password
+	if password == "" {
+		password = "x"
+	}
+	// Shared proxy (matches the desktop app): the relay holds ONE upstream
+	// connection authorized with the configured wallet/worker; every miner's
+	// shares are forwarded through it. Jobs are broadcast to all miners, so a
+	// device only needs a worker name and always gets work — robust, unlike
+	// per-miner mode where a miner is rejected if its own pool connection fails.
+	e.log.Infof("engine", "starting stratum (proxy, shared) → %s worker=%s", p.URL, p.WorkerName)
 
+	uc := upstream.NewClient(p.URL, p.WorkerName, password, e.log)
+	if err := uc.Connect(); err != nil {
+		return fmt.Errorf("upstream connect: %w", err)
+	}
+	e.svcMu.Lock()
+	e.upstream = uc
+	e.svcMu.Unlock()
+
+	coinDef := coin.Get(e.cfg.Mining.Coin)
 	srv := stratum.NewServer(&e.cfg.Stratum, &e.cfg.Mining, &e.cfg.Vardiff, nil, e.log, coinDef)
 	e.svcMu.Lock()
 	e.stratum = srv
 	e.svcMu.Unlock()
 
-	// Per-miner pass-through: each miner opens its OWN upstream connection using
-	// its own worker/wallet (the credentials on the device), so the pool vardiffs
-	// each miner individually. This is what lets a small miner (e.g. a BitAxe)
-	// work through the relay to a big pool — the shared single-connection mode
-	// locks every miner to the pool's aggregate difficulty, far too high for
-	// small hardware. The session wires job/share relay to each dedicated
-	// upstream internally.
-	srv.SetPerMinerMode(0)
-	srv.OnMinerConnect = func(session *stratum.Session, worker, password string) (*upstream.Client, error) {
-		if password == "" {
-			password = p.Password
+	var vMask uint32
+	if uc.VersionRolling() && uc.VersionMask() != "" {
+		if b, err := hex.DecodeString(uc.VersionMask()); err == nil && len(b) == 4 {
+			vMask = binary.BigEndian.Uint32(b)
 		}
-		if password == "" {
-			password = "x"
-		}
-		uc := upstream.NewClient(p.URL, worker, password, e.log)
-		if err := uc.Connect(); err != nil {
-			return nil, fmt.Errorf("upstream connect for %s: %w", worker, err)
-		}
-		e.updateNetworkDiffFromNBits(uc.LastNBits())
-		e.log.Infof("engine", "miner %s → upstream connected (en1=%s en2=%d)", worker, uc.Extranonce1(), uc.LocalEN2Size())
-		return uc, nil
 	}
+	srv.SetProxyMode(uc.Extranonce1(), uc.LocalEN2Size(), uc.PrefixBytes(), vMask)
+	srv.SetUpstreamDifficulty(uc.UpstreamDifficulty())
 
 	e.wireStratumCallbacks()
 
+	uc.OnJob = func(params *upstream.JobParams) {
+		e.svcMu.RLock()
+		s := e.stratum
+		e.svcMu.RUnlock()
+		if s != nil {
+			s.BroadcastUpstreamJob(params)
+		}
+		e.updateNetworkDiffFromNBits(params.NBits)
+		if params.CleanJobs {
+			e.netMu.Lock()
+			e.blockHeight++
+			e.netMu.Unlock()
+		}
+	}
+	uc.OnDifficulty = func(diff float64) {
+		e.svcMu.RLock()
+		s := e.stratum
+		e.svcMu.RUnlock()
+		if s != nil {
+			s.SetUpstreamDifficulty(diff)
+		}
+	}
+	uc.OnDisconnect = func(err error) { e.log.Errorf("engine", "upstream disconnected: %v (reconnecting)", err) }
+	srv.OnShareForward = func(workerName, jobID, fullEN2, ntime, nonce, versionBits string) (bool, string) {
+		return uc.SubmitShare(workerName, jobID, fullEN2, ntime, nonce, versionBits)
+	}
+
 	if err := srv.Start(); err != nil {
+		uc.Stop()
+		e.svcMu.Lock()
+		e.upstream = nil
+		e.svcMu.Unlock()
 		return err
 	}
-	e.log.Info("engine", "stratum started (proxy / per-miner pass-through)")
+	if early := uc.DrainEarlyJob(); early != nil {
+		srv.BroadcastUpstreamJob(early)
+		e.updateNetworkDiffFromNBits(early.NBits)
+	}
+	if nbits := uc.LastNBits(); nbits != "" {
+		e.updateNetworkDiffFromNBits(nbits)
+	}
+	e.log.Info("engine", "stratum started (proxy / shared)")
 	return nil
 }
 
