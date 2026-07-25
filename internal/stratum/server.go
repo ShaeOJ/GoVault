@@ -87,6 +87,12 @@ type Server struct {
 	// upstream client for this miner using their own credentials, making them
 	// appear as an independent connection to the upstream pool.
 	OnMinerConnect func(session *Session, worker, password string) (*upstream.Client, error)
+
+	// OnUpstreamJobInfo, when set, is called for each upstream job in per-miner
+	// pass-through mode with the job's nBits and cleanJobs flag, so the engine can
+	// track network difficulty and block height (there's no single shared upstream
+	// to hang an OnJob callback on).
+	OnUpstreamJobInfo func(nbits string, cleanJobs bool)
 }
 
 func NewServer(
@@ -463,6 +469,14 @@ func (s *Server) GetProxyDiagnostics() ProxyDiagnostics {
 			d.MinerDupes[session.workerName] = session.sharesDuped
 			d.MinerAccepted[session.workerName] = session.sharesAccepted
 			session.diffMu.Unlock()
+		}
+		// In per-miner pass-through there's no server-wide upstream diff (each
+		// miner has its own upstream), so derive a representative value from the
+		// dedicated connections for the dashboard's "Pool Difficulty".
+		if d.UpstreamDiff == 0 && session.dedicatedUpstream != nil {
+			if ud := session.dedicatedUpstream.UpstreamDifficulty(); ud > 0 {
+				d.UpstreamDiff = ud
+			}
 		}
 	}
 	s.sessionMu.RUnlock()

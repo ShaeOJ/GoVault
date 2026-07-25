@@ -410,6 +410,10 @@ func (s *Session) handleAuthorize(req *Request) {
 			s.server.shareValidator.CleanDuplicates(s.server.jobManager.ActiveJobIDs())
 			s.sendNotify(job, params.CleanJobs)
 			s.server.log.Debugf("stratum", "[per-miner] job %s → %s", params.JobID, s.workerName)
+			// Surface network diff/height to the engine (no shared upstream here).
+			if s.server.OnUpstreamJobInfo != nil {
+				s.server.OnUpstreamJobInfo(params.NBits, params.CleanJobs)
+			}
 		}
 		uc.OnDifficulty = func(diff float64) {
 			s.setProxyDiff(diff)

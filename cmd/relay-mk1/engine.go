@@ -435,21 +435,22 @@ func (e *Engine) startProxyPassThrough() error {
 		}
 		e.log.Infof("engine", "miner %s → upstream worker %s (en1=%s en2=%d vroll=%v)",
 			worker, upWorker, uc.Extranonce1(), uc.LocalEN2Size(), uc.VersionRolling())
-
-		// Track network diff/height from this miner's job notifications.
-		orig := uc.OnJob
-		uc.OnJob = func(params *upstream.JobParams) {
-			e.updateNetworkDiffFromNBits(params.NBits)
-			if params.CleanJobs {
-				e.netMu.Lock()
-				e.blockHeight++
-				e.netMu.Unlock()
-			}
-			if orig != nil {
-				orig(params)
-			}
-		}
+		// NB: don't set uc.OnJob/OnDifficulty here — the per-miner session
+		// overwrites them. Network diff/height come from the server-level
+		// OnUpstreamJobInfo hook wired below (fires from every per-miner job).
 		return uc, nil
+	}
+
+	// Per-miner jobs are handled inside each session, so the engine learns the
+	// network difficulty/height from this server-level hook rather than a single
+	// upstream's OnJob (which doesn't exist in pass-through).
+	srv.OnUpstreamJobInfo = func(nbits string, cleanJobs bool) {
+		e.updateNetworkDiffFromNBits(nbits)
+		if cleanJobs {
+			e.netMu.Lock()
+			e.blockHeight++
+			e.netMu.Unlock()
+		}
 	}
 
 	e.wireStratumCallbacks()
