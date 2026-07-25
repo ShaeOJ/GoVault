@@ -69,6 +69,21 @@ func (h *handlers) fleet(w http.ResponseWriter, r *http.Request) {
 	jsonOK(w, map[string]interface{}{})
 }
 
+// poolProvider is optionally implemented by an engine to feed the dashboard's
+// Upstream Pool panel (stratum-derived pool status; no external pool API).
+type poolProvider interface {
+	GetPoolInfo() []map[string]interface{}
+}
+
+// pools handles GET /api/pools.
+func (h *handlers) pools(w http.ResponseWriter, r *http.Request) {
+	if pp, ok := h.provider.(poolProvider); ok {
+		jsonOK(w, pp.GetPoolInfo())
+		return
+	}
+	jsonOK(w, []map[string]interface{}{})
+}
+
 // hashrate handles GET /api/hashrate?period=1h|6h|24h|7d.
 func (h *handlers) hashrate(w http.ResponseWriter, r *http.Request) {
 	period := r.URL.Query().Get("period")

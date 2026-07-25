@@ -103,7 +103,7 @@ type Server struct {
 	// pass-through mode with the job's nBits and cleanJobs flag, so the engine can
 	// track network difficulty and block height (there's no single shared upstream
 	// to hang an OnJob callback on).
-	OnUpstreamJobInfo func(nbits string, cleanJobs bool)
+	OnUpstreamJobInfo func(nbits, coinbase1 string, cleanJobs bool)
 }
 
 func NewServer(

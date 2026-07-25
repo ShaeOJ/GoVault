@@ -59,7 +59,10 @@ type Engine struct {
 	networkDiff     float64
 	networkHashrate float64
 	blockHeight     int64
+	lastBlockAt     time.Time // when the pool last signalled a new block (clean job)
 	netMu           sync.RWMutex
+
+	poolStartedAt time.Time // when the current proxy→pool session began (for uptime)
 
 	stopStats     chan struct{}
 	stopStatsOnce sync.Once
@@ -350,12 +353,7 @@ func (e *Engine) startProxy() error {
 		if s != nil {
 			s.BroadcastUpstreamJob(params)
 		}
-		e.updateNetworkDiffFromNBits(params.NBits)
-		if params.CleanJobs {
-			e.netMu.Lock()
-			e.blockHeight++
-			e.netMu.Unlock()
-		}
+		e.observePoolJob(params.NBits, params.Coinbase1, params.CleanJobs)
 	}
 	uc.OnDifficulty = func(diff float64) {
 		e.svcMu.RLock()
@@ -379,11 +377,14 @@ func (e *Engine) startProxy() error {
 	}
 	if early := uc.DrainEarlyJob(); early != nil {
 		srv.BroadcastUpstreamJob(early)
-		e.updateNetworkDiffFromNBits(early.NBits)
+		e.observePoolJob(early.NBits, early.Coinbase1, early.CleanJobs)
 	}
 	if nbits := uc.LastNBits(); nbits != "" {
 		e.updateNetworkDiffFromNBits(nbits)
 	}
+	e.svcMu.Lock()
+	e.poolStartedAt = time.Now()
+	e.svcMu.Unlock()
 	e.log.Info("engine", "stratum started (proxy / shared)")
 	return nil
 }
@@ -458,13 +459,8 @@ func (e *Engine) startProxyPassThrough() error {
 	// Per-miner jobs are handled inside each session, so the engine learns the
 	// network difficulty/height from this server-level hook rather than a single
 	// upstream's OnJob (which doesn't exist in pass-through).
-	srv.OnUpstreamJobInfo = func(nbits string, cleanJobs bool) {
-		e.updateNetworkDiffFromNBits(nbits)
-		if cleanJobs {
-			e.netMu.Lock()
-			e.blockHeight++
-			e.netMu.Unlock()
-		}
+	srv.OnUpstreamJobInfo = func(nbits, coinbase1 string, cleanJobs bool) {
+		e.observePoolJob(nbits, coinbase1, cleanJobs)
 	}
 
 	e.wireStratumCallbacks()
@@ -472,8 +468,60 @@ func (e *Engine) startProxyPassThrough() error {
 	if err := srv.Start(); err != nil {
 		return err
 	}
+	e.svcMu.Lock()
+	e.poolStartedAt = time.Now()
+	e.svcMu.Unlock()
 	e.log.Info("engine", "stratum started (proxy / pass-through)")
 	return nil
+}
+
+// observePoolJob updates network difficulty, block height, and the last-block
+// timestamp from an upstream job — used by both shared (uc.OnJob) and per-miner
+// (OnUpstreamJobInfo) modes. Block height is parsed from the coinbase (BIP34)
+// when possible for the real chain height; otherwise it falls back to counting
+// clean jobs.
+func (e *Engine) observePoolJob(nbits, coinbase1 string, cleanJobs bool) {
+	e.updateNetworkDiffFromNBits(nbits)
+	h := parseCoinbaseHeight(coinbase1)
+	e.netMu.Lock()
+	if h > 0 {
+		e.blockHeight = h
+	} else if cleanJobs {
+		e.blockHeight++
+	}
+	if cleanJobs {
+		e.lastBlockAt = time.Now()
+	}
+	e.netMu.Unlock()
+}
+
+// parseCoinbaseHeight extracts the BIP34 block height from a stratum coinbase1
+// hex string. The coinbase scriptSig begins with a small push of the height in
+// little-endian: [version(4)][txinCount(1)][prevout(36)][scriptSigLen(1)]
+// [pushLen(1)][height LE...]. Returns 0 if it can't be parsed.
+func parseCoinbaseHeight(coinbase1 string) int64 {
+	// offset to the scriptSig push-length byte: (4+1+36+1)*2 = 84 hex chars
+	const off = 84
+	if len(coinbase1) < off+2 {
+		return 0
+	}
+	n64, err := strconv.ParseInt(coinbase1[off:off+2], 16, 32)
+	if err != nil {
+		return 0
+	}
+	n := int(n64)
+	if n < 1 || n > 4 || len(coinbase1) < off+2+n*2 {
+		return 0 // BIP34 heights are 1–4 bytes; anything else isn't a height push
+	}
+	var height int64
+	for i := 0; i < n; i++ { // little-endian
+		b, err := strconv.ParseInt(coinbase1[off+2+i*2:off+4+i*2], 16, 32)
+		if err != nil {
+			return 0
+		}
+		height |= b << (8 * i)
+	}
+	return height
 }
 
 func (e *Engine) wireStratumCallbacks() {
@@ -847,6 +895,73 @@ func (e *Engine) GetFleetOverview() map[string]interface{} {
 		"dailyCost":       daily,
 		"electricityCost": cost,
 	}
+}
+
+// GetPoolInfo returns per-upstream-pool status for the dashboard's Upstream Pool
+// panel. All of it is derived from the live stratum connection(s) — no external
+// pool API. Empty in solo mode (no upstream). In pass-through there are N
+// connections to one URL; they're aggregated into a single entry.
+func (e *Engine) GetPoolInfo() []map[string]interface{} {
+	empty := []map[string]interface{}{}
+	if e.cfg.MiningMode != "proxy" {
+		return empty
+	}
+	e.svcMu.RLock()
+	srv := e.stratum
+	uc := e.upstream
+	started := e.poolStartedAt
+	e.svcMu.RUnlock()
+	if srv == nil {
+		return empty
+	}
+	diag := srv.GetProxyDiagnostics()
+	e.netMu.RLock()
+	netDiff, height, lastBlk := e.networkDiff, e.blockHeight, e.lastBlockAt
+	e.netMu.RUnlock()
+
+	passthrough := e.cfg.Proxy.PassThrough
+	connected := false
+	conns := 0
+	if passthrough {
+		conns = srv.SessionCount()
+		connected = conns > 0
+	} else if uc != nil && uc.IsConnected() {
+		connected = true
+		conns = 1
+	}
+	accepted, rejected := diag.SharesAccepted, diag.SharesRejected
+	rate := 0.0
+	if accepted+rejected > 0 {
+		rate = float64(accepted) / float64(accepted+rejected) * 100
+	}
+	uptime := 0.0
+	if connected && !started.IsZero() {
+		uptime = time.Since(started).Seconds()
+	}
+	lastBlockAge := -1.0
+	if !lastBlk.IsZero() {
+		lastBlockAge = time.Since(lastBlk).Seconds()
+	}
+	mode := "shared"
+	if passthrough {
+		mode = "passthrough"
+	}
+	return []map[string]interface{}{{
+		"url":               e.cfg.Proxy.URL,
+		"mode":              mode,
+		"connected":         connected,
+		"connections":       conns,
+		"difficulty":        diag.UpstreamDiff,
+		"pingMs":            srv.AvgUpstreamLatencyMs(),
+		"forwarded":         diag.SharesFwd,
+		"accepted":          accepted,
+		"rejected":          rejected,
+		"acceptRate":        rate,
+		"networkDifficulty": netDiff,
+		"blockHeight":       height,
+		"lastBlockAgeSec":   lastBlockAge,
+		"uptimeSec":         uptime,
+	}}
 }
 
 // fan control files shared with relayfan (the appliance fan daemon):

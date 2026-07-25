@@ -58,6 +58,13 @@
   .periods button.sel{background:rgba(var(--accent-rgb),.15);color:var(--accent)}
   #chart{width:100%;height:clamp(240px,32vh,420px);display:block}
   .chart-empty{height:clamp(240px,32vh,420px);display:flex;align-items:center;justify-content:center;color:var(--dim);font-size:13px}
+  /* upstream pool panel */
+  .poolurl{color:var(--accent);font-size:clamp(12px,0.9vw,14px);word-break:break-all;margin:2px 0 14px}
+  .poolgrid{display:grid;grid-template-columns:repeat(auto-fit,minmax(115px,1fr));gap:clamp(12px,1.3vw,20px)}
+  .poolgrid .lbl{font-size:clamp(10px,0.7vw,12px);text-transform:uppercase;letter-spacing:1px;color:var(--dim)}
+  .poolgrid .pv{font-size:clamp(17px,1.5vw,24px);font-weight:700;color:var(--accent);margin-top:4px;line-height:1.1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .poolgrid .pvs{font-size:10px;color:var(--dim);margin-top:2px}
+  .poolgrid .pvs .rej{color:var(--err)}
   /* miners */
   .mrow{display:flex;align-items:center;gap:12px;background:var(--bg2);border-radius:8px;padding:9px 12px;margin-bottom:8px}
   .mrow .rank{width:20px;text-align:center;color:var(--dim);font-size:12px}
@@ -128,6 +135,25 @@
     <div class="card"><div class="bar" style="background:var(--gold)"></div><div class="lbl">Fleet Power</div><div class="val" id="f-power" style="color:var(--gold)">—</div><div class="sub" id="f-power-sub"></div></div>
     <div class="card"><div class="bar" style="background:var(--accent)"></div><div class="lbl">Efficiency</div><div class="val" id="f-eff" style="color:var(--accent)">—</div><div class="sub">watts per TH/s</div></div>
     <div class="card"><div class="bar" style="background:var(--dim)"></div><div class="lbl">Est. Daily Cost</div><div class="val" id="f-cost" style="color:var(--text)">—</div><div class="sub" id="f-cost-sub">set $/kWh in setup</div></div>
+  </div>
+
+  <!-- Upstream pool (stratum-derived; proxy mode only) -->
+  <div class="panel" id="pool-panel" style="display:none">
+    <div class="chart-head">
+      <h3 style="margin:0">Upstream Pool</h3>
+      <span class="badge" id="pool-badge"><span class="dot" id="pool-dot"></span><span id="pool-state">—</span></span>
+    </div>
+    <div class="poolurl" id="pool-url"></div>
+    <div class="poolgrid">
+      <div><div class="lbl">Connections</div><div class="pv" id="pool-conns">—</div></div>
+      <div><div class="lbl">Pool Difficulty</div><div class="pv" id="pool-diff">—</div></div>
+      <div><div class="lbl">Ping</div><div class="pv" id="pool-ping">—</div></div>
+      <div><div class="lbl">Pool Accepted</div><div class="pv" id="pool-acc">—</div><div class="pvs" id="pool-acc-sub"></div></div>
+      <div><div class="lbl">Block Height</div><div class="pv" id="pool-height">—</div></div>
+      <div><div class="lbl">Last Block</div><div class="pv" id="pool-lastblk">—</div></div>
+      <div><div class="lbl">Network Diff</div><div class="pv" id="pool-netdiff">—</div></div>
+      <div><div class="lbl">Connected For</div><div class="pv" id="pool-uptime">—</div></div>
+    </div>
   </div>
 
   <!-- Fan control (only shown when the appliance fan daemon reports in) -->
@@ -252,6 +278,29 @@ function rainFrame(now){
   requestAnimationFrame(rainFrame);
 }
 requestAnimationFrame(rainFrame);
+
+// ── upstream pool (stratum-derived; proxy mode only) ──
+async function pollPools(){
+  try{
+    const arr=await (await fetch('/api/pools')).json();
+    if(!arr || !arr.length){ $('pool-panel').style.display='none'; return; }
+    const p=arr[0];
+    $('pool-panel').style.display='block';
+    $('pool-url').textContent=p.url||'—';
+    $('pool-badge').className='badge'+(p.connected?' on':'');
+    $('pool-state').textContent=(p.connected?'connected':'offline')+(p.mode?(' · '+p.mode):'');
+    $('pool-conns').textContent=p.connections||0;
+    $('pool-diff').textContent=fDiff(p.difficulty||0);
+    $('pool-ping').textContent=(p.pingMs>0)?Math.round(p.pingMs)+'ms':'—';
+    $('pool-acc').textContent=fNum(p.accepted||0);
+    $('pool-acc-sub').innerHTML=((p.acceptRate>0)?p.acceptRate.toFixed(1)+'% · ':'')+'<span class="'+(((p.rejected||0)>0)?'rej':'')+'">'+fNum(p.rejected||0)+' rej</span>';
+    $('pool-height').textContent=(p.blockHeight>0)?Math.round(p.blockHeight).toLocaleString():'—';
+    const age=p.lastBlockAgeSec;
+    $('pool-lastblk').textContent=(age>=0)?(age<2?'just now':fDur(age)+' ago'):'—';
+    $('pool-netdiff').textContent=fDiff(p.networkDifficulty||0);
+    $('pool-uptime').textContent=(p.uptimeSec>0)?fDur(p.uptimeSec):'—';
+  }catch(e){ $('pool-panel').style.display='none'; }
+}
 
 // ── fleet overview (power from miners' AxeOS APIs) ──
 async function pollFleet(){
@@ -408,8 +457,8 @@ async function drawChart(){
 $('periods').addEventListener('click',e=>{ const b=e.target.closest('button'); if(!b)return; period=b.dataset.p; [...$('periods').children].forEach(x=>x.classList.toggle('sel',x===b)); drawChart(); });
 window.addEventListener('resize',()=>drawChart());
 
-poll(); pollMiners(); pollFleet(); pollFan(); drawChart();
-setInterval(poll,2000); setInterval(pollMiners,4000); setInterval(pollFleet,30000); setInterval(pollFan,3000); setInterval(drawChart,20000);
+poll(); pollMiners(); pollFleet(); pollPools(); pollFan(); drawChart();
+setInterval(poll,2000); setInterval(pollMiners,4000); setInterval(pollFleet,30000); setInterval(pollPools,4000); setInterval(pollFan,3000); setInterval(drawChart,20000);
 </script>
 </body>
 </html>

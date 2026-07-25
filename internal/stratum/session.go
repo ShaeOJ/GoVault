@@ -351,7 +351,7 @@ func (s *Session) wireDedicatedUpstream(uc *upstream.Client) {
 		s.sendNotify(job, params.CleanJobs)
 		s.server.log.Debugf("stratum", "[per-miner] job %s → %s", params.JobID, s.workerName)
 		if s.server.OnUpstreamJobInfo != nil {
-			s.server.OnUpstreamJobInfo(params.NBits, params.CleanJobs)
+			s.server.OnUpstreamJobInfo(params.NBits, params.Coinbase1, params.CleanJobs)
 		}
 	}
 	uc.OnDifficulty = func(diff float64) { s.setProxyDiff(diff) }
@@ -526,7 +526,7 @@ func (s *Session) handleAuthorize(req *Request) {
 			s.server.log.Debugf("stratum", "[per-miner] job %s → %s", params.JobID, s.workerName)
 			// Surface network diff/height to the engine (no shared upstream here).
 			if s.server.OnUpstreamJobInfo != nil {
-				s.server.OnUpstreamJobInfo(params.NBits, params.CleanJobs)
+				s.server.OnUpstreamJobInfo(params.NBits, params.Coinbase1, params.CleanJobs)
 			}
 		}
 		uc.OnDifficulty = func(diff float64) {
