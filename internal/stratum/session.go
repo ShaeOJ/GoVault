@@ -315,10 +315,61 @@ func (s *Session) handleConfigure(req *Request) {
 	}
 }
 
+// DedicatedUpstream returns this session's per-miner upstream client, if any.
+func (s *Session) DedicatedUpstream() *upstream.Client { return s.dedicatedUpstream }
+
+// wireDedicatedUpstream adopts a per-miner upstream connection: it takes the
+// pool's extranonce1/size and version mask, and wires the job/difficulty/
+// disconnect/reconnect callbacks onto this session. Called at mining.subscribe
+// (OnMinerSubscribe path) so the pool's extranonce is delivered to the miner in
+// its subscribe response — which even set_extranonce-blind firmware honors.
+func (s *Session) wireDedicatedUpstream(uc *upstream.Client) {
+	uc.SetPerMinerMode() // this miner owns the full EN2 space
+	s.dedicatedUpstream = uc
+	s.extranonce1 = uc.Extranonce1()
+	s.localEN2Size = uc.LocalEN2Size()
+
+	// Tighten the session's version-rolling mask to match the upstream's.
+	if uc.VersionRolling() && uc.VersionMask() != "" {
+		if b, err := hex.DecodeString(uc.VersionMask()); err == nil && len(b) == 4 {
+			s.versionMask &= binary.BigEndian.Uint32(b)
+		}
+	} else {
+		s.versionRolling = false
+		s.versionMask = 0
+	}
+
+	uc.OnJob = func(params *upstream.JobParams) {
+		if !s.server.IsRunning() {
+			return
+		}
+		job := s.server.jobManager.RegisterUpstreamJob(
+			params.JobID, params.PrevHash, params.Coinbase1, params.Coinbase2,
+			params.MerkleBranches, params.Version, params.NBits, params.NTime, params.CleanJobs,
+		)
+		s.server.shareValidator.CleanDuplicates(s.server.jobManager.ActiveJobIDs())
+		s.sendNotify(job, params.CleanJobs)
+		s.server.log.Debugf("stratum", "[per-miner] job %s → %s", params.JobID, s.workerName)
+		if s.server.OnUpstreamJobInfo != nil {
+			s.server.OnUpstreamJobInfo(params.NBits, params.CleanJobs)
+		}
+	}
+	uc.OnDifficulty = func(diff float64) { s.setProxyDiff(diff) }
+	uc.OnDisconnect = func(connErr error) {
+		s.server.log.Errorf("stratum", "[per-miner] upstream disconnected for %s: %v — kicking miner", s.workerName, connErr)
+		s.conn.Close()
+	}
+	uc.OnReconnect = func() {
+		s.server.log.Infof("stratum", "[per-miner] upstream reconnected for %s — sending reconnect", s.workerName)
+		s.sendReconnect(3)
+		s.conn.Close()
+	}
+}
+
 func (s *Session) handleSubscribe(req *Request) {
 	s.subscribed = true
 
-	// Parse user-agent from first param (e.g. "cgminer/4.12.1", "ESP-Miner")
+	// Parse user-agent from first param (e.g. "cgminer/4.12.1", "ESP-Miner") (e.g. "cgminer/4.12.1", "ESP-Miner")
 	if len(req.Params) > 0 {
 		var ua string
 		if json.Unmarshal(req.Params[0], &ua) == nil && ua != "" {
@@ -336,6 +387,21 @@ func (s *Session) handleSubscribe(req *Request) {
 		}
 	}
 
+	// Per-miner pass-through: open the dedicated upstream NOW (subscribe, no auth)
+	// so the pool's real extranonce1/size go into this subscribe response. This is
+	// robust for firmware that ignores a later mining.set_extranonce.
+	en2Size := s.server.extranonce2Size
+	if s.server.OnMinerSubscribe != nil {
+		uc, err := s.server.OnMinerSubscribe(s)
+		if err != nil {
+			s.server.log.Errorf("stratum", "miner %s per-miner upstream subscribe failed: %v", s.conn.RemoteAddr(), err)
+			s.sendResponse(req.ID, false, NewError(ErrOther, "upstream unavailable: "+err.Error()))
+			return
+		}
+		s.wireDedicatedUpstream(uc) // sets s.extranonce1 + s.localEN2Size to the pool's
+		en2Size = s.localEN2Size
+	}
+
 	// Response: [[["mining.set_difficulty", sub_id], ["mining.notify", sub_id]], extranonce1, extranonce2_size]
 	subscriptions := [][]string{
 		{"mining.set_difficulty", s.ID},
@@ -345,7 +411,7 @@ func (s *Session) handleSubscribe(req *Request) {
 	result := []interface{}{
 		subscriptions,
 		s.extranonce1,
-		s.server.extranonce2Size,
+		en2Size,
 	}
 
 	s.sendResponse(req.ID, result, nil)
@@ -353,7 +419,7 @@ func (s *Session) handleSubscribe(req *Request) {
 	// Send initial difficulty after subscribe response
 	s.sendSetDifficulty(s.currentDiff)
 
-	s.server.log.Infof("stratum", "miner %s subscribed (extranonce1=%s ua=%s)", s.conn.RemoteAddr(), s.extranonce1, s.userAgent)
+	s.server.log.Infof("stratum", "miner %s subscribed (extranonce1=%s en2size=%d ua=%s)", s.conn.RemoteAddr(), s.extranonce1, en2Size, s.userAgent)
 }
 
 func (s *Session) handleAuthorize(req *Request) {
@@ -369,6 +435,54 @@ func (s *Session) handleAuthorize(req *Request) {
 	}
 
 	password, _ := ParamString(req.Params, 1)
+
+	// Per-miner pass-through where the dedicated upstream was already opened at
+	// subscribe (OnMinerSubscribe): just authorize that connection. The miner
+	// already has the pool's extranonce from its subscribe response.
+	if s.dedicatedUpstream != nil {
+		ok, autherr := true, error(nil)
+		if s.server.OnMinerAuthorizeUpstream != nil {
+			ok, autherr = s.server.OnMinerAuthorizeUpstream(s, workerName, password)
+		}
+		if autherr != nil || !ok {
+			msg := "authorization rejected"
+			if autherr != nil {
+				msg = autherr.Error()
+			}
+			s.sendResponse(req.ID, false, NewError(ErrUnauthorized, msg))
+			s.server.log.Errorf("stratum", "miner %s upstream authorize failed: %v", workerName, autherr)
+			return
+		}
+
+		s.workerName = workerName
+		s.authorized = true
+
+		if upDiff := s.dedicatedUpstream.UpstreamDifficulty(); upDiff > 0 {
+			s.diffMu.Lock()
+			s.currentDiff = upDiff
+			s.diffMu.Unlock()
+			s.sendSetDifficulty(upDiff)
+		}
+
+		s.sendResponse(req.ID, true, nil)
+		s.server.log.Infof("stratum", "miner %s authorized as %s (per-miner upstream, en1=%s en2=%d)",
+			s.conn.RemoteAddr(), workerName, s.extranonce1, s.localEN2Size)
+
+		if s.server.OnMinerConnected != nil {
+			s.server.OnMinerConnected(s.toMinerInfo())
+		}
+
+		if earlyJob := s.dedicatedUpstream.DrainEarlyJob(); earlyJob != nil {
+			job := s.server.jobManager.RegisterUpstreamJob(
+				earlyJob.JobID, earlyJob.PrevHash, earlyJob.Coinbase1, earlyJob.Coinbase2,
+				earlyJob.MerkleBranches, earlyJob.Version, earlyJob.NBits, earlyJob.NTime, earlyJob.CleanJobs,
+			)
+			s.sendNotify(job, earlyJob.CleanJobs)
+		} else {
+			s.server.sendCurrentJob(s)
+		}
+		return
+	}
 
 	// Per-miner pass-through mode: create a dedicated upstream connection for
 	// this miner using their own credentials. They appear on the upstream pool

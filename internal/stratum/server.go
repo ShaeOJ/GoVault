@@ -88,6 +88,17 @@ type Server struct {
 	// appear as an independent connection to the upstream pool.
 	OnMinerConnect func(session *Session, worker, password string) (*upstream.Client, error)
 
+	// OnMinerSubscribe (per-miner pass-through, preferred over OnMinerConnect) is
+	// called at mining.subscribe. It opens+subscribes a dedicated upstream (no
+	// authorize yet) and returns it, so the pool's extranonce1/size can be sent in
+	// the miner's subscribe response — working even for firmware that ignores
+	// mining.set_extranonce. Authorization is deferred to OnMinerAuthorizeUpstream.
+	OnMinerSubscribe func(session *Session) (*upstream.Client, error)
+
+	// OnMinerAuthorizeUpstream authorizes the already-connected dedicated upstream
+	// (from OnMinerSubscribe) with the miner's worker name. Returns (accepted, err).
+	OnMinerAuthorizeUpstream func(session *Session, worker, password string) (bool, error)
+
 	// OnUpstreamJobInfo, when set, is called for each upstream job in per-miner
 	// pass-through mode with the job's nBits and cleanJobs flag, so the engine can
 	// track network difficulty and block height (there's no single shared upstream

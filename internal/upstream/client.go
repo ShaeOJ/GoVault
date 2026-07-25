@@ -107,7 +107,16 @@ func NewClient(url, workerName, password string, log *logger.Logger) *Client {
 }
 
 // Connect dials the upstream pool, subscribes, and authorizes.
-func (c *Client) Connect() error {
+func (c *Client) Connect() error { return c.connectInternal(true) }
+
+// ConnectNoAuth connects and subscribes (learning extranonce1/extranonce2_size
+// and the version mask) but does NOT authorize. Used by per-miner pass-through
+// so the pool's extranonce can be delivered to the miner in ITS subscribe
+// response (rather than a later mining.set_extranonce, which some firmware
+// ignores). Call AuthorizeWorker once the miner authorizes.
+func (c *Client) ConnectNoAuth() error { return c.connectInternal(false) }
+
+func (c *Client) connectInternal(doAuth bool) error {
 	addr := c.url
 
 	conn, err := net.DialTimeout("tcp", addr, 15*time.Second)
@@ -139,14 +148,16 @@ func (c *Client) Connect() error {
 		return fmt.Errorf("subscribe: %w", err)
 	}
 
-	// Authorize
-	if err := c.authorize(); err != nil {
-		c.closeConn()
-		return fmt.Errorf("authorize: %w", err)
+	// Authorize (skipped in ConnectNoAuth — caller authorizes later)
+	if doAuth {
+		if err := c.authorize(); err != nil {
+			c.closeConn()
+			return fmt.Errorf("authorize: %w", err)
+		}
 	}
 
-	c.log.Infof("upstream", "connected to %s (en1=%s en2_size=%d local_en2=%d vroll=%v)",
-		addr, c.extranonce1, c.extranonce2Size, c.localEN2Size, c.versionRolling)
+	c.log.Infof("upstream", "connected to %s (en1=%s en2_size=%d local_en2=%d vroll=%v auth=%v)",
+		addr, c.extranonce1, c.extranonce2Size, c.localEN2Size, c.versionRolling, doAuth)
 
 	// Start reconnect watcher
 	c.wg.Add(1)

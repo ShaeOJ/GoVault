@@ -406,21 +406,35 @@ func (e *Engine) startProxyPassThrough() error {
 	// own rolling mask on connect.
 	srv.SetPerMinerMode(0)
 
-	// OnMinerConnect: called when a miner authorizes. Open a dedicated upstream
-	// connection for this miner using its own worker/password so the pool tracks
-	// it as its own worker. The stratum session drives share submission through
-	// the returned client and calls SetPerMinerMode on it.
-	srv.OnMinerConnect = func(session *stratum.Session, worker, password string) (*upstream.Client, error) {
-		if password == "" {
-			password = "x"
+	// OnMinerSubscribe: when a miner subscribes, open its dedicated upstream and
+	// subscribe (no auth yet) so the POOL's extranonce1/size are delivered in the
+	// miner's subscribe response. This is what makes set_extranonce-blind firmware
+	// (e.g. LuckyMiner v1.0.0) work in pass-through — they never see a late
+	// mining.set_extranonce, they get the real values up front. Password/worker
+	// aren't known yet, so authorize with the configured wallet as a placeholder;
+	// OnMinerAuthorizeUpstream re-authorizes with the miner's own worker.
+	pw := p.Password
+	if pw == "" {
+		pw = "x"
+	}
+	srv.OnMinerSubscribe = func(session *stratum.Session) (*upstream.Client, error) {
+		uc := upstream.NewClient(p.URL, p.WorkerName, pw, e.log)
+		if err := uc.ConnectNoAuth(); err != nil {
+			return nil, fmt.Errorf("upstream subscribe: %w", err)
 		}
-		// Pool-facing username: attach the configured wallet (Proxy.WorkerName) and
-		// keep the miner's own name as the sub-worker, so the pool credits the
-		// wallet AND tracks each device separately — without every miner needing
-		// the wallet baked into its own config. Most pools (e.g. letsmine.it)
-		// require the payout address as the username, so a bare worker name is
-		// rejected as "Invalid credentials". If the miner already sent a
-		// wallet-qualified name, pass it through unchanged.
+		return uc, nil
+	}
+
+	// OnMinerAuthorizeUpstream: authorize the already-subscribed upstream with the
+	// pool-facing username <wallet>.<miner-worker>, so the pool credits the
+	// configured wallet AND tracks each device separately — without the wallet
+	// needing to be baked into each miner's config. Names already wallet-qualified
+	// pass through unchanged.
+	srv.OnMinerAuthorizeUpstream = func(session *stratum.Session, worker, password string) (bool, error) {
+		uc := session.DedicatedUpstream()
+		if uc == nil {
+			return false, fmt.Errorf("no dedicated upstream")
+		}
 		upWorker := worker
 		if wallet := p.WorkerName; wallet != "" && !strings.HasPrefix(worker, wallet) {
 			sub := strings.TrimSpace(worker)
@@ -429,16 +443,16 @@ func (e *Engine) startProxyPassThrough() error {
 			}
 			upWorker = wallet + "." + sub
 		}
-		uc := upstream.NewClient(p.URL, upWorker, password, e.log)
-		if err := uc.Connect(); err != nil {
-			return nil, fmt.Errorf("upstream connect for %s (as %s): %w", worker, upWorker, err)
+		wpass := password
+		if wpass == "" {
+			wpass = pw
 		}
-		e.log.Infof("engine", "miner %s → upstream worker %s (en1=%s en2=%d vroll=%v)",
-			worker, upWorker, uc.Extranonce1(), uc.LocalEN2Size(), uc.VersionRolling())
-		// NB: don't set uc.OnJob/OnDifficulty here — the per-miner session
-		// overwrites them. Network diff/height come from the server-level
-		// OnUpstreamJobInfo hook wired below (fires from every per-miner job).
-		return uc, nil
+		ok, err := uc.AuthorizeWorker(upWorker, wpass)
+		if err == nil && ok {
+			e.log.Infof("engine", "miner %s → upstream worker %s (en1=%s en2=%d)",
+				worker, upWorker, uc.Extranonce1(), uc.LocalEN2Size())
+		}
+		return ok, err
 	}
 
 	// Per-miner jobs are handled inside each session, so the engine learns the
