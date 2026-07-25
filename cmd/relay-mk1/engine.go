@@ -414,12 +414,27 @@ func (e *Engine) startProxyPassThrough() error {
 		if password == "" {
 			password = "x"
 		}
-		uc := upstream.NewClient(p.URL, worker, password, e.log)
-		if err := uc.Connect(); err != nil {
-			return nil, fmt.Errorf("upstream connect for %s: %w", worker, err)
+		// Pool-facing username: attach the configured wallet (Proxy.WorkerName) and
+		// keep the miner's own name as the sub-worker, so the pool credits the
+		// wallet AND tracks each device separately — without every miner needing
+		// the wallet baked into its own config. Most pools (e.g. letsmine.it)
+		// require the payout address as the username, so a bare worker name is
+		// rejected as "Invalid credentials". If the miner already sent a
+		// wallet-qualified name, pass it through unchanged.
+		upWorker := worker
+		if wallet := p.WorkerName; wallet != "" && !strings.HasPrefix(worker, wallet) {
+			sub := strings.TrimSpace(worker)
+			if sub == "" {
+				sub = "0"
+			}
+			upWorker = wallet + "." + sub
 		}
-		e.log.Infof("engine", "miner %s connected upstream (en1=%s en2=%d vroll=%v)",
-			worker, uc.Extranonce1(), uc.LocalEN2Size(), uc.VersionRolling())
+		uc := upstream.NewClient(p.URL, upWorker, password, e.log)
+		if err := uc.Connect(); err != nil {
+			return nil, fmt.Errorf("upstream connect for %s (as %s): %w", worker, upWorker, err)
+		}
+		e.log.Infof("engine", "miner %s → upstream worker %s (en1=%s en2=%d vroll=%v)",
+			worker, upWorker, uc.Extranonce1(), uc.LocalEN2Size(), uc.VersionRolling())
 
 		// Track network diff/height from this miner's job notifications.
 		orig := uc.OnJob
