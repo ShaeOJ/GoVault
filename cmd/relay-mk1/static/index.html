@@ -202,37 +202,44 @@ function cssv(n,f){ const v=getComputedStyle(document.body).getPropertyValue(n).
 // spawns a bright glowing burst. Colour is read from the active theme's
 // --accent-rgb every frame, so switching themes recolours it live. ──
 const rain=$('rain'), rctx=rain.getContext('2d');
-let rw=0,rh=0,rfs=14,rcols=0,rdrops=[],rbursts=[];
+const RGLYPH='0123456789ABCDEF';
+const rrand=(a,b)=>a+Math.random()*(b-a);
+const rglyph=()=>RGLYPH[Math.random()*16|0];
+let rw=0,rh=0,rfs=14,rrows=0,rcols=0,rcol=[],rbursts=[];
+function newCol(spread){ return { y: spread?rrand(-rrows,rrows):rrand(-6,-1), sp:rrand(0.15,0.32), g:rglyph(), t:rrand(0,10) }; } // sp = rows/frame @60fps
 function rainResize(){
   rw=rain.width=document.documentElement.clientWidth;
   rh=rain.height=window.innerHeight;
   rfs=Math.max(12,Math.round(rw/95));
-  rcols=Math.ceil(rw/rfs);
-  rdrops=Array.from({length:rcols},()=>Math.random()*rh/rfs);
+  rcols=Math.ceil(rw/rfs); rrows=Math.ceil(rh/rfs)+1;
+  rcol=Array.from({length:rcols},()=>newCol(true));
 }
 window.addEventListener('resize',rainResize); rainResize();
-const RGLYPH='0123456789ABCDEF';
-window.hashBurst=function(n){ n=Math.max(1,Math.min(n|0,48)); for(let k=0;k<n;k++) rbursts.push({c:Math.random()*rcols|0,y:0,life:1}); };
-function rainFrame(){
-  rctx.fillStyle='rgba(0,0,0,0.09)';          // trail fade
+window.hashBurst=function(n){ n=Math.max(1,Math.min(n|0,40)); for(let k=0;k<n;k++) rbursts.push({c:Math.random()*rcols|0,y:rrand(-2,0),sp:rrand(0.28,0.46),g:rglyph(),life:1,t:0}); };
+let rlast=performance.now();
+function rainFrame(now){
+  const dt=Math.min(3,(now-rlast)/16.67); rlast=now;  // frames elapsed (cap after tab-switch) → framerate-independent
+  rctx.fillStyle='rgba(0,0,0,0.06)';                  // gentle trail fade (longer, smoother tails)
   rctx.fillRect(0,0,rw,rh);
-  const rgb=cssv('--accent-rgb','57,255,20');  // live theme colour
+  const rgb=cssv('--accent-rgb','57,255,20');          // live theme colour
   rctx.font=rfs+'px '+cssv('--mono','monospace');
   rctx.textBaseline='top';
-  for(let i=0;i<rcols;i++){                     // ambient (sparse, dim)
-    if(Math.random()<0.55){
-      rctx.fillStyle='rgba('+rgb+',0.13)';
-      rctx.fillText(RGLYPH[Math.random()*16|0], i*rfs, rdrops[i]*rfs);
-    }
-    rdrops[i]++;
-    if(rdrops[i]*rfs>rh && Math.random()>0.975) rdrops[i]=0;
+  rctx.shadowBlur=0;
+  for(let i=0;i<rcols;i++){                             // ambient: each column a smooth falling head
+    const c=rcol[i];
+    rctx.fillStyle='rgba('+rgb+',0.14)';
+    rctx.fillText(c.g, i*rfs, c.y*rfs);
+    c.y+=c.sp*dt; c.t+=dt;
+    if(c.t>rrand(7,15)){ c.g=rglyph(); c.t=0; }         // swap glyph occasionally, not every frame
+    if(c.y>rrows) rcol[i]=newCol(false);
   }
-  if(rbursts.length){                           // accepted-share bursts (bright)
+  if(rbursts.length){                                  // accepted-share bursts (bright, glowing)
     rctx.shadowColor='rgba('+rgb+',0.9)'; rctx.shadowBlur=8;
     for(const b of rbursts){
       rctx.fillStyle='rgba('+rgb+','+Math.max(0,Math.min(1,b.life))+')';
-      rctx.fillText(RGLYPH[Math.random()*16|0], b.c*rfs, b.y*rfs);
-      b.y++; b.life-=0.018;
+      rctx.fillText(b.g, b.c*rfs, b.y*rfs);
+      b.y+=b.sp*dt; b.life-=0.011*dt; b.t+=dt;
+      if(b.t>4){ b.g=rglyph(); b.t=0; }
     }
     rctx.shadowBlur=0;
     rbursts=rbursts.filter(b=>b.life>0 && b.y*rfs<rh+rfs);
