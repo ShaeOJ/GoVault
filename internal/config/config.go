@@ -29,6 +29,12 @@ type ProxyConfig struct {
 	URL        string `json:"url"`
 	WorkerName string `json:"workerName"`
 	Password   string `json:"password"`
+	// PassThrough, when true, gives each connected miner its OWN upstream
+	// connection authorized with the miner's own worker name (so the pool sees
+	// every worker separately and vardiffs each device individually). When false
+	// (default) the relay runs shared mode: one upstream connection under
+	// WorkerName, all miners aggregated as a single worker on the pool.
+	PassThrough bool `json:"passThrough,omitempty"`
 }
 
 type NodeConfig struct {
@@ -189,7 +195,9 @@ func (c *Config) Validate() error {
 		if c.Proxy.URL == "" {
 			return fmt.Errorf("proxy mode requires a pool URL")
 		}
-		if c.Proxy.WorkerName == "" {
+		// In pass-through mode each miner authorizes with its own worker name, so
+		// a top-level worker isn't required. Shared mode needs one.
+		if c.Proxy.WorkerName == "" && !c.Proxy.PassThrough {
 			return fmt.Errorf("proxy mode requires a worker name")
 		}
 	} else {

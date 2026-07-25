@@ -63,8 +63,9 @@ func (h *handlers) getConfig(w http.ResponseWriter, r *http.Request) {
 			"useSSL": cfg.Node.UseSSL,
 		},
 		"proxy": map[string]interface{}{
-			"url":        cfg.Proxy.URL,
-			"workerName": cfg.Proxy.WorkerName,
+			"url":         cfg.Proxy.URL,
+			"workerName":  cfg.Proxy.WorkerName,
+			"passThrough": cfg.Proxy.PassThrough,
 		},
 		"app": map[string]interface{}{
 			"logLevel":        cfg.App.LogLevel,

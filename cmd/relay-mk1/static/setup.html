@@ -5,7 +5,15 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>ReTek Relay Unit Mk.I — Setup</title>
 <style>
-  :root{--bg:#0e1512;--panel:#131d18;--panel2:#0b120e;--edge:#24352b;--text:#d7e6db;--dim:#7d968a;--accent:#4fd08a;--accent2:#2f8f5f;--err:#ff6b6b;--ok:#4fd08a;}
+  /* themes (shared with the dashboard; follows localStorage['relay-theme']) */
+  body,body.nuclear   { --bg:#0a0e0a; --bg2:#0f1a0f; --card:#121f12; --cardh:#1a2f1a; --accent:#39ff14; --accent-rgb:57,255,20;  --gold:#ffe600; --err:#ff3333; --text:#e0ffe0; --dim:#7a9f7a; --border:rgba(57,255,20,0.12); }
+  body.tron           { --bg:#0a0a0f; --bg2:#0f0f1a; --card:#12121f; --cardh:#1a1a2f; --accent:#00d4ff; --accent-rgb:0,212,255;   --gold:#ff6600; --err:#ff3355; --text:#e0f0ff; --dim:#7a8faf; --border:rgba(0,212,255,0.12); }
+  body.vault-tec      { --bg:#0d0f08; --bg2:#141a0e; --card:#1a1f12; --cardh:#252d1a; --accent:#f5a623; --accent-rgb:245,166,35;  --gold:#00ff41; --err:#ff3333; --text:#fff5e0; --dim:#9f9070; --border:rgba(245,166,35,0.12); }
+  body.bitcoin        { --bg:#0f0c08; --bg2:#1a1408; --card:#1f1a0f; --cardh:#2f2518; --accent:#f7931a; --accent-rgb:247,147,26;  --gold:#ffd700; --err:#ff4444; --text:#fff0d0; --dim:#9f8a60; --border:rgba(247,147,26,0.12); }
+  body.monochrome     { --bg:#080808; --bg2:#111111; --card:#161616; --cardh:#1e1e1e; --accent:#cccccc; --accent-rgb:204,204,204; --gold:#ddaa00; --err:#ee4444; --text:#e0e0e0; --dim:#707070; --border:rgba(204,204,204,0.12); }
+  body.steampunk      { --bg:#0c0a08; --bg2:#141210; --card:#1a1714; --cardh:#252118; --accent:#cd7f32; --accent-rgb:205,127,50;  --gold:#b08030; --err:#a04030; --text:#e8dcc8; --dim:#8a7e6a; --border:rgba(205,127,50,0.12); }
+  /* map setup's palette names onto the shared theme vars */
+  body{ --panel:var(--card); --panel2:var(--bg2); --edge:var(--border); --accent2:var(--accent); --ok:var(--accent); }
   *{box-sizing:border-box}
   body{margin:0;background:var(--bg);color:var(--text);font:14px/1.5 ui-monospace,"Cascadia Code",Menlo,Consolas,monospace}
   .wrap{max-width:680px;margin:0 auto;padding:28px 20px 60px}
@@ -23,13 +31,15 @@
   .row{display:flex;gap:12px}.row>*{flex:1}
   .modes{display:flex;gap:10px}
   .mode{flex:1;border:1px solid var(--edge);border-radius:8px;padding:12px;cursor:pointer;text-align:center;background:var(--panel2)}
-  .mode.on{border-color:var(--accent);background:#12241a}
+  .mode.on{border-color:var(--accent);background:rgba(var(--accent-rgb),.12)}
   .mode .t{font-weight:700;color:var(--text)}.mode .d{font-size:11px;color:var(--dim);margin-top:3px}
   .hint{font-size:11px;color:var(--dim);margin-top:4px}
   code{color:var(--accent)}
   .chk{display:flex;align-items:center;gap:8px}.chk input{width:auto}
-  .btn{background:var(--accent);color:#06120b;border:none;border-radius:8px;padding:11px 16px;font:inherit;font-weight:700;cursor:pointer;width:100%}
-  .btn:hover{background:#5fe09a}.btn:disabled{opacity:.5;cursor:default}
+  .btn{background:var(--accent);color:var(--bg);border:none;border-radius:8px;padding:11px 16px;font:inherit;font-weight:700;cursor:pointer;width:100%}
+  .btn:hover{filter:brightness(1.15)}.btn:disabled{opacity:.5;cursor:default}
+  select.theme-sel{background:var(--card);color:var(--dim);border:1px solid var(--border);border-radius:8px;padding:5px 8px;font:inherit;font-size:12px;cursor:pointer;margin-left:auto}
+  select.theme-sel:hover{color:var(--text);border-color:rgba(var(--accent-rgb),.4)}
   .btn-2{background:transparent;border:1px solid var(--edge);color:var(--dim);padding:8px 12px;border-radius:7px;cursor:pointer;font:inherit}
   .btn-2:hover{border-color:var(--accent2);color:var(--text)}
   .msg{padding:10px 12px;border-radius:7px;margin:0 0 14px;font-size:13px;display:none}
@@ -40,7 +50,11 @@
 </head>
 <body>
 <div class="wrap">
-  <div class="brand"><span class="co">RETEK INC.</span><span class="unit">SALVAGE &amp; RECLAMATION DIV. · RELAY UNIT MK.I</span></div>
+  <div class="brand"><span class="co">RETEK INC.</span><span class="unit">SALVAGE &amp; RECLAMATION DIV. · RELAY UNIT MK.I</span>
+    <select class="theme-sel" id="theme" title="Theme">
+      <option value="nuclear">Nuclear</option><option value="tron">Tron</option><option value="vault-tec">Vault-Tec</option><option value="bitcoin">Bitcoin</option><option value="monochrome">Monochrome</option><option value="steampunk">Steampunk</option>
+    </select>
+  </div>
   <h1>Relay Setup</h1>
   <div class="sub">Configure this relay to <b>solo</b>-mine against your own node, or <b>proxy</b> your miners to an upstream pool. Saved to the SD card — survives reboots. Changing a non-mining setting (e.g. electricity rate) won't disconnect miners.</div>
   <a id="back-link" href="/" style="display:none;color:var(--accent);font-size:12px;text-decoration:none;margin-bottom:14px">← Back to dashboard</a>
@@ -90,6 +104,13 @@
     </div>
     <button class="btn-2" type="button" onclick="testUpstream()">Test upstream connection</button>
     <span id="up-res" class="hint"></span>
+    <div class="field" style="margin-top:12px">
+      <label style="display:flex;align-items:center;gap:8px;cursor:pointer">
+        <input type="checkbox" id="ppassthru" style="width:auto">
+        <span>Per-miner pass-through</span>
+      </label>
+      <div class="hint">Off (default): all miners share one upstream connection under the worker above — the pool sees a single worker. On: each miner gets its own upstream connection with its own worker name, so the pool tracks every worker separately and sets difficulty per device.</div>
+    </div>
   </div>
 
   <button class="btn" id="save" onclick="save()">Save &amp; Start Mining</button>
@@ -98,6 +119,16 @@
 <script>
 let baseline = null;
 let mode = 'solo';
+
+// ── theme (shared with the dashboard via localStorage['relay-theme']) ──
+(function(){
+  const sel=document.getElementById('theme');
+  const apply=t=>{ document.body.className=t; };
+  const t=localStorage.getItem('relay-theme')||'nuclear';
+  if(sel) sel.value=t;
+  apply(t);
+  if(sel) sel.addEventListener('change',()=>{ apply(sel.value); localStorage.setItem('relay-theme',sel.value); });
+})();
 
 function msg(t, ok){ const m=document.getElementById('msg'); m.textContent=t; m.className='msg '+(ok?'ok':'err'); }
 function clearMsg(){ document.getElementById('msg').className='msg'; }
@@ -127,7 +158,7 @@ async function load(){
     if(cfg.mining){ if(cfg.mining.coin) document.getElementById('coin').value=cfg.mining.coin; document.getElementById('payout').value=cfg.mining.payoutAddress||''; }
     if(cfg.stratum){ const p=cfg.stratum.port||3333; document.getElementById('sport').value=p; document.getElementById('surl').textContent='stratum+tcp://<this-ip>:'+p; }
     if(cfg.node){ document.getElementById('nhost').value=cfg.node.host||'127.0.0.1'; document.getElementById('nport').value=cfg.node.port||8332; document.getElementById('nuser').value=cfg.node.username||''; document.getElementById('nssl').checked=!!cfg.node.useSSL; }
-    if(cfg.proxy){ document.getElementById('purl').value=cfg.proxy.url||''; document.getElementById('pworker').value=cfg.proxy.workerName||''; }
+    if(cfg.proxy){ document.getElementById('purl').value=cfg.proxy.url||''; document.getElementById('pworker').value=cfg.proxy.workerName||''; document.getElementById('ppassthru').checked=!!cfg.proxy.passThrough; }
     if(cfg.app&&cfg.app.electricityCost!=null){ document.getElementById('ecost').value=cfg.app.electricityCost; }
   } catch(e){ setMode('solo'); }
   fetch('/api/configured').then(r=>r.json()).then(j=>{ if(j&&j.configured) document.getElementById('back-link').style.display='inline-block'; }).catch(()=>{});
@@ -157,7 +188,7 @@ async function save(){
   cfg.mining = cfg.mining||{}; cfg.mining.coin=document.getElementById('coin').value; cfg.mining.payoutAddress=document.getElementById('payout').value.trim();
   cfg.stratum = cfg.stratum||{}; cfg.stratum.port=+document.getElementById('sport').value; cfg.stratum.autoStart=true;
   cfg.node = nodeBody();
-  cfg.proxy = {url:document.getElementById('purl').value.trim(), workerName:document.getElementById('pworker').value.trim(), password:document.getElementById('ppass').value};
+  cfg.proxy = {url:document.getElementById('purl').value.trim(), workerName:document.getElementById('pworker').value.trim(), password:document.getElementById('ppass').value, passThrough:document.getElementById('ppassthru').checked};
   cfg.app = cfg.app||{}; cfg.app.electricityCost = parseFloat(document.getElementById('ecost').value)||0;
   try{
     const res = await fetch('/api/config',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(cfg)});

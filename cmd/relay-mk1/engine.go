@@ -301,6 +301,9 @@ func (e *Engine) startProxy() error {
 	if p.URL == "" {
 		return fmt.Errorf("proxy mode: upstream URL not configured")
 	}
+	if p.PassThrough {
+		return e.startProxyPassThrough()
+	}
 	if p.WorkerName == "" {
 		return fmt.Errorf("proxy mode: worker/wallet not configured")
 	}
@@ -382,6 +385,64 @@ func (e *Engine) startProxy() error {
 		e.updateNetworkDiffFromNBits(nbits)
 	}
 	e.log.Info("engine", "stratum started (proxy / shared)")
+	return nil
+}
+
+// startProxyPassThrough runs true per-miner pass-through: each connecting miner
+// gets its OWN upstream connection authorized with the miner's own worker name,
+// so the pool sees every worker separately and vardiffs each device. Contrast
+// startProxy (shared), where all miners are aggregated under one pool worker.
+func (e *Engine) startProxyPassThrough() error {
+	p := e.cfg.Proxy
+	e.log.Infof("engine", "starting stratum (proxy, pass-through) → %s (per-miner worker identity)", p.URL)
+
+	coinDef := coin.Get(e.cfg.Mining.Coin)
+	srv := stratum.NewServer(&e.cfg.Stratum, &e.cfg.Mining, &e.cfg.Vardiff, nil, e.log, coinDef)
+	e.svcMu.Lock()
+	e.stratum = srv
+	e.svcMu.Unlock()
+
+	// 0 = default version mask (1fffe000); the per-miner upstream negotiates its
+	// own rolling mask on connect.
+	srv.SetPerMinerMode(0)
+
+	// OnMinerConnect: called when a miner authorizes. Open a dedicated upstream
+	// connection for this miner using its own worker/password so the pool tracks
+	// it as its own worker. The stratum session drives share submission through
+	// the returned client and calls SetPerMinerMode on it.
+	srv.OnMinerConnect = func(session *stratum.Session, worker, password string) (*upstream.Client, error) {
+		if password == "" {
+			password = "x"
+		}
+		uc := upstream.NewClient(p.URL, worker, password, e.log)
+		if err := uc.Connect(); err != nil {
+			return nil, fmt.Errorf("upstream connect for %s: %w", worker, err)
+		}
+		e.log.Infof("engine", "miner %s connected upstream (en1=%s en2=%d vroll=%v)",
+			worker, uc.Extranonce1(), uc.LocalEN2Size(), uc.VersionRolling())
+
+		// Track network diff/height from this miner's job notifications.
+		orig := uc.OnJob
+		uc.OnJob = func(params *upstream.JobParams) {
+			e.updateNetworkDiffFromNBits(params.NBits)
+			if params.CleanJobs {
+				e.netMu.Lock()
+				e.blockHeight++
+				e.netMu.Unlock()
+			}
+			if orig != nil {
+				orig(params)
+			}
+		}
+		return uc, nil
+	}
+
+	e.wireStratumCallbacks()
+
+	if err := srv.Start(); err != nil {
+		return err
+	}
+	e.log.Info("engine", "stratum started (proxy / pass-through)")
 	return nil
 }
 
