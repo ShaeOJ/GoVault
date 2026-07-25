@@ -219,8 +219,13 @@ window.hashBurst=function(n){ n=Math.max(1,Math.min(n|0,40)); for(let k=0;k<n;k+
 let rlast=performance.now();
 function rainFrame(now){
   const dt=Math.min(3,(now-rlast)/16.67); rlast=now;  // frames elapsed (cap after tab-switch) → framerate-independent
-  rctx.fillStyle='rgba(0,0,0,0.06)';                  // gentle trail fade (longer, smoother tails)
+  // Fade trails by ERASING alpha (destination-out) rather than painting black —
+  // keeps the canvas transparent so the themed bg shows through with no dark
+  // streak build-up. Erase amount scales with dt so trail length is steady.
+  rctx.globalCompositeOperation='destination-out';
+  rctx.fillStyle='rgba(0,0,0,'+Math.min(0.5,0.10*dt)+')';
   rctx.fillRect(0,0,rw,rh);
+  rctx.globalCompositeOperation='source-over';
   const rgb=cssv('--accent-rgb','57,255,20');          // live theme colour
   rctx.font=rfs+'px '+cssv('--mono','monospace');
   rctx.textBaseline='top';
