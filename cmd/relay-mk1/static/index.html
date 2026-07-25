@@ -225,20 +225,20 @@ function rainFrame(now){
   rctx.font=rfs+'px '+cssv('--mono','monospace');
   rctx.textBaseline='top';
   rctx.shadowBlur=0;
-  for(let i=0;i<rcols;i++){                             // ambient: each column a smooth falling head
+  for(let i=0;i<rcols;i++){                             // ambient: faint, barely-there falling heads
     const c=rcol[i];
-    rctx.fillStyle='rgba('+rgb+',0.14)';
+    rctx.fillStyle='rgba('+rgb+',0.06)';
     rctx.fillText(c.g, i*rfs, c.y*rfs);
     c.y+=c.sp*dt; c.t+=dt;
     if(c.t>rrand(7,15)){ c.g=rglyph(); c.t=0; }         // swap glyph occasionally, not every frame
     if(c.y>rrows) rcol[i]=newCol(false);
   }
-  if(rbursts.length){                                  // accepted-share bursts (bright, glowing)
-    rctx.shadowColor='rgba('+rgb+',0.9)'; rctx.shadowBlur=8;
+  if(rbursts.length){                                  // accepted-share bursts: bright + glowing, linger
+    rctx.shadowColor='rgba('+rgb+',1)'; rctx.shadowBlur=11;
     for(const b of rbursts){
-      rctx.fillStyle='rgba('+rgb+','+Math.max(0,Math.min(1,b.life))+')';
+      rctx.fillStyle='rgba('+rgb+','+Math.max(0,Math.min(1,b.life*1.6))+')'; // hold near full then fade
       rctx.fillText(b.g, b.c*rfs, b.y*rfs);
-      b.y+=b.sp*dt; b.life-=0.011*dt; b.t+=dt;
+      b.y+=b.sp*dt; b.life-=0.008*dt; b.t+=dt;
       if(b.t>4){ b.g=rglyph(); b.t=0; }
     }
     rctx.shadowBlur=0;
