@@ -114,6 +114,37 @@
     </div>
   </div>
 
+  <!-- Upstream pool (stratum-derived; proxy mode only) -->
+  <div class="panel" id="pool-panel" style="display:none">
+    <div class="chart-head">
+      <h3 style="margin:0">Upstream Pool</h3>
+      <span class="badge" id="pool-badge"><span class="dot" id="pool-dot"></span><span id="pool-state">—</span></span>
+    </div>
+    <div class="poolurl" id="pool-url"></div>
+    <div class="poolgrid">
+      <div><div class="lbl">Connections</div><div class="pv" id="pool-conns">—</div></div>
+      <div><div class="lbl">Pool Difficulty</div><div class="pv" id="pool-diff">—</div></div>
+      <div><div class="lbl">Ping</div><div class="pv" id="pool-ping">—</div></div>
+      <div><div class="lbl">Pool Accepted</div><div class="pv" id="pool-acc">—</div><div class="pvs" id="pool-acc-sub"></div></div>
+      <div><div class="lbl">Block Height</div><div class="pv" id="pool-height">—</div></div>
+      <div><div class="lbl">Last Block</div><div class="pv" id="pool-lastblk">—</div></div>
+      <div><div class="lbl">Network Diff</div><div class="pv" id="pool-netdiff">—</div></div>
+      <div><div class="lbl">Connected For</div><div class="pv" id="pool-uptime">—</div></div>
+    </div>
+  </div>
+
+  <!-- Chart (hashrate over time) -->
+  <div class="panel">
+    <div class="chart-head">
+      <h3 style="margin:0">Hashrate Over Time</h3>
+      <div class="periods" id="periods">
+        <button data-p="1h" class="sel">1h</button><button data-p="6h">6h</button><button data-p="24h">24h</button><button data-p="7d">7d</button>
+      </div>
+    </div>
+    <canvas id="chart"></canvas>
+    <div class="chart-empty" id="chart-empty">Waiting for hashrate data…</div>
+  </div>
+
   <!-- Row 1 -->
   <div class="grid">
     <div class="card"><div class="bar" style="background:var(--accent)"></div><div class="lbl">Total Hashrate</div><div class="val" id="c-hr" style="color:var(--accent);text-shadow:0 0 5px rgba(var(--accent-rgb),.35)">0 H/s</div><div class="sub">all connected miners</div></div>
@@ -137,25 +168,6 @@
     <div class="card"><div class="bar" style="background:var(--dim)"></div><div class="lbl">Est. Daily Cost</div><div class="val" id="f-cost" style="color:var(--text)">—</div><div class="sub" id="f-cost-sub">set $/kWh in setup</div></div>
   </div>
 
-  <!-- Upstream pool (stratum-derived; proxy mode only) -->
-  <div class="panel" id="pool-panel" style="display:none">
-    <div class="chart-head">
-      <h3 style="margin:0">Upstream Pool</h3>
-      <span class="badge" id="pool-badge"><span class="dot" id="pool-dot"></span><span id="pool-state">—</span></span>
-    </div>
-    <div class="poolurl" id="pool-url"></div>
-    <div class="poolgrid">
-      <div><div class="lbl">Connections</div><div class="pv" id="pool-conns">—</div></div>
-      <div><div class="lbl">Pool Difficulty</div><div class="pv" id="pool-diff">—</div></div>
-      <div><div class="lbl">Ping</div><div class="pv" id="pool-ping">—</div></div>
-      <div><div class="lbl">Pool Accepted</div><div class="pv" id="pool-acc">—</div><div class="pvs" id="pool-acc-sub"></div></div>
-      <div><div class="lbl">Block Height</div><div class="pv" id="pool-height">—</div></div>
-      <div><div class="lbl">Last Block</div><div class="pv" id="pool-lastblk">—</div></div>
-      <div><div class="lbl">Network Diff</div><div class="pv" id="pool-netdiff">—</div></div>
-      <div><div class="lbl">Connected For</div><div class="pv" id="pool-uptime">—</div></div>
-    </div>
-  </div>
-
   <!-- Fan control (only shown when the appliance fan daemon reports in) -->
   <div class="panel" id="fan-panel" style="display:none">
     <div class="chart-head">
@@ -173,18 +185,6 @@
         <input type="range" id="fan-slider" min="0" max="100" value="50" style="width:100%">
       </div>
     </div>
-  </div>
-
-  <!-- Chart -->
-  <div class="panel">
-    <div class="chart-head">
-      <h3 style="margin:0">Hashrate Over Time</h3>
-      <div class="periods" id="periods">
-        <button data-p="1h" class="sel">1h</button><button data-p="6h">6h</button><button data-p="24h">24h</button><button data-p="7d">7d</button>
-      </div>
-    </div>
-    <canvas id="chart"></canvas>
-    <div class="chart-empty" id="chart-empty">Waiting for hashrate data…</div>
   </div>
 
   <!-- Top miners -->
