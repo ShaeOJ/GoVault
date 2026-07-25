@@ -134,6 +134,9 @@ func (e *Engine) Start() error {
 
 	// HTTP dashboard first — always available.
 	e.apiServer = api.NewServer(e.apiPort, e, e.staticFS, e.log)
+	// RELAY_STATIC_DIR (set by relay-supervise to /boot/www when present) lets the
+	// dashboard be hot-swapped over SSH without rebuilding the binary.
+	e.apiServer.StaticDir = os.Getenv("RELAY_STATIC_DIR")
 	e.apiServer.OnSettings = func(req api.SettingsRequest) error {
 		if req.MaxConn > 0 {
 			e.cfg.Stratum.MaxConn = req.MaxConn

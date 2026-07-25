@@ -7,6 +7,7 @@ import (
 	"io/fs"
 	"net"
 	"net/http"
+	"os"
 	"sync"
 	"time"
 
@@ -95,6 +96,12 @@ type Server struct {
 	// OnConfigUpdate applies a full config (solo/proxy) from POST /api/config.
 	// Nil on nodes that don't support web config editing (e.g. edgenode).
 	OnConfigUpdate func(*config.Config) error
+
+	// StaticDir, when set to an existing directory, serves the dashboard from
+	// there instead of the embedded FS. Lets the appliance hot-swap dashboard
+	// files (e.g. /boot/www) over SSH without rebuilding the binary. Empty =
+	// use the embedded static tree.
+	StaticDir string
 
 	// Admin management fields (optional — only active when AdminToken is set).
 	AdminToken     string
@@ -223,12 +230,29 @@ func (s *Server) Start() error {
 	mux.HandleFunc("/api/admin/restart", adm(h.adminRestart))
 	mux.HandleFunc("/api/admin/nginx", adm(h.adminNginx))
 
-	// Serve the embedded dashboard from the "static" sub-tree.
-	staticSub, err := fs.Sub(s.staticFS, "static")
-	if err != nil {
-		return fmt.Errorf("static FS: %w", err)
+	// Serve the dashboard. A StaticDir override (e.g. /boot/www on the appliance)
+	// lets files be hot-swapped over SSH without rebuilding; otherwise serve the
+	// embedded "static" sub-tree.
+	if s.StaticDir != "" {
+		if fi, err := os.Stat(s.StaticDir); err == nil && fi.IsDir() {
+			if s.log != nil {
+				s.log.Infof("api", "serving dashboard from override dir %s", s.StaticDir)
+			}
+			mux.Handle("/", http.FileServer(http.Dir(s.StaticDir)))
+		} else {
+			if s.log != nil {
+				s.log.Warnf("api", "StaticDir %q not a directory; using embedded dashboard", s.StaticDir)
+			}
+			s.StaticDir = ""
+		}
 	}
-	mux.Handle("/", http.FileServer(http.FS(staticSub)))
+	if s.StaticDir == "" {
+		staticSub, err := fs.Sub(s.staticFS, "static")
+		if err != nil {
+			return fmt.Errorf("static FS: %w", err)
+		}
+		mux.Handle("/", http.FileServer(http.FS(staticSub)))
+	}
 
 	s.srv = &http.Server{
 		Handler:      mux,
