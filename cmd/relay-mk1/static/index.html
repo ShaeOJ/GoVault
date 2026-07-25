@@ -18,7 +18,10 @@
   body{margin:0;background:var(--bg);color:var(--text);font-family:var(--mono);font-size:clamp(14px,0.55vw+11.5px,18px);line-height:1.5;-webkit-font-smoothing:antialiased;transition:background .3s,color .3s}
   /* hashrain: falling-glyph canvas behind everything; bursts when shares land */
   #rain{position:fixed;inset:0;width:100%;height:100%;z-index:0;pointer-events:none;opacity:.5}
-  @media(prefers-reduced-motion:reduce){#rain{display:none}}
+  /* CRT overlays: scanlines + vignette, above content but non-interactive */
+  body::before{content:'';position:fixed;inset:0;pointer-events:none;z-index:100;background:repeating-linear-gradient(0deg,transparent 0,transparent 2px,rgba(var(--accent-rgb),.035) 2px,rgba(var(--accent-rgb),.035) 4px),repeating-linear-gradient(90deg,transparent 0,transparent 3px,rgba(0,0,0,.03) 3px,rgba(0,0,0,.03) 4px)}
+  body::after{content:'';position:fixed;inset:0;pointer-events:none;z-index:99;background:radial-gradient(ellipse at center,transparent 0%,transparent 55%,rgba(0,0,0,.40) 100%)}
+  @media(prefers-reduced-motion:reduce){#rain,body::before,body::after{display:none}}
   select.theme-sel{background:var(--card);color:var(--dim);border:1px solid var(--border);border-radius:8px;padding:6px 8px;font:inherit;font-size:12px;cursor:pointer}
   select.theme-sel:hover{color:var(--text);border-color:rgba(var(--accent-rgb),.4)}
   a{color:var(--accent);text-decoration:none}
@@ -42,15 +45,18 @@
   .btn.accent{color:var(--accent);border-color:rgba(var(--accent-rgb),.5)}
   /* stat grid — fluid: fills 4→3→2→1 columns by available width, no fixed breakpoints */
   .grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(230px,100%),1fr));gap:clamp(12px,1.2vw,20px);margin-bottom:clamp(12px,1.2vw,20px)}
-  .card{position:relative;background:var(--card);border:1px solid var(--border);border-radius:12px;padding:clamp(15px,1.4vw,22px) clamp(15px,1.4vw,22px) clamp(15px,1.4vw,22px) clamp(18px,1.6vw,26px);overflow:hidden;transition:background .2s}
-  .card:hover{background:var(--cardh)}
-  .card .bar{position:absolute;left:0;top:0;bottom:0;width:3px}
+  .card{position:relative;background:linear-gradient(180deg,rgba(255,255,255,.025),transparent 42%),var(--card);border:1px solid var(--border);border-radius:12px;padding:clamp(15px,1.4vw,22px) clamp(15px,1.4vw,22px) clamp(15px,1.4vw,22px) clamp(18px,1.6vw,26px);overflow:hidden;box-shadow:0 0 12px rgba(var(--accent-rgb),.07),inset 0 0 30px rgba(0,0,0,.32);transition:background .2s,box-shadow .2s,border-color .2s}
+  .card:hover{background:linear-gradient(180deg,rgba(255,255,255,.03),transparent 42%),var(--cardh);border-color:rgba(var(--accent-rgb),.35);box-shadow:0 0 20px rgba(var(--accent-rgb),.16),inset 0 0 30px rgba(0,0,0,.32)}
+  /* glowing top accent line (CRT sheen) */
+  .card::before,.panel::before{content:'';position:absolute;top:0;left:0;right:0;height:2px;background:linear-gradient(90deg,transparent,rgba(var(--accent-rgb),.8),transparent);opacity:.55;pointer-events:none}
+  .card .bar{position:absolute;left:0;top:0;bottom:0;width:3px;z-index:1}
   .card .lbl{font-size:clamp(11px,0.75vw,13px);text-transform:uppercase;letter-spacing:1px;color:var(--dim)}
   .card .val{font-size:clamp(24px,2.2vw,38px);font-weight:700;margin-top:6px;line-height:1.1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
   .card .sub{font-size:clamp(11px,0.75vw,13px);color:var(--dim);margin-top:5px;min-height:14px}
   .sub .rej{color:var(--err)}
   /* panels */
-  .panel{background:var(--card);border:1px solid var(--border);border-radius:12px;padding:18px;margin-bottom:14px}
+  .panel{position:relative;overflow:hidden;background:linear-gradient(180deg,rgba(255,255,255,.02),transparent 30%),var(--card);border:1px solid var(--border);border-radius:12px;padding:18px;margin-bottom:14px;box-shadow:0 0 12px rgba(var(--accent-rgb),.06),inset 0 0 40px rgba(0,0,0,.30);transition:box-shadow .2s,border-color .2s}
+  .panel:hover{border-color:rgba(var(--accent-rgb),.3);box-shadow:0 0 18px rgba(var(--accent-rgb),.13),inset 0 0 40px rgba(0,0,0,.30)}
   .panel h3{font-size:12px;text-transform:uppercase;letter-spacing:1.5px;color:var(--dim);margin:0 0 14px}
   .chart-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:10px}
   .periods{display:flex;gap:4px}
