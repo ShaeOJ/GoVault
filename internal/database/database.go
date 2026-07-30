@@ -53,6 +53,35 @@ func (db *DB) Path() string {
 	return db.path
 }
 
+// Vacuum rebuilds the database file, reclaiming space freed by deletes. SQLite
+// does not shrink the file on DELETE alone, so this must be run after pruning to
+// actually reduce disk usage.
+func (db *DB) Vacuum() error {
+	_, err := db.conn.Exec(`VACUUM`)
+	return err
+}
+
+// ClearStats wipes the high-volume history tables (shares, hashrate, sessions)
+// and reclaims the disk space. Lifetime totals (cumulative_stats), found blocks,
+// and saved worker difficulties are preserved. Returns rows deleted from shares.
+func (db *DB) ClearStats() (int64, error) {
+	res, err := db.conn.Exec(`DELETE FROM shares`)
+	if err != nil {
+		return 0, fmt.Errorf("clear shares: %w", err)
+	}
+	n, _ := res.RowsAffected()
+	if _, err := db.conn.Exec(`DELETE FROM hashrate_history`); err != nil {
+		return n, fmt.Errorf("clear hashrate: %w", err)
+	}
+	if _, err := db.conn.Exec(`DELETE FROM miner_sessions`); err != nil {
+		return n, fmt.Errorf("clear sessions: %w", err)
+	}
+	if err := db.Vacuum(); err != nil {
+		return n, fmt.Errorf("vacuum: %w", err)
+	}
+	return n, nil
+}
+
 // Close closes the database connection.
 func (db *DB) Close() error {
 	if db.conn != nil {

@@ -65,7 +65,7 @@
   async function refreshSparklines() {
     if (minerList.length === 0) return;
     try {
-      const { GetMinerHashrateHistory } = await import('../../wailsjs/go/main/App');
+      const { GetMinerHashrateHistory } = await import('../../wailsjs/go/appcore/App');
       const results = await Promise.all(
         minerList.map(async (m) => {
           const pts = await GetMinerHashrateHistory(m.id);
@@ -110,7 +110,7 @@
 
   async function refreshMiners() {
     try {
-      const { GetMiners, GetFleetOverview } = await import('../../wailsjs/go/main/App');
+      const { GetMiners, GetFleetOverview } = await import('../../wailsjs/go/appcore/App');
       const [m, fo] = await Promise.all([GetMiners(), GetFleetOverview()]);
       if (m) miners.set(m);
       if (fo) fleet = fo;
@@ -139,7 +139,7 @@
   async function scanNetwork() {
     scanning = true;
     try {
-      const { ScanForMiners } = await import('../../wailsjs/go/main/App');
+      const { ScanForMiners } = await import('../../wailsjs/go/appcore/App');
       const results = await ScanForMiners();
       discoveredMiners.set(results || []);
       showDiscovery = true;
@@ -151,7 +151,7 @@
 
   async function configureMiner(ip: string) {
     try {
-      const { ConfigureMiner } = await import('../../wailsjs/go/main/App');
+      const { ConfigureMiner } = await import('../../wailsjs/go/appcore/App');
       await ConfigureMiner(ip);
     } catch (e) {
       console.error('Configure failed:', e);

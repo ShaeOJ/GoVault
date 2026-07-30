@@ -1,9 +1,41 @@
+export namespace appcore {
+	
+	export class FleetOverview {
+	    totalHashrate: number;
+	    blockChance: number;
+	    totalWatts: number;
+	    powerResponded: number;
+	    powerQueried: number;
+	    dailyCost: number;
+	    electricityCost: number;
+	    efficiency: number;
+	
+	    static createFrom(source: any = {}) {
+	        return new FleetOverview(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.totalHashrate = source["totalHashrate"];
+	        this.blockChance = source["blockChance"];
+	        this.totalWatts = source["totalWatts"];
+	        this.powerResponded = source["powerResponded"];
+	        this.powerQueried = source["powerQueried"];
+	        this.dailyCost = source["dailyCost"];
+	        this.electricityCost = source["electricityCost"];
+	        this.efficiency = source["efficiency"];
+	    }
+	}
+
+}
+
 export namespace config {
 	
 	export class AppConfig {
 	    theme: string;
 	    logLevel: string;
 	    electricityCost: number;
+	    dbMaxSizeMB: number;
 	
 	    static createFrom(source: any = {}) {
 	        return new AppConfig(source);
@@ -14,12 +46,14 @@ export namespace config {
 	        this.theme = source["theme"];
 	        this.logLevel = source["logLevel"];
 	        this.electricityCost = source["electricityCost"];
+	        this.dbMaxSizeMB = source["dbMaxSizeMB"];
 	    }
 	}
 	export class ProxyConfig {
 	    url: string;
 	    workerName: string;
 	    password: string;
+	    passThrough?: boolean;
 	
 	    static createFrom(source: any = {}) {
 	        return new ProxyConfig(source);
@@ -30,6 +64,7 @@ export namespace config {
 	        this.url = source["url"];
 	        this.workerName = source["workerName"];
 	        this.password = source["password"];
+	        this.passThrough = source["passThrough"];
 	    }
 	}
 	export class VardiffConfig {
@@ -196,37 +231,6 @@ export namespace logger {
 
 }
 
-export namespace main {
-	
-	export class FleetOverview {
-	    totalHashrate: number;
-	    blockChance: number;
-	    totalWatts: number;
-	    powerResponded: number;
-	    powerQueried: number;
-	    dailyCost: number;
-	    electricityCost: number;
-	    efficiency: number;
-	
-	    static createFrom(source: any = {}) {
-	        return new FleetOverview(source);
-	    }
-	
-	    constructor(source: any = {}) {
-	        if ('string' === typeof source) source = JSON.parse(source);
-	        this.totalHashrate = source["totalHashrate"];
-	        this.blockChance = source["blockChance"];
-	        this.totalWatts = source["totalWatts"];
-	        this.powerResponded = source["powerResponded"];
-	        this.powerQueried = source["powerQueried"];
-	        this.dailyCost = source["dailyCost"];
-	        this.electricityCost = source["electricityCost"];
-	        this.efficiency = source["efficiency"];
-	    }
-	}
-
-}
-
 export namespace miner {
 	
 	export class DashboardStats {
@@ -248,6 +252,7 @@ export namespace miner {
 	    proxySharesFwd: number;
 	    proxySharesAccepted: number;
 	    proxySharesRejected: number;
+	    poolPingMs: number;
 	
 	    static createFrom(source: any = {}) {
 	        return new DashboardStats(source);
@@ -273,6 +278,7 @@ export namespace miner {
 	        this.proxySharesFwd = source["proxySharesFwd"];
 	        this.proxySharesAccepted = source["proxySharesAccepted"];
 	        this.proxySharesRejected = source["proxySharesRejected"];
+	        this.poolPingMs = source["poolPingMs"];
 	    }
 	}
 	export class DiscoveredMiner {
@@ -328,6 +334,14 @@ export namespace miner {
 	    lastShareTime: any;
 	    bestDifficulty: number;
 	    coin: string;
+	    telemetry?: boolean;
+	    temp?: number;
+	    vrTemp?: number;
+	    power?: number;
+	    voltage?: number;
+	    asicModel?: string;
+	    firmware?: string;
+	    pingMs?: number;
 	
 	    static createFrom(source: any = {}) {
 	        return new MinerInfo(source);
@@ -347,6 +361,14 @@ export namespace miner {
 	        this.lastShareTime = this.convertValues(source["lastShareTime"], null);
 	        this.bestDifficulty = source["bestDifficulty"];
 	        this.coin = source["coin"];
+	        this.telemetry = source["telemetry"];
+	        this.temp = source["temp"];
+	        this.vrTemp = source["vrTemp"];
+	        this.power = source["power"];
+	        this.voltage = source["voltage"];
+	        this.asicModel = source["asicModel"];
+	        this.firmware = source["firmware"];
+	        this.pingMs = source["pingMs"];
 	    }
 	
 		convertValues(a: any, classs: any, asMap: boolean = false): any {

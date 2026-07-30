@@ -57,7 +57,7 @@
 
     // Load initial stats and coin info
     try {
-      const { GetDashboardStats, GetConfig, GetCoinList } = await import('../../wailsjs/go/main/App');
+      const { GetDashboardStats, GetConfig, GetCoinList } = await import('../../wailsjs/go/appcore/App');
       const s = await GetDashboardStats();
       dashboardStats.set(s);
       // Get active coin info
@@ -87,7 +87,7 @@
 
   async function loadHashrateHistory() {
     try {
-      const { GetHashrateHistory } = await import('../../wailsjs/go/main/App');
+      const { GetHashrateHistory } = await import('../../wailsjs/go/appcore/App');
       hashrateData = await GetHashrateHistory(selectedPeriod) || [];
     } catch {}
   }
@@ -201,10 +201,10 @@
     stratumError = '';
     try {
       if (stats.stratumRunning) {
-        const { StopStratum } = await import('../../wailsjs/go/main/App');
+        const { StopStratum } = await import('../../wailsjs/go/appcore/App');
         await StopStratum();
       } else {
-        const { StartStratum } = await import('../../wailsjs/go/main/App');
+        const { StartStratum } = await import('../../wailsjs/go/appcore/App');
         await StartStratum();
       }
     } catch (e: any) {
@@ -216,7 +216,7 @@
   async function clearRejectedShares() {
     clearingRejects = true;
     try {
-      const { ClearRejectedShares } = await import('../../wailsjs/go/main/App');
+      const { ClearRejectedShares } = await import('../../wailsjs/go/appcore/App');
       await ClearRejectedShares();
       dashboardStats.update(s => ({ ...s, sharesRejected: 0 }));
     } catch (e) {
@@ -229,7 +229,7 @@
     reconnecting = true;
     reconnectResult = '';
     try {
-      const { ReconnectMiners } = await import('../../wailsjs/go/main/App');
+      const { ReconnectMiners } = await import('../../wailsjs/go/appcore/App');
       const result = await ReconnectMiners();
       if (result.error) {
         reconnectResult = result.error;

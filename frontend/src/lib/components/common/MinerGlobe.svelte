@@ -1,7 +1,7 @@
 <script lang="ts">
   import { onMount, onDestroy } from 'svelte';
   import { EventsOn } from '../../../../wailsjs/runtime/runtime';
-  import { GetMiners } from '../../../../wailsjs/go/main/App';
+  import { GetMiners } from '../../../../wailsjs/go/appcore/App';
 
   // ─── Canvas + container ───────────────────────────────────────────────────
   let container: HTMLDivElement;
@@ -427,7 +427,7 @@
       if (W > 120) {
         ctx.font = `bold ${Math.max(7, R * 0.13)}px monospace`;
         ctx.fillStyle = FP_COLOR;
-        ctx.fillText('FIREPOOL', fp.x + 6, fp.y - 5);
+        ctx.fillText('POOL', fp.x + 6, fp.y - 5);
       }
     }
 

@@ -41,10 +41,15 @@ func Defaults() *Config {
 			Theme:           "dark",
 			LogLevel:        "info",
 			ElectricityCost: 0.10,
+			DBMaxSizeMB:     250, // cap DB at 250 MB; oldest shares pruned + vacuumed beyond this
 		},
 		Proxy: ProxyConfig{
 			Password: "x",
 		},
-		MiningMode: "solo",
+		// Proxy is the default for fresh installs — most home users point GoVault
+		// at a pool rather than running their own full node. Existing configs keep
+		// whatever mode they saved; the empty-string fallbacks below stay "solo"
+		// only for legacy pre-miningMode config files.
+		MiningMode: "proxy",
 	}
 }

@@ -81,6 +81,10 @@ type AppConfig struct {
 	Theme           string  `json:"theme"`
 	LogLevel        string  `json:"logLevel"`
 	ElectricityCost float64 `json:"electricityCost"`
+	// DBMaxSizeMB caps the SQLite database size. When exceeded, the oldest shares
+	// are pruned and the file is vacuumed back under the cap. 0 = unlimited (age-
+	// based pruning only).
+	DBMaxSizeMB int `json:"dbMaxSizeMB"`
 }
 
 func configDir() (string, error) {

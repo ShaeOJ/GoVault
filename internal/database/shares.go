@@ -82,6 +82,36 @@ func (db *DB) PruneShares(maxAge time.Duration) (int64, error) {
 	return result.RowsAffected()
 }
 
+// ShareRowCount returns the total number of share rows (accepted + rejected).
+func (db *DB) ShareRowCount() (int64, error) {
+	var n int64
+	err := db.conn.QueryRow(`SELECT COUNT(*) FROM shares`).Scan(&n)
+	return n, err
+}
+
+// TrimOldestShares deletes the oldest `frac` fraction (0–1) of share rows by id.
+// Used by the size-cap enforcer to shrink the busiest table in steps. Returns
+// the number of rows deleted. A frac that resolves to zero rows deletes nothing.
+func (db *DB) TrimOldestShares(frac float64) (int64, error) {
+	if frac <= 0 {
+		return 0, nil
+	}
+	if frac > 1 {
+		frac = 1
+	}
+	// Find the id boundary: everything with id <= boundary is the oldest `frac`.
+	// OFFSET past the end yields no row (NULL boundary) → deletes nothing.
+	result, err := db.conn.Exec(`
+		DELETE FROM shares WHERE id <= (
+			SELECT id FROM shares ORDER BY id ASC
+			LIMIT 1 OFFSET (SELECT CAST(COUNT(*) * ? AS INTEGER) FROM shares)
+		)`, frac)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected()
+}
+
 // ClearRejectedShares deletes all rejected share rows and zeros the cumulative rejected counter.
 func (db *DB) ClearRejectedShares() (int64, error) {
 	result, err := db.conn.Exec(`DELETE FROM shares WHERE accepted = 0`)

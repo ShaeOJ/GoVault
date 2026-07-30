@@ -8,10 +8,18 @@
   const navItems = [
     { id: 'dashboard', label: 'Dashboard', icon: 'reactor' },
     { id: 'miners', label: 'Miners', icon: 'chip' },
-    { id: 'node', label: 'Node', icon: 'server-rack' },
+    { id: 'node', label: 'Setup', icon: 'server-rack' },
     { id: 'settings', label: 'Settings', icon: 'terminal' },
     { id: 'logs', label: 'Logs', icon: 'datastream' },
   ];
+
+  let confirmShutdown = false;
+  async function doShutdown() {
+    try {
+      const { Shutdown } = await import('../../../../wailsjs/go/appcore/App');
+      await Shutdown();
+    } catch {}
+  }
 </script>
 
 <aside
@@ -53,8 +61,39 @@
   <!-- Globe animation fills gap between nav and footer -->
   <MinerGlobe />
 
-  <!-- Status indicator at bottom -->
-  <div class="p-3" style="border-top: 1px solid var(--border);">
+  <!-- Shutdown + status at bottom -->
+  <div class="p-3 space-y-2" style="border-top: 1px solid var(--border);">
+    {#if confirmShutdown}
+      <div class="flex gap-1.5">
+        <button
+          class="flex-1 flex items-center justify-center px-2 py-2 rounded-lg text-xs font-tech uppercase tracking-wider transition-all"
+          style="background: rgba(255,50,50,0.14); color: var(--error); border: 1px solid var(--error);"
+          on:click={doShutdown}
+          title="Fully quit GoVault and stop mining"
+        >
+          <span class="hidden lg:inline">Confirm Quit</span>
+          <span class="lg:hidden">✕</span>
+        </button>
+        <button
+          class="px-2 py-2 rounded-lg text-xs font-tech uppercase tracking-wider hidden lg:block"
+          style="background-color: var(--bg-card); color: var(--text-secondary); border: 1px solid var(--border);"
+          on:click={() => confirmShutdown = false}
+        >Cancel</button>
+      </div>
+    {:else}
+      <button
+        class="w-full flex items-center px-3 py-2 rounded-lg text-sm font-medium transition-all duration-200"
+        style="color: var(--text-secondary);"
+        on:click={() => confirmShutdown = true}
+        on:mouseenter={(e) => e.currentTarget.style.color = 'var(--error)'}
+        on:mouseleave={(e) => e.currentTarget.style.color = 'var(--text-secondary)'}
+        title="Closing the window (X) keeps GoVault running in the background so mining continues. Use Shutdown to fully quit; relaunch GoVault to reopen."
+      >
+        <Icon name="power" size={20} />
+        <span class="ml-3 hidden lg:block">Shutdown</span>
+      </button>
+    {/if}
+
     <div class="flex items-center px-2">
       <div
         class="w-2 h-2 rounded-full status-pulse"

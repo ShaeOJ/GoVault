@@ -32,7 +32,7 @@
 
     // Load existing logs
     try {
-      const { GetRecentLogs } = await import('../../wailsjs/go/main/App');
+      const { GetRecentLogs } = await import('../../wailsjs/go/appcore/App');
       const existing = await GetRecentLogs(200);
       if (existing) logs.set(existing);
     } catch {}

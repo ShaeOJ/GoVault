@@ -1,4 +1,7 @@
-package main
+// Package appcore holds GoVault's transport-agnostic application core. The same
+// App drives the Wails desktop app (via a Wails-backed AppHost) and the headless
+// edge node (via an HTTP+SSE AppHost) with no changes to the business logic.
+package appcore
 
 import (
 	"context"
@@ -7,6 +10,7 @@ import (
 	"fmt"
 	"math/big"
 	"net"
+	"strings"
 	"sync"
 	"time"
 
@@ -18,8 +22,6 @@ import (
 	"govault/internal/node"
 	"govault/internal/stratum"
 	"govault/internal/upstream"
-
-	"github.com/wailsapp/wails/v2/pkg/runtime"
 )
 
 // App struct bridges all backend subsystems to the Wails frontend.
@@ -58,7 +60,37 @@ type App struct {
 
 	stopStats     chan struct{}
 	stopStatsOnce sync.Once
+
+	// forceQuit is set by Shutdown() so beforeClose knows this close is a real
+	// quit (not the window X, which we intercept to keep mining in the background).
+	forceQuit bool
+
+	// host abstracts the frontend transport (Wails IPC on desktop, HTTP+SSE when
+	// run headless on the edge node) so App can drive either without code changes.
+	host AppHost
 }
+
+// AppHost is the frontend transport App talks to. The desktop wires a Wails-backed
+// host; a headless server wires an SSE/HTTP host. Window controls are no-ops headless.
+type AppHost interface {
+	Emit(event string, data ...interface{})
+	Minimise()
+	Show()
+	Unminimise()
+	Quit()
+}
+
+// emit pushes an event to the frontend, guarding against a nil host (e.g. before
+// startup wires one).
+func (a *App) emit(event string, data ...interface{}) {
+	if a.host != nil {
+		a.host.Emit(event, data...)
+	}
+}
+
+// SetHost wires the frontend transport. The desktop passes a Wails-backed host,
+// the headless server an SSE host. Must be called before OnStartup.
+func (a *App) SetHost(h AppHost) { a.host = h }
 
 // FleetOverview holds aggregated fleet stats for the Miners page.
 type FleetOverview struct {
@@ -82,8 +114,8 @@ func NewApp() *App {
 	}
 }
 
-// startup is called when the app starts.
-func (a *App) startup(ctx context.Context) {
+// OnStartup is called when the app starts. SetHost must have been called first.
+func (a *App) OnStartup(ctx context.Context) {
 	a.ctx = ctx
 
 	// Load config
@@ -103,7 +135,7 @@ func (a *App) startup(ctx context.Context) {
 
 	if a.log != nil {
 		a.log.OnNewEntry = func(entry logger.LogEntry) {
-			runtime.EventsEmit(a.ctx, "log:entry", entry)
+			a.emit("log:entry", entry)
 		}
 		a.log.Info("app", "GoVault starting up")
 	}
@@ -147,14 +179,14 @@ func (a *App) startup(ctx context.Context) {
 	}
 }
 
-// domReady is called after the frontend dom is ready.
-func (a *App) domReady(ctx context.Context) {
+// OnDomReady is called after the frontend dom is ready.
+func (a *App) OnDomReady(ctx context.Context) {
 	// Try connecting to node
 	go a.refreshNodeInfo()
 }
 
-// shutdown is called when the app is closing.
-func (a *App) shutdown(ctx context.Context) {
+// OnShutdown is called when the app is closing.
+func (a *App) OnShutdown(ctx context.Context) {
 	a.stopStatsOnce.Do(func() { close(a.stopStats) })
 
 	a.svcMu.Lock()
@@ -190,9 +222,37 @@ func (a *App) shutdown(ctx context.Context) {
 	}
 }
 
-// beforeClose is called before the app closes - return false to allow close.
-func (a *App) beforeClose(ctx context.Context) bool {
-	return false // Allow close
+// OnBeforeClose is called when the user clicks the window X. We keep GoVault
+// running in the background (mining continues) by minimising the window and
+// returning true to veto the quit. A real quit only happens via Shutdown(),
+// which sets forceQuit first. Returning true = prevent close.
+func (a *App) OnBeforeClose(ctx context.Context) bool {
+	if a.forceQuit {
+		return false // real quit requested — allow it
+	}
+	// Minimise to the taskbar instead of quitting so mining keeps running and the
+	// app stays visible/clickable there (Wails v2 has no native system-tray icon;
+	// minimise is the closest to "minimise to tray"). Relaunching the shortcut also
+	// restores it via the single-instance lock.
+	a.emit("app:minimized-to-background")
+	a.host.Minimise()
+	return true // keep running
+}
+
+// Shutdown fully quits GoVault (stops mining and exits). Bound to the UI's
+// Shutdown button so users have an explicit, reliable way to kill the app.
+func (a *App) Shutdown() {
+	a.forceQuit = true
+	a.host.Quit()
+}
+
+// ShowWindow brings the (possibly hidden) main window back to the foreground.
+func (a *App) ShowWindow() {
+	if a.host == nil {
+		return
+	}
+	a.host.Show()
+	a.host.Unminimise()
 }
 
 // === Stratum Control ===
@@ -278,7 +338,7 @@ func (a *App) startSolo() error {
 		a.netMu.Lock()
 		a.blockHeight = tmpl.Height
 		a.netMu.Unlock()
-		runtime.EventsEmit(a.ctx, "node:new-block", map[string]interface{}{
+		a.emit("node:new-block", map[string]interface{}{
 			"height": tmpl.Height,
 		})
 	}
@@ -307,6 +367,11 @@ func (a *App) startProxy() error {
 	proxyCfg := a.config.Proxy
 	if proxyCfg.URL == "" {
 		return fmt.Errorf("proxy URL not configured")
+	}
+	// Per-miner pass-through is a separate wiring: each miner gets its own
+	// upstream connection under its own worker identity.
+	if proxyCfg.PassThrough {
+		return a.startProxyPassThrough()
 	}
 	if proxyCfg.WorkerName == "" {
 		return fmt.Errorf("proxy worker name not configured")
@@ -371,7 +436,7 @@ func (a *App) startProxy() error {
 			a.blockHeight++
 			h := a.blockHeight
 			a.netMu.Unlock()
-			runtime.EventsEmit(a.ctx, "node:new-block", map[string]interface{}{
+			a.emit("node:new-block", map[string]interface{}{
 				"height": h,
 			})
 		}
@@ -449,6 +514,92 @@ func (a *App) startProxy() error {
 	return nil
 }
 
+// startProxyPassThrough runs true per-miner pass-through: each connecting miner
+// gets its OWN upstream connection authorized with the miner's own worker name,
+// so the pool sees every device separately and vardiffs each. Contrast startProxy
+// (shared), where all miners are aggregated under one pool worker. Gated by
+// Proxy.PassThrough. Ported from the edge-node/relay engines so the desktop app
+// and the headless build share one implementation.
+func (a *App) startProxyPassThrough() error {
+	p := a.config.Proxy
+	pw := p.Password
+	if pw == "" {
+		pw = "x"
+	}
+	a.log.Infof("app", "starting stratum (proxy, pass-through) → %s (per-miner worker identity)", p.URL)
+
+	coinDef := coin.Get(a.config.Mining.Coin)
+	srv := stratum.NewServer(&a.config.Stratum, &a.config.Mining, &a.config.Vardiff, nil, a.log, coinDef)
+	a.svcMu.Lock()
+	a.stratum = srv
+	a.svcMu.Unlock()
+
+	// 0 = default version mask (1fffe000); each per-miner upstream negotiates its
+	// own rolling mask on connect.
+	srv.SetPerMinerMode(0)
+
+	// OnMinerSubscribe: open the miner's dedicated upstream and subscribe (no auth
+	// yet) so the POOL's real extranonce1/size land in the miner's subscribe reply
+	// — this is what makes set_extranonce-blind firmware work in pass-through.
+	srv.OnMinerSubscribe = func(session *stratum.Session) (*upstream.Client, error) {
+		uc := upstream.NewClient(p.URL, p.WorkerName, pw, a.log)
+		if err := uc.ConnectNoAuth(); err != nil {
+			return nil, fmt.Errorf("upstream subscribe: %w", err)
+		}
+		return uc, nil
+	}
+
+	// OnMinerAuthorizeUpstream: authorize the miner's upstream as <wallet>.<worker>
+	// so the pool credits the configured wallet AND tracks each device separately,
+	// without the wallet needing to be baked into each miner's config. A worker
+	// that's already wallet-qualified passes through unchanged.
+	srv.OnMinerAuthorizeUpstream = func(session *stratum.Session, worker, password string) (bool, error) {
+		uc := session.DedicatedUpstream()
+		if uc == nil {
+			return false, fmt.Errorf("no dedicated upstream")
+		}
+		upWorker := worker
+		if wallet := p.WorkerName; wallet != "" && !strings.HasPrefix(worker, wallet) {
+			sub := strings.TrimSpace(worker)
+			if sub == "" {
+				sub = "0"
+			}
+			upWorker = wallet + "." + sub
+		}
+		wpass := password
+		if wpass == "" {
+			wpass = pw
+		}
+		ok, err := uc.AuthorizeWorker(upWorker, wpass)
+		if err == nil && ok {
+			a.log.Infof("proxy", "miner %s → upstream worker %s (en1=%s en2=%d)",
+				worker, upWorker, uc.Extranonce1(), uc.LocalEN2Size())
+		}
+		return ok, err
+	}
+
+	// Per-miner jobs are handled inside each session, so network diff/height come
+	// from this server-level hook rather than a single shared upstream's OnJob.
+	srv.OnUpstreamJobInfo = func(nbits, coinbase1 string, cleanJobs bool) {
+		a.updateNetworkDiffFromNBits(nbits)
+		if cleanJobs {
+			a.netMu.Lock()
+			a.blockHeight++
+			h := a.blockHeight
+			a.netMu.Unlock()
+			a.emit("node:new-block", map[string]interface{}{"height": h})
+		}
+	}
+
+	a.wireStratumCallbacks()
+
+	if err := a.stratum.Start(); err != nil {
+		return err
+	}
+	a.log.Info("app", "stratum server started (proxy pass-through mode)")
+	return nil
+}
+
 // wireStratumCallbacks sets up callbacks shared by both solo and proxy modes.
 func (a *App) wireStratumCallbacks() {
 	a.stratum.OnMinerConnected = func(info stratum.MinerInfo) {
@@ -468,7 +619,7 @@ func (a *App) wireStratumCallbacks() {
 				ConnectedAt: info.ConnectedAt.Unix(),
 			})
 		}
-		runtime.EventsEmit(a.ctx, "stratum:miner-connected", info)
+		a.emit("stratum:miner-connected", info)
 	}
 
 	a.stratum.OnMinerDisconnected = func(id string) {
@@ -477,7 +628,7 @@ func (a *App) wireStratumCallbacks() {
 		if a.db != nil {
 			a.db.DisconnectMiner(id, time.Now().Unix())
 		}
-		runtime.EventsEmit(a.ctx, "stratum:miner-disconnected", map[string]string{"id": id})
+		a.emit("stratum:miner-disconnected", map[string]string{"id": id})
 	}
 
 	a.stratum.OnShareAccepted = func(minerID string, sessionDiff, actualDiff float64) {
@@ -493,7 +644,7 @@ func (a *App) wireStratumCallbacks() {
 				Accepted:    true,
 			})
 		}
-		runtime.EventsEmit(a.ctx, "stratum:share-accepted", map[string]interface{}{
+		a.emit("stratum:share-accepted", map[string]interface{}{
 			"minerId":    minerID,
 			"difficulty": actualDiff,
 		})
@@ -510,7 +661,7 @@ func (a *App) wireStratumCallbacks() {
 				RejectReason: reason,
 			})
 		}
-		runtime.EventsEmit(a.ctx, "stratum:share-rejected", map[string]interface{}{
+		a.emit("stratum:share-rejected", map[string]interface{}{
 			"minerId": minerID,
 			"reason":  reason,
 		})
@@ -526,7 +677,7 @@ func (a *App) wireStratumCallbacks() {
 					Hash:      hash,
 				})
 			}
-			runtime.EventsEmit(a.ctx, "stratum:block-found", map[string]interface{}{
+			a.emit("stratum:block-found", map[string]interface{}{
 				"hash":   hash,
 				"height": height,
 			})
@@ -1184,7 +1335,25 @@ func (a *App) TestUpstreamConnection(url, worker, password string) map[string]in
 func (a *App) GetUpstreamStatus() map[string]interface{} {
 	a.svcMu.RLock()
 	uc := a.upstream
+	srv := a.stratum
 	a.svcMu.RUnlock()
+
+	// Per-miner pass-through has no single shared upstream — each miner owns its
+	// own connection to the pool. Report "connected" when the stratum server is
+	// running with active miners rather than reading the (nil) shared client.
+	if a.config.MiningMode == "proxy" && a.config.Proxy.PassThrough {
+		running, n := false, 0
+		if srv != nil {
+			running = srv.IsRunning()
+			n = srv.SessionCount()
+		}
+		return map[string]interface{}{
+			"connected":   running && n > 0,
+			"passThrough": true,
+			"minerCount":  n,
+			"mode":        "proxy",
+		}
+	}
 
 	if uc == nil {
 		return map[string]interface{}{
@@ -1256,9 +1425,12 @@ func (a *App) GetDatabaseInfo() map[string]interface{} {
 	if a.db == nil {
 		return map[string]interface{}{"path": "", "size": 0}
 	}
+	shareRows, _ := a.db.ShareRowCount()
 	return map[string]interface{}{
-		"path": a.db.Path(),
-		"size": a.db.Size(),
+		"path":      a.db.Path(),
+		"size":      a.db.Size(),
+		"shareRows": shareRows,
+		"maxSizeMB": a.config.App.DBMaxSizeMB,
 	}
 }
 
@@ -1306,7 +1478,7 @@ func (a *App) statsLoop() {
 			return
 		case <-ticker.C:
 			stats := a.GetDashboardStats()
-			runtime.EventsEmit(a.ctx, "stats:updated", stats)
+			a.emit("stats:updated", stats)
 		case <-hashrateTicker.C:
 			hashrate := a.stats.EstimateHashrate()
 			a.stats.RecordHashrate(hashrate)
@@ -1472,4 +1644,96 @@ func (a *App) pruneOldData() {
 	} else if n > 0 && a.log != nil {
 		a.log.Infof("app", "pruned %d old hashrate entries", n)
 	}
+
+	a.enforceSizeCap()
+}
+
+// enforceSizeCap trims the oldest shares (and vacuums to reclaim disk) until the
+// database is back under App.DBMaxSizeMB. VACUUM is what actually shrinks the
+// file, so we re-measure after each pass. Capped iterations avoid a runaway loop
+// if the floor (blocks/sessions) alone exceeds the cap.
+func (a *App) enforceSizeCap() {
+	if a.db == nil || a.config.App.DBMaxSizeMB <= 0 {
+		return
+	}
+	capBytes := int64(a.config.App.DBMaxSizeMB) * 1024 * 1024
+	if a.db.Size() <= capBytes {
+		return
+	}
+	var totalTrimmed int64
+	for i := 0; i < 6; i++ {
+		if a.db.Size() <= capBytes {
+			break
+		}
+		n, err := a.db.TrimOldestShares(0.20)
+		if err != nil {
+			if a.log != nil {
+				a.log.Errorf("app", "size cap: trim shares: %v", err)
+			}
+			return
+		}
+		if n == 0 {
+			break // nothing left to trim in shares
+		}
+		totalTrimmed += n
+		if err := a.db.Vacuum(); err != nil {
+			if a.log != nil {
+				a.log.Errorf("app", "size cap: vacuum: %v", err)
+			}
+			return
+		}
+	}
+	if totalTrimmed > 0 && a.log != nil {
+		a.log.Infof("app", "size cap (%d MB): trimmed %d shares, db now %s",
+			a.config.App.DBMaxSizeMB, totalTrimmed, formatBytesGo(a.db.Size()))
+	}
+}
+
+// formatBytesGo renders a byte count as a short human string for logs.
+func formatBytesGo(n int64) string {
+	const unit = 1024
+	if n < unit {
+		return fmt.Sprintf("%d B", n)
+	}
+	div, exp := int64(unit), 0
+	for x := n / unit; x >= unit; x /= unit {
+		div *= unit
+		exp++
+	}
+	return fmt.Sprintf("%.1f %cB", float64(n)/float64(div), "KMGTPE"[exp])
+}
+
+// CompactDatabase runs VACUUM to reclaim freed space. Returns before/after sizes.
+func (a *App) CompactDatabase() (map[string]interface{}, error) {
+	if a.db == nil {
+		return nil, fmt.Errorf("database not available")
+	}
+	before := a.db.Size()
+	if err := a.db.Vacuum(); err != nil {
+		return nil, err
+	}
+	after := a.db.Size()
+	if a.log != nil {
+		a.log.Infof("app", "compacted db: %s → %s", formatBytesGo(before), formatBytesGo(after))
+	}
+	return map[string]interface{}{"before": before, "after": after, "reclaimed": before - after}, nil
+}
+
+// ClearStatistics wipes shares/hashrate/session history and reclaims disk.
+// Found blocks and lifetime cumulative totals are preserved.
+func (a *App) ClearStatistics() (int64, error) {
+	if a.db == nil {
+		return 0, fmt.Errorf("database not available")
+	}
+	n, err := a.db.ClearStats()
+	if err != nil {
+		if a.log != nil {
+			a.log.Errorf("app", "clear statistics: %v", err)
+		}
+		return n, err
+	}
+	if a.log != nil {
+		a.log.Infof("app", "cleared statistics: %d shares removed, db now %s", n, formatBytesGo(a.db.Size()))
+	}
+	return n, nil
 }

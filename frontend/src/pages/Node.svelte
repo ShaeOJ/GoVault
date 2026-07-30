@@ -5,8 +5,12 @@
   import ThemedSpinner from '../lib/components/common/ThemedSpinner.svelte';
   import { formatNumber, formatDifficulty, formatHashrate } from '../lib/utils/format';
 
-  // Mode: 'solo' or 'proxy'
-  let miningMode: 'solo' | 'proxy' = 'solo';
+  // Mode: 'solo' or 'proxy'. Proxy is the default for new users.
+  let miningMode: 'solo' | 'proxy' = 'proxy';
+
+  // Step 3 — where the user points their actual mining hardware (this PC).
+  let stratumURL = '';
+  let copiedURL = false;
 
   // Solo mode fields
   let host = '127.0.0.1';
@@ -19,6 +23,7 @@
   let proxyUrl = '';
   let proxyWorker = '';
   let proxyPassword = 'x';
+  let proxyPassThrough = false;
 
   let testing = false;
   let testResult: any = null;
@@ -77,12 +82,35 @@
     } catch {}
   }
 
+  async function loadStratumURL() {
+    try {
+      const { GetStratumURL } = await import('../../wailsjs/go/appcore/App');
+      stratumURL = await GetStratumURL();
+    } catch {}
+  }
+
+  async function copyStratumURL() {
+    try {
+      await navigator.clipboard.writeText(stratumURL);
+      copiedURL = true;
+      setTimeout(() => copiedURL = false, 2000);
+    } catch {}
+  }
+
+  // Plain-language guidance for what username each miner should use, per mode.
+  $: minerUsername = miningMode === 'proxy'
+    ? '<your-pool-address>.<worker>'
+    : '<worker-name>';
+  $: minerUsernameHint = miningMode === 'proxy'
+    ? 'Use the wallet address / username your upstream pool expects, plus a worker label after the dot (e.g. bc1q… .bitaxe1).'
+    : 'Any label to name the device (e.g. bitaxe1). Blocks pay to the payout address set above.';
+
   async function detectNode() {
     detecting = true;
     detectResult = null;
     detectError = '';
     try {
-      const { DetectNode } = await import('../../wailsjs/go/main/App');
+      const { DetectNode } = await import('../../wailsjs/go/appcore/App');
       const result = await DetectNode(coinId);
       if (result?.found) {
         detectResult = result;
@@ -102,7 +130,7 @@
 
   onMount(async () => {
     try {
-      const { GetConfig, GetCoinList } = await import('../../wailsjs/go/main/App');
+      const { GetConfig, GetCoinList } = await import('../../wailsjs/go/appcore/App');
       const cfg = await GetConfig();
       if (cfg?.node) {
         host = cfg.node.host || host;
@@ -115,6 +143,7 @@
         proxyUrl = cfg.proxy.url || '';
         proxyWorker = cfg.proxy.workerName || '';
         proxyPassword = cfg.proxy.password || 'x';
+        proxyPassThrough = cfg.proxy.passThrough || false;
       }
       miningMode = cfg?.miningMode === 'proxy' ? 'proxy' : 'solo';
 
@@ -134,19 +163,20 @@
     } else {
       refreshUpstreamStatus();
     }
+    loadStratumURL();
     loaded = true;
   });
 
   async function refreshStatus() {
     try {
-      const { GetNodeStatus } = await import('../../wailsjs/go/main/App');
+      const { GetNodeStatus } = await import('../../wailsjs/go/appcore/App');
       nodeStatus = await GetNodeStatus();
     } catch {}
   }
 
   async function refreshUpstreamStatus() {
     try {
-      const { GetUpstreamStatus } = await import('../../wailsjs/go/main/App');
+      const { GetUpstreamStatus } = await import('../../wailsjs/go/appcore/App');
       upstreamStatus = await GetUpstreamStatus();
     } catch {}
   }
@@ -156,7 +186,7 @@
     testResult = null;
     testError = '';
     try {
-      const { TestNodeConnection } = await import('../../wailsjs/go/main/App');
+      const { TestNodeConnection } = await import('../../wailsjs/go/appcore/App');
       testResult = await TestNodeConnection(host, port, username, password, useSSL);
     } catch (e: any) {
       testError = e?.message || String(e);
@@ -169,7 +199,7 @@
     proxyTestResult = null;
     proxyTestError = '';
     try {
-      const { TestUpstreamConnection } = await import('../../wailsjs/go/main/App');
+      const { TestUpstreamConnection } = await import('../../wailsjs/go/appcore/App');
       const result = await TestUpstreamConnection(proxyUrl, proxyWorker, proxyPassword || 'x');
       if (result?.connected) {
         proxyTestResult = result;
@@ -188,7 +218,7 @@
     testResult = null;
     testError = '';
     try {
-      const { GetConfig, UpdateConfig, ConnectNode } = await import('../../wailsjs/go/main/App');
+      const { GetConfig, UpdateConfig, ConnectNode } = await import('../../wailsjs/go/appcore/App');
       const cfg = await GetConfig();
       cfg.node = { host, port, username, password, useSSL };
       cfg.miningMode = 'solo';
@@ -212,9 +242,9 @@
     proxyTestError = '';
     proxySaveSuccess = false;
     try {
-      const { GetConfig, UpdateConfig, IsStratumRunning, StopStratum, StartStratum } = await import('../../wailsjs/go/main/App');
+      const { GetConfig, UpdateConfig, IsStratumRunning, StopStratum, StartStratum } = await import('../../wailsjs/go/appcore/App');
       const cfg = await GetConfig();
-      cfg.proxy = { url: proxyUrl, workerName: proxyWorker, password: proxyPassword || 'x' };
+      cfg.proxy = { url: proxyUrl, workerName: proxyWorker, password: proxyPassword || 'x', passThrough: proxyPassThrough };
       cfg.mining = { ...cfg.mining, coin: coinId };
       cfg.miningMode = 'proxy';
       await UpdateConfig(cfg);
@@ -240,7 +270,7 @@
     { name: 'CKPool Solo', url: 'solo.ckpool.org:3333', desc: 'Most popular solo pool, 2% fee' },
     { name: 'CKPool Solo (High Diff)', url: 'solo.ckpool.org:3334', desc: 'For high-hashrate setups' },
     { name: 'Public Pool', url: 'public-pool.io:3333', desc: 'Open source, no fee solo pool' },
-    { name: 'Firepool', url: 'firepool.ca:4333', desc: 'Canadian solo pool' },
+    { name: 'ASICpool', url: 'asicpool.space:4333', desc: 'Canadian solo pool' },
   ];
 
   function applyPreset(preset: typeof poolPresets[0]) {
@@ -262,30 +292,60 @@
 
 <div class="space-y-6">
   <div>
-    <h1 class="text-2xl font-bold font-tech uppercase tracking-wide" style="color: var(--text-primary);">Mining Source</h1>
-    <p class="text-sm" style="color: var(--text-secondary);">Choose how GoVault gets work for your miners</p>
+    <h1 class="text-2xl font-bold font-tech uppercase tracking-wide" style="color: var(--text-primary);">Setup</h1>
+    <p class="text-sm" style="color: var(--text-secondary);">Follow the three steps below to get your miners hashing.</p>
   </div>
 
-  <!-- Mode Selector -->
-  <div class="flex gap-3">
-    <button
-      class="flex-1 px-4 py-3 rounded-xl text-sm font-medium font-tech uppercase tracking-wider transition-all flex items-center justify-center gap-2"
-      style="{miningMode === 'solo'
-        ? 'background: rgba(var(--accent-rgb), 0.15); color: var(--accent); border: 2px solid var(--accent); box-shadow: 0 0 12px rgba(var(--accent-rgb), 0.2);'
-        : 'background-color: var(--bg-card); color: var(--text-secondary); border: 2px solid var(--border);'}"
-      on:click={() => setMode('solo')}
-    >
-      Solo (Local Node)
-    </button>
-    <button
-      class="flex-1 px-4 py-3 rounded-xl text-sm font-medium font-tech uppercase tracking-wider transition-all flex items-center justify-center gap-2"
-      style="{miningMode === 'proxy'
-        ? 'background: rgba(var(--accent-rgb), 0.15); color: var(--accent); border: 2px solid var(--accent); box-shadow: 0 0 12px rgba(var(--accent-rgb), 0.2);'
-        : 'background-color: var(--bg-card); color: var(--text-secondary); border: 2px solid var(--border);'}"
-      on:click={() => setMode('proxy')}
-    >
-      Proxy (Upstream Pool)
-    </button>
+  <!-- ==================== STEP 1: CHOOSE MODE ==================== -->
+  <div>
+    <div class="flex items-center gap-2 mb-3">
+      <span class="step-badge">1</span>
+      <h2 class="text-sm font-medium font-tech uppercase tracking-wider" style="color: var(--text-primary);">Choose how you mine</h2>
+    </div>
+
+    <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+      <!-- Proxy card (default, shown first) -->
+      <button
+        class="text-left rounded-xl p-4 transition-all"
+        style="{miningMode === 'proxy'
+          ? 'background: rgba(var(--accent-rgb), 0.12); border: 2px solid var(--accent); box-shadow: 0 0 12px rgba(var(--accent-rgb), 0.2);'
+          : 'background-color: var(--bg-card); border: 2px solid var(--border);'}"
+        on:click={() => setMode('proxy')}
+      >
+        <div class="flex items-center justify-between mb-1.5">
+          <span class="text-sm font-bold font-tech uppercase tracking-wider" style="color: {miningMode === 'proxy' ? 'var(--accent)' : 'var(--text-primary)'};">Proxy to a pool</span>
+          <span class="text-[10px] font-tech uppercase px-1.5 py-0.5 rounded" style="background: rgba(var(--accent-rgb), 0.15); color: var(--accent);">Easiest</span>
+        </div>
+        <p class="text-xs" style="color: var(--text-secondary); line-height: 1.5;">
+          GoVault forwards your miners' work to an existing pool (like CKPool or Public Pool). No full node needed — just a pool URL and your address.
+        </p>
+      </button>
+
+      <!-- Solo card -->
+      <button
+        class="text-left rounded-xl p-4 transition-all"
+        style="{miningMode === 'solo'
+          ? 'background: rgba(var(--accent-rgb), 0.12); border: 2px solid var(--accent); box-shadow: 0 0 12px rgba(var(--accent-rgb), 0.2);'
+          : 'background-color: var(--bg-card); border: 2px solid var(--border);'}"
+        on:click={() => setMode('solo')}
+      >
+        <div class="flex items-center justify-between mb-1.5">
+          <span class="text-sm font-bold font-tech uppercase tracking-wider" style="color: {miningMode === 'solo' ? 'var(--accent)' : 'var(--text-primary)'};">Solo to your node</span>
+          <span class="text-[10px] font-tech uppercase px-1.5 py-0.5 rounded" style="background: var(--bg-secondary); color: var(--text-secondary);">Advanced</span>
+        </div>
+        <p class="text-xs" style="color: var(--text-secondary); line-height: 1.5;">
+          GoVault builds blocks against your own full node — no pool, no fees, you keep the whole reward. Requires a fully-synced node with RPC enabled.
+        </p>
+      </button>
+    </div>
+  </div>
+
+  <!-- ==================== STEP 2: CONFIGURE & TEST ==================== -->
+  <div class="flex items-center gap-2">
+    <span class="step-badge">2</span>
+    <h2 class="text-sm font-medium font-tech uppercase tracking-wider" style="color: var(--text-primary);">
+      {miningMode === 'proxy' ? 'Configure your pool' : 'Connect your node'}
+    </h2>
   </div>
 
   {#if miningMode === 'solo'}
@@ -568,13 +628,16 @@
 
           <div>
             <label class="block text-xs mb-1.5 inline-flex items-center gap-1" style="color: var(--text-secondary);" for="proxy-worker">
-              Worker Name <Info tip="Your Bitcoin address or pool username. All miners share this identity upstream" size={12} />
+              {proxyPassThrough ? 'Pool Wallet / Prefix' : 'Worker Name'}
+              <Info tip={proxyPassThrough
+                ? 'Optional. If set, each miner authorizes upstream as <this>.<miner-worker>, so the pool credits this wallet while tracking each device. Leave blank to pass miner usernames through unchanged.'
+                : 'Your Bitcoin address or pool username. All miners share this identity upstream.'} size={12} />
             </label>
             <input
               id="proxy-worker"
               bind:value={proxyWorker}
               class="w-full rounded-lg px-3 py-2 text-sm input-themed"
-              placeholder="your_bitcoin_address"
+              placeholder={proxyPassThrough ? 'your_wallet (optional)' : 'your_bitcoin_address'}
             />
           </div>
 
@@ -588,6 +651,18 @@
               class="w-full rounded-lg px-3 py-2 text-sm input-themed"
               placeholder="x"
             />
+          </div>
+
+          <div class="rounded-lg p-3" style="background-color: var(--bg-secondary); border: 1px solid var(--border);">
+            <div class="inline-flex items-center gap-1">
+              <Toggle bind:checked={proxyPassThrough} label="Per-miner pass-through" />
+              <Info tip="OFF (shared): all your miners appear on the pool as one worker. ON (pass-through): each miner gets its own upstream connection and appears on the pool as its own worker — correct per-device stats and vardiff." size={12} />
+            </div>
+            <p class="text-xs mt-2" style="color: var(--text-secondary); opacity: 0.75; line-height: 1.5;">
+              {proxyPassThrough
+                ? 'Each miner connects to the pool independently under its own worker name — best for correct per-device attribution.'
+                : 'All miners are aggregated under one pool identity (the worker name above).'}
+            </p>
           </div>
 
           <div class="flex gap-3 pt-2">
@@ -665,16 +740,30 @@
                 <span class="text-sm font-medium glow-text" style="color: var(--success);">Connected</span>
               </div>
 
-              <div class="grid grid-cols-2 gap-3">
-                <div class="rounded-lg p-3" style="background-color: var(--bg-secondary);">
-                  <div class="text-xs" style="color: var(--text-secondary);">Extranonce1</div>
-                  <div class="text-sm font-medium font-data" style="color: var(--accent);">{upstreamStatus.extranonce1 || '—'}</div>
+              {#if upstreamStatus.passThrough}
+                <div class="grid grid-cols-2 gap-3">
+                  <div class="rounded-lg p-3" style="background-color: var(--bg-secondary);">
+                    <div class="text-xs" style="color: var(--text-secondary);">Mode</div>
+                    <div class="text-sm font-medium font-data" style="color: var(--accent);">Per-miner</div>
+                  </div>
+                  <div class="rounded-lg p-3" style="background-color: var(--bg-secondary);">
+                    <div class="text-xs" style="color: var(--text-secondary);">Miners → Pool</div>
+                    <div class="text-sm font-medium font-data" style="color: var(--text-primary);">{upstreamStatus.minerCount ?? 0}</div>
+                  </div>
                 </div>
-                <div class="rounded-lg p-3" style="background-color: var(--bg-secondary);">
-                  <div class="text-xs" style="color: var(--text-secondary);">Upstream Difficulty</div>
-                  <div class="text-sm font-medium font-data" style="color: var(--text-primary);">{upstreamStatus.upstreamDiff || '—'}</div>
+                <div class="text-xs" style="color: var(--text-secondary); opacity: 0.7;">Each miner holds its own upstream connection to the pool.</div>
+              {:else}
+                <div class="grid grid-cols-2 gap-3">
+                  <div class="rounded-lg p-3" style="background-color: var(--bg-secondary);">
+                    <div class="text-xs" style="color: var(--text-secondary);">Extranonce1</div>
+                    <div class="text-sm font-medium font-data" style="color: var(--accent);">{upstreamStatus.extranonce1 || '—'}</div>
+                  </div>
+                  <div class="rounded-lg p-3" style="background-color: var(--bg-secondary);">
+                    <div class="text-xs" style="color: var(--text-secondary);">Upstream Difficulty</div>
+                    <div class="text-sm font-medium font-data" style="color: var(--text-primary);">{upstreamStatus.upstreamDiff || '—'}</div>
+                  </div>
                 </div>
-              </div>
+              {/if}
             </div>
           {:else}
             <div class="text-center py-8">
@@ -720,4 +809,82 @@
       </div>
     </div>
   {/if}
+
+  <!-- ==================== STEP 3: POINT YOUR MINERS HERE ==================== -->
+  <div class="flex items-center gap-2">
+    <span class="step-badge">3</span>
+    <h2 class="text-sm font-medium font-tech uppercase tracking-wider" style="color: var(--text-primary);">Point your miners here</h2>
+  </div>
+
+  <div class="rounded-xl p-6 card-glow" style="background-color: var(--bg-card);">
+    <p class="text-xs mb-4" style="color: var(--text-secondary); line-height: 1.6;">
+      Enter these details into each mining device (Bitaxe, NerdAxe, etc.) on your network. Every miner connects to GoVault at this address — GoVault handles the {miningMode === 'proxy' ? 'pool' : 'node'} for them.
+    </p>
+
+    <div class="space-y-3">
+      <!-- Stratum URL -->
+      <div>
+        <div class="text-xs mb-1.5 inline-flex items-center gap-1" style="color: var(--text-secondary);">
+          Stratum URL <Info tip="This computer's LAN address and GoVault's stratum port. Point every miner here." size={12} />
+        </div>
+        <div class="flex gap-2">
+          <code
+            class="flex-1 rounded-lg px-3 py-2 text-sm font-data overflow-x-auto whitespace-nowrap"
+            style="background-color: var(--bg-primary); color: var(--accent); border: 1px solid var(--border);"
+          >{stratumURL || 'stratum+tcp://…'}</code>
+          <button
+            class="px-3 py-2 text-xs rounded-lg font-tech uppercase tracking-wider transition-all glow-border-hover flex-shrink-0"
+            style="background: rgba(var(--accent-rgb), 0.1); color: var(--accent); border: 1px solid rgba(var(--accent-rgb), 0.3);"
+            on:click={copyStratumURL}
+          >
+            {copiedURL ? 'Copied!' : 'Copy'}
+          </button>
+        </div>
+      </div>
+
+      <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+        <!-- Username -->
+        <div>
+          <div class="text-xs mb-1.5 inline-flex items-center gap-1" style="color: var(--text-secondary);">
+            Username / Worker <Info tip={minerUsernameHint} size={12} />
+          </div>
+          <code
+            class="block rounded-lg px-3 py-2 text-sm font-data overflow-x-auto whitespace-nowrap"
+            style="background-color: var(--bg-primary); color: var(--text-primary); border: 1px solid var(--border);"
+          >{minerUsername}</code>
+          <p class="text-xs mt-1.5" style="color: var(--text-secondary); opacity: 0.7; line-height: 1.5;">{minerUsernameHint}</p>
+        </div>
+
+        <!-- Password -->
+        <div>
+          <div class="text-xs mb-1.5 inline-flex items-center gap-1" style="color: var(--text-secondary);">
+            Password <Info tip="Most miners require a value here. GoVault ignores it — 'x' is fine." size={12} />
+          </div>
+          <code
+            class="block rounded-lg px-3 py-2 text-sm font-data"
+            style="background-color: var(--bg-primary); color: var(--text-primary); border: 1px solid var(--border);"
+          >x</code>
+          <p class="text-xs mt-1.5" style="color: var(--text-secondary); opacity: 0.7; line-height: 1.5;">Anything works — GoVault does not check it.</p>
+        </div>
+      </div>
+    </div>
+  </div>
 </div>
+
+<style>
+  .step-badge {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 22px;
+    height: 22px;
+    border-radius: 9999px;
+    font-size: 12px;
+    font-weight: 700;
+    color: var(--accent);
+    background: rgba(var(--accent-rgb), 0.12);
+    border: 1px solid var(--accent);
+    box-shadow: 0 0 6px rgba(var(--accent-rgb), 0.25);
+    flex-shrink: 0;
+  }
+</style>

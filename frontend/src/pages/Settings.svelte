@@ -27,6 +27,11 @@
   let coinList: Array<{id: string; name: string; symbol: string; defaultRPCPort: number; defaultRPCUser: string; segwit: boolean}> = [];
   let dbPath = '';
   let dbSize = 0;
+  let dbShareRows = 0;
+  let dbMaxSizeMB = 250;
+  let dbBusy = '';        // '' | 'compact' | 'clear'
+  let dbMsg = '';
+  let confirmClear = false;
 
   // Theme options
   const themes: { id: ThemeName; label: string; accent: string; desc: string }[] = [
@@ -49,7 +54,7 @@
 
   onMount(async () => {
     try {
-      const { GetConfig, GetStratumURL, GetCoinList, GetDatabaseInfo } = await import('../../wailsjs/go/main/App');
+      const { GetConfig, GetStratumURL, GetCoinList, GetDatabaseInfo } = await import('../../wailsjs/go/appcore/App');
       coinList = await GetCoinList() || [];
       const cfg = await GetConfig();
       if (cfg) {
@@ -72,6 +77,8 @@
       if (dbInfo) {
         dbPath = dbInfo.path || '';
         dbSize = dbInfo.size || 0;
+        dbShareRows = dbInfo.shareRows || 0;
+        dbMaxSizeMB = dbInfo.maxSizeMB ?? 250;
       }
     } catch {}
 
@@ -92,7 +99,7 @@
       return;
     }
     try {
-      const { ValidateAddress } = await import('../../wailsjs/go/main/App');
+      const { ValidateAddress } = await import('../../wailsjs/go/appcore/App');
       const result = await ValidateAddress(payoutAddress, selectedCoin);
       addressValid = result?.valid || false;
       addressType = result?.type || '';
@@ -105,12 +112,12 @@
     saving = true;
     saveMsg = '';
     try {
-      const { GetConfig, UpdateConfig } = await import('../../wailsjs/go/main/App');
+      const { GetConfig, UpdateConfig } = await import('../../wailsjs/go/appcore/App');
       const cfg = await GetConfig();
       cfg.stratum = { port: stratumPort, maxConn, autoStart };
       cfg.mining = { coin: selectedCoin, payoutAddress, coinbaseTag };
       cfg.vardiff = { minDiff, maxDiff, targetTimeSec, retargetTimeSec, variancePct };
-      cfg.app = { ...cfg.app, logLevel, electricityCost };
+      cfg.app = { ...cfg.app, logLevel, electricityCost, dbMaxSizeMB: Math.max(0, Math.round(dbMaxSizeMB) || 0) };
       await UpdateConfig(cfg);
       saveMsg = 'Settings saved!';
       setTimeout(() => saveMsg = '', 3000);
@@ -130,6 +137,49 @@
     const i = Math.min(Math.floor(Math.log(bytes) / Math.log(1024)), units.length - 1);
     const val = bytes / Math.pow(1024, i);
     return `${val < 10 ? val.toFixed(2) : val < 100 ? val.toFixed(1) : val.toFixed(0)} ${units[i]}`;
+  }
+
+  async function refreshDbInfo() {
+    try {
+      const { GetDatabaseInfo } = await import('../../wailsjs/go/appcore/App');
+      const info = await GetDatabaseInfo();
+      if (info) {
+        dbSize = info.size || 0;
+        dbShareRows = info.shareRows || 0;
+      }
+    } catch {}
+  }
+
+  async function compactDb() {
+    dbBusy = 'compact';
+    dbMsg = '';
+    try {
+      const { CompactDatabase } = await import('../../wailsjs/go/appcore/App');
+      const r = await CompactDatabase();
+      await refreshDbInfo();
+      const reclaimed = r?.reclaimed || 0;
+      dbMsg = reclaimed > 0 ? `Reclaimed ${formatBytes(reclaimed)}.` : 'Already compact.';
+    } catch (e: any) {
+      dbMsg = `Error: ${e?.message || e}`;
+    }
+    dbBusy = '';
+    setTimeout(() => dbMsg = '', 4000);
+  }
+
+  async function clearStats() {
+    dbBusy = 'clear';
+    dbMsg = '';
+    confirmClear = false;
+    try {
+      const { ClearStatistics } = await import('../../wailsjs/go/appcore/App');
+      const n = await ClearStatistics();
+      await refreshDbInfo();
+      dbMsg = `Cleared ${n} shares. Blocks & lifetime totals kept.`;
+    } catch (e: any) {
+      dbMsg = `Error: ${e?.message || e}`;
+    }
+    dbBusy = '';
+    setTimeout(() => dbMsg = '', 5000);
   }
 
   $: currentCoinName = coinList.find(c => c.id === selectedCoin)?.name || 'Bitcoin';
@@ -326,10 +376,71 @@
               <div class="rounded-lg p-3" style="background-color: var(--bg-secondary);">
                 <div class="flex items-center justify-between mb-1">
                   <span class="text-xs" style="color: var(--text-secondary);">Disk Usage</span>
-                  <span class="text-sm font-data" style="color: var(--accent);">{formatBytes(dbSize)}</span>
+                  <span class="text-sm font-data" style="color: var(--accent);">{formatBytes(dbSize)}{dbMaxSizeMB > 0 ? ` / ${dbMaxSizeMB} MB cap` : ''}</span>
+                </div>
+                <div class="flex items-center justify-between mb-1">
+                  <span class="text-xs" style="color: var(--text-secondary);">Share Rows</span>
+                  <span class="text-sm font-data" style="color: var(--text-primary);">{dbShareRows.toLocaleString()}</span>
                 </div>
                 <div class="text-xs break-all" style="color: var(--text-secondary); opacity: 0.7;">{dbPath}</div>
               </div>
+            </div>
+
+            <div>
+              <label class="block text-xs mb-1.5 inline-flex items-center gap-1" style="color: var(--text-secondary);" for="dbcap">
+                Size Cap (MB) <Info tip="When the DB grows past this, the oldest shares are pruned and the file is vacuumed back under the cap. 0 = no cap (30-day age pruning only). Applied on save." size={12} />
+              </label>
+              <input
+                id="dbcap"
+                bind:value={dbMaxSizeMB}
+                type="number"
+                min="0"
+                class="w-full rounded-lg px-3 py-2 text-sm input-themed"
+                placeholder="250"
+              />
+              <div class="text-xs mt-1" style="color: var(--text-secondary); opacity: 0.7;">0 = unlimited. Enforced hourly and on save.</div>
+            </div>
+
+            <div class="flex gap-2 items-center flex-wrap">
+              <button
+                class="px-3 py-2 rounded-lg text-xs font-medium font-tech uppercase tracking-wider transition-colors flex items-center gap-2"
+                style="background-color: var(--bg-secondary); border: 1px solid var(--border); color: var(--text-primary); {dbBusy ? 'opacity: 0.6;' : ''}"
+                on:click={compactDb}
+                disabled={!!dbBusy}
+              >
+                {dbBusy === 'compact' ? 'Compacting…' : 'Compact Now'}
+              </button>
+
+              {#if confirmClear}
+                <button
+                  class="px-3 py-2 rounded-lg text-xs font-medium font-tech uppercase tracking-wider transition-colors"
+                  style="background: rgba(255,50,50,0.12); border: 1px solid var(--error); color: var(--error); {dbBusy ? 'opacity: 0.6;' : ''}"
+                  on:click={clearStats}
+                  disabled={!!dbBusy}
+                >
+                  {dbBusy === 'clear' ? 'Clearing…' : 'Confirm Clear'}
+                </button>
+                <button
+                  class="px-3 py-2 rounded-lg text-xs font-tech uppercase tracking-wider"
+                  style="background-color: var(--bg-secondary); border: 1px solid var(--border); color: var(--text-secondary);"
+                  on:click={() => confirmClear = false}
+                  disabled={!!dbBusy}
+                >Cancel</button>
+              {:else}
+                <button
+                  class="px-3 py-2 rounded-lg text-xs font-medium font-tech uppercase tracking-wider transition-colors"
+                  style="background-color: var(--bg-secondary); border: 1px solid rgba(255,50,50,0.4); color: var(--error);"
+                  on:click={() => confirmClear = true}
+                  disabled={!!dbBusy}
+                >Clear Stats</button>
+              {/if}
+
+              {#if dbMsg}
+                <span class="text-xs font-data" style="color: {dbMsg.startsWith('Error') ? 'var(--error)' : 'var(--success)'};">{dbMsg}</span>
+              {/if}
+            </div>
+            <div class="text-xs" style="color: var(--text-secondary); opacity: 0.7;">
+              <span class="font-tech uppercase" style="color: var(--error);">Clear Stats</span> wipes share/hashrate/session history to shrink the DB. Found blocks and lifetime totals are kept.
             </div>
           {/if}
         </div>
