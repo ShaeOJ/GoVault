@@ -43,6 +43,20 @@ type NodeConfig struct {
 	Username string `json:"username"`
 	Password string `json:"password"`
 	UseSSL   bool   `json:"useSSL"`
+
+	// ZMQBlock is the node's ZMQ hashblock PUB endpoint (e.g.
+	// "tcp://127.0.0.1:28332"). When set, it becomes the primary new-block
+	// notification path and the RPC poll drops to a slow fallback heartbeat.
+	// Empty = poll-only (the node needs no ZMQ configured). Requires the node
+	// to run with -zmqpubhashblock=<endpoint>.
+	ZMQBlock string `json:"zmqBlock,omitempty"`
+
+	// FallbackPollSec is how often (seconds) to poll getbestblockhash as a
+	// fallback while ZMQ is the primary notify path, in case ZMQ drops or the
+	// node misses a publish. Only used when ZMQBlock is set. Default 30.
+	// Lower it for fast-block or remote-ZMQ coins so an outage can't strand
+	// miners on a stale tip for long. Ignored in poll-only mode (fixed 500ms).
+	FallbackPollSec int `json:"fallbackPollSec,omitempty"`
 }
 
 type StratumConfig struct {
@@ -53,13 +67,13 @@ type StratumConfig struct {
 	AutoStart      bool `json:"autoStart"`
 
 	// Security / anti-spam
-	BanDurationMinutes   int     `json:"banDurationMinutes"`   // 0 = banning disabled
+	BanDurationMinutes    int     `json:"banDurationMinutes"`    // 0 = banning disabled
 	InvalidShareThreshold float64 `json:"invalidShareThreshold"` // rejection fraction 0–1, 0 = disabled
-	InvalidShareWindow   int     `json:"invalidShareWindow"`   // sliding window size (shares)
-	MaxMsgPerSec         float64 `json:"maxMsgPerSec"`         // per-connection msg rate, 0 = disabled
-	MaxMsgBurst          int     `json:"maxMsgBurst"`          // burst capacity for rate limiter
-	MaxLineSizeKB        int     `json:"maxLineSizeKB"`        // max JSON line length, 0 = disabled
-	NTimeMaxDriftSec     int     `json:"nTimeMaxDriftSec"`     // max ntime drift vs now, 0 = disabled
+	InvalidShareWindow    int     `json:"invalidShareWindow"`    // sliding window size (shares)
+	MaxMsgPerSec          float64 `json:"maxMsgPerSec"`          // per-connection msg rate, 0 = disabled
+	MaxMsgBurst           int     `json:"maxMsgBurst"`           // burst capacity for rate limiter
+	MaxLineSizeKB         int     `json:"maxLineSizeKB"`         // max JSON line length, 0 = disabled
+	NTimeMaxDriftSec      int     `json:"nTimeMaxDriftSec"`      // max ntime drift vs now, 0 = disabled
 }
 
 type MiningConfig struct {

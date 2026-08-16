@@ -32,6 +32,7 @@ type App struct {
 	log        *logger.Logger
 	nodeClient *node.Client
 	monitor    *node.ChainMonitor
+	zmq        *node.ZMQSubscriber // nil in poll-only or proxy mode
 	stratum    *stratum.Server
 	registry   *miner.Registry
 	stats      *miner.StatsAggregator
@@ -48,10 +49,10 @@ type App struct {
 	buffer *database.Buffer
 
 	// Cached node info (protected by netMu)
-	networkDiff    float64
+	networkDiff     float64
 	networkHashrate float64
-	blockHeight    int64
-	netMu          sync.RWMutex
+	blockHeight     int64
+	netMu           sync.RWMutex
 
 	// Fleet power cache (30s TTL)
 	fleetPowerCache miner.FleetPowerStats
@@ -195,6 +196,8 @@ func (a *App) OnShutdown(ctx context.Context) {
 	srv := a.stratum
 	mon := a.monitor
 	a.monitor = nil
+	zsub := a.zmq
+	a.zmq = nil
 	a.svcMu.Unlock()
 
 	if uc != nil {
@@ -202,6 +205,9 @@ func (a *App) OnShutdown(ctx context.Context) {
 	}
 	if srv != nil && srv.IsRunning() {
 		srv.Stop()
+	}
+	if zsub != nil {
+		zsub.Stop()
 	}
 	if mon != nil {
 		mon.Stop()
@@ -324,23 +330,46 @@ func (a *App) startSolo() error {
 		return err
 	}
 
-	// Start chain monitor for ongoing block updates
-	mon := node.NewChainMonitor(a.nodeClient, 500*time.Millisecond, coinDef.GBTRules)
+	// Block-notification wiring.
+	//
+	// Poll-only mode (no ZMQ endpoint configured): the chain monitor polls
+	// getbestblockhash every 500ms and fires OnNewBlock on a tip change.
+	//
+	// ZMQ mode (Node.ZMQBlock set): the ZMQ hashblock subscriber is the primary
+	// notify path — it reacts the instant the node publishes a new tip. The RPC
+	// poll drops to a slow fallback heartbeat (default 30s) that only broadcasts
+	// if ZMQ actually misses a block. Height-based dedup keeps the two paths from
+	// double-broadcasting the same block. (Height is byte-order-independent;
+	// ZMQ hashblock and getbestblockhash report the tip in opposite byte orders,
+	// so we must dedup by height, not by comparing the hashes.)
+	usingZMQ := a.config.Node.ZMQBlock != ""
+
+	pollInterval := 500 * time.Millisecond
+	if usingZMQ {
+		pollInterval = 30 * time.Second
+		if a.config.Node.FallbackPollSec > 0 {
+			pollInterval = time.Duration(a.config.Node.FallbackPollSec) * time.Second
+		}
+	}
+
+	mon := node.NewChainMonitor(a.nodeClient, pollInterval, coinDef.GBTRules)
 	mon.SetRefreshInterval(10 * time.Second)
 	mon.OnNewBlock = func(tmpl *node.BlockTemplate) {
-		a.log.Infof("app", "new block template: height=%d txns=%d", tmpl.Height, len(tmpl.Transactions))
-		a.svcMu.RLock()
-		srv := a.stratum
-		a.svcMu.RUnlock()
-		if srv != nil {
-			srv.NewBlockTemplate(tmpl)
+		if usingZMQ {
+			// Fallback path: ZMQ handles blocks first and advances blockHeight.
+			// Skip anything already handled so we don't force a needless work
+			// restart on the tip miners are already mining.
+			a.netMu.RLock()
+			last := a.blockHeight
+			a.netMu.RUnlock()
+			if tmpl.Height <= last {
+				return
+			}
+			a.log.Warnf("app", "poll fallback: new block height=%d — ZMQ missed it, broadcasting job", tmpl.Height)
+			a.applyBlockTemplate(tmpl, "poll-fallback")
+			return
 		}
-		a.netMu.Lock()
-		a.blockHeight = tmpl.Height
-		a.netMu.Unlock()
-		a.emit("node:new-block", map[string]interface{}{
-			"height": tmpl.Height,
-		})
+		a.applyBlockTemplate(tmpl, "poll")
 	}
 	mon.OnTemplateRefresh = func(tmpl *node.BlockTemplate) {
 		a.svcMu.RLock()
@@ -354,13 +383,61 @@ func (a *App) startSolo() error {
 		a.log.Errorf("app", "chain monitor error: %v", err)
 	})
 
+	// ZMQ subscriber for instant block notifications (when configured). Pure Go,
+	// auto-reconnects; the poll monitor above covers any gap while it's down.
+	var zsub *node.ZMQSubscriber
+	if usingZMQ {
+		zsub = node.NewZMQSubscriber(a.config.Node.ZMQBlock)
+		zsub.SetOnError(func(err error) {
+			a.log.Warnf("app", "%v", err)
+		})
+		zsub.OnNewHash = func(hash string) {
+			a.log.Infof("app", "zmq hashblock=%s — fetching template", hash)
+			tmpl, err := mon.RefreshTemplate()
+			if err != nil {
+				a.log.Errorf("app", "zmq getblocktemplate: %v", err)
+				return
+			}
+			a.applyBlockTemplate(tmpl, "zmq")
+		}
+	}
+
 	a.svcMu.Lock()
 	a.monitor = mon
+	a.zmq = zsub
 	a.svcMu.Unlock()
 	mon.Start()
+	if zsub != nil {
+		zsub.Start()
+		a.log.Infof("app", "zmq subscriber started: %s (poll fallback every %s)", a.config.Node.ZMQBlock, pollInterval)
+	}
 
-	a.log.Info("app", "stratum server started (solo mode)")
+	if usingZMQ {
+		a.log.Info("app", "stratum server started (solo mode, ZMQ + poll fallback)")
+	} else {
+		a.log.Info("app", "stratum server started (solo mode, poll)")
+	}
 	return nil
+}
+
+// applyBlockTemplate broadcasts a new block template to the running stratum
+// server, records the new height, and emits the UI event. Shared by the ZMQ
+// notification path and the RPC poll fallback in solo mode. source is a short
+// label ("zmq", "poll", "poll-fallback") for the log line.
+func (a *App) applyBlockTemplate(tmpl *node.BlockTemplate, source string) {
+	a.svcMu.RLock()
+	srv := a.stratum
+	a.svcMu.RUnlock()
+	if srv != nil {
+		srv.NewBlockTemplate(tmpl)
+	}
+	a.netMu.Lock()
+	a.blockHeight = tmpl.Height
+	a.netMu.Unlock()
+	a.log.Infof("app", "new block template (%s): height=%d txns=%d", source, tmpl.Height, len(tmpl.Transactions))
+	a.emit("node:new-block", map[string]interface{}{
+		"height": tmpl.Height,
+	})
 }
 
 func (a *App) startProxy() error {
@@ -709,11 +786,16 @@ func (a *App) StopStratum() error {
 	a.upstream = nil
 	mon := a.monitor
 	a.monitor = nil
+	zsub := a.zmq
+	a.zmq = nil
 	srv := a.stratum
 	a.svcMu.Unlock()
 
 	if uc != nil {
 		uc.Stop()
+	}
+	if zsub != nil {
+		zsub.Stop()
 	}
 	if mon != nil {
 		mon.Stop()
@@ -985,10 +1067,10 @@ func (a *App) GetNodeStatus() map[string]interface{} {
 	a.netMu.RUnlock()
 
 	result := map[string]interface{}{
-		"connected":       connected,
-		"blockHeight":     height,
+		"connected":         connected,
+		"blockHeight":       height,
 		"networkDifficulty": netDiff,
-		"networkHashrate": netHash,
+		"networkHashrate":   netHash,
 	}
 
 	if connected {
