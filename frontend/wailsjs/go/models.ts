@@ -145,6 +145,8 @@ export namespace config {
 	    username: string;
 	    password: string;
 	    useSSL: boolean;
+	    zmqBlock?: string;
+	    fallbackPollSec?: number;
 	
 	    static createFrom(source: any = {}) {
 	        return new NodeConfig(source);
@@ -157,6 +159,8 @@ export namespace config {
 	        this.username = source["username"];
 	        this.password = source["password"];
 	        this.useSSL = source["useSSL"];
+	        this.zmqBlock = source["zmqBlock"];
+	        this.fallbackPollSec = source["fallbackPollSec"];
 	    }
 	}
 	export class Config {
