@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"govault/internal/logger"
+	"govault/internal/version"
 )
 
 // pendingJob stores an early job notification received before the OnJob
@@ -336,7 +337,7 @@ func (c *Client) configure() {
 }
 
 func (c *Client) subscribe() error {
-	resp, err := c.call("mining.subscribe", []interface{}{"GoVault/0.2.0"}, 10*time.Second)
+	resp, err := c.call("mining.subscribe", []interface{}{"GoVault/" + version.Version}, 10*time.Second)
 	if err != nil {
 		return err
 	}

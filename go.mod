@@ -1,14 +1,17 @@
 module govault
 
-go 1.24.0
+go 1.25.0
 
 require (
 	github.com/go-zeromq/zmq4 v0.17.0
+	github.com/minio/selfupdate v0.6.0
 	github.com/wailsapp/wails/v2 v2.11.0
+	golang.org/x/mod v0.40.0
 	modernc.org/sqlite v1.45.0
 )
 
 require (
+	aead.dev/minisign v0.2.0 // indirect
 	github.com/bep/debounce v1.2.1 // indirect
 	github.com/dustin/go-humanize v1.0.1 // indirect
 	github.com/go-ole/go-ole v1.3.0 // indirect

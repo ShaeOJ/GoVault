@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"math/big"
 	"net"
+	"os"
 	"strings"
 	"sync"
 	"time"
@@ -21,7 +22,9 @@ import (
 	"govault/internal/miner"
 	"govault/internal/node"
 	"govault/internal/stratum"
+	"govault/internal/update"
 	"govault/internal/upstream"
+	"govault/internal/version"
 )
 
 // App struct bridges all backend subsystems to the Wails frontend.
@@ -92,6 +95,53 @@ func (a *App) emit(event string, data ...interface{}) {
 // SetHost wires the frontend transport. The desktop passes a Wails-backed host,
 // the headless server an SSE host. Must be called before OnStartup.
 func (a *App) SetHost(h AppHost) { a.host = h }
+
+// --- In-app updater (GitHub releases) ---
+
+// GetVersion returns the running app version (injected at build time).
+func (a *App) GetVersion() string { return version.Version }
+
+// CheckForUpdate queries GitHub for the latest release vs. the running version.
+// Never errors on network issues — the reason lands in Info.Error.
+func (a *App) CheckForUpdate() update.Info { return update.Check() }
+
+// ApplyUpdate downloads + swaps the binary with the latest release (Windows/
+// Linux single-binary builds), then relaunches and quits this instance.
+func (a *App) ApplyUpdate() error {
+	info := update.Check()
+	if info.Error != "" {
+		return fmt.Errorf("update check failed: %s", info.Error)
+	}
+	if !info.Available {
+		return fmt.Errorf("already up to date (%s)", info.Current)
+	}
+	if !info.SelfApplies {
+		return fmt.Errorf("automatic update isn't available on this platform — download %s from %s", info.AssetName, info.ReleaseURL)
+	}
+	if err := update.Apply(info.AssetURL); err != nil {
+		return err
+	}
+	if err := update.Relaunch(); err != nil {
+		return fmt.Errorf("update applied but relaunch failed: %w (restart GoVault manually)", err)
+	}
+	if a.host != nil {
+		a.host.Quit()
+	} else {
+		os.Exit(0)
+	}
+	return nil
+}
+
+// checkUpdatesOnStartup runs a background release check and emits
+// "update:available" (with update.Info) if a newer version exists.
+func (a *App) checkUpdatesOnStartup() {
+	go func() {
+		info := update.Check()
+		if info.Available && a.host != nil {
+			a.host.Emit("update:available", info)
+		}
+	}()
+}
 
 // FleetOverview holds aggregated fleet stats for the Miners page.
 type FleetOverview struct {
@@ -184,6 +234,8 @@ func (a *App) OnStartup(ctx context.Context) {
 func (a *App) OnDomReady(ctx context.Context) {
 	// Try connecting to node
 	go a.refreshNodeInfo()
+	// Check GitHub for a newer release and notify the UI if one exists.
+	a.checkUpdatesOnStartup()
 }
 
 // OnShutdown is called when the app is closing.

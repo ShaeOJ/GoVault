@@ -98,7 +98,7 @@ jobs:
       - name: Setup Go
         uses: actions/setup-go@v5
         with:
-          go-version: "1.24"
+          go-version: "1.25"
 
       - name: Setup Node
         uses: actions/setup-node@v4
@@ -120,7 +120,7 @@ jobs:
           fi
 
       - name: Build
-        run: wails build -platform ${{ matrix.platform }} ${{ matrix.tags && format('-tags {0}', matrix.tags) || '' }}
+        run: wails build -platform ${{ matrix.platform }} ${{ matrix.tags && format('-tags {0}', matrix.tags) || '' }} -ldflags "-X govault/internal/version.Version=${{ github.ref_name }}"
 
       - name: Package Windows
         if: startsWith(matrix.platform, 'windows')
@@ -153,14 +153,14 @@ jobs:
       - name: Setup Go
         uses: actions/setup-go@v5
         with:
-          go-version: "1.24"
+          go-version: "1.25"
 
       - name: Build headless edge node (all platforms, pure Go)
         env:
           CGO_ENABLED: "0"
         run: |
           mkdir -p dist
-          b() { GOOS=$1 GOARCH=$2 go build -ldflags="-s -w" -o "dist/$3" ./cmd/govault-headless; }
+          b() { GOOS=$1 GOARCH=$2 go build -ldflags="-s -w -X govault/internal/version.Version=${{ github.ref_name }}" -o "dist/$3" ./cmd/govault-headless; }
           b windows amd64 govault-headless-windows-amd64.exe
           b linux   amd64 govault-headless-linux-amd64
           b linux   arm64 govault-headless-linux-arm64

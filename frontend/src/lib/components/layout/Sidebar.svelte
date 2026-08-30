@@ -1,9 +1,20 @@
 <script lang="ts">
+  import { onMount } from 'svelte';
   import Icon from '../common/Icon.svelte';
   import MinerGlobe from '../common/MinerGlobe.svelte';
   import logoUrl from '../../../assets/images/logo.png';
 
   export let currentPage: string = 'dashboard';
+
+  // Real app version (injected at build time), not a hardcoded string.
+  let appVersion = '';
+  onMount(async () => {
+    try {
+      const { GetVersion } = await import('../../../../wailsjs/go/appcore/App');
+      const v = await GetVersion();
+      appVersion = !v || v === 'dev' ? 'dev' : (v.startsWith('v') ? v : 'v' + v);
+    } catch { appVersion = ''; }
+  });
 
   const navItems = [
     { id: 'dashboard', label: 'Dashboard', icon: 'reactor' },
@@ -99,7 +110,7 @@
         class="w-2 h-2 rounded-full status-pulse"
         style="background-color: var(--accent); box-shadow: 0 0 6px var(--accent-glow);"
       ></div>
-      <span class="ml-2 text-xs font-data hidden lg:block" style="color: var(--text-secondary);">v0.2.0-beta.5</span>
+      <span class="ml-2 text-xs font-data hidden lg:block" style="color: var(--text-secondary);">{appVersion}</span>
     </div>
   </div>
 </aside>

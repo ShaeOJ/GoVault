@@ -184,6 +184,41 @@
 
   $: currentCoinName = coinList.find(c => c.id === selectedCoin)?.name || 'Bitcoin';
   $: currentCoinSymbol = coinList.find(c => c.id === selectedCoin)?.symbol || 'BTC';
+
+  // --- Updates ---
+  let appVersion = '';
+  let checkingUpdate = false;
+  let updateInfo: any = null;
+  let applyingUpdate = false;
+  let updateMsg = '';
+
+  onMount(async () => {
+    try { const { GetVersion } = await import('../../wailsjs/go/appcore/App'); appVersion = await GetVersion(); } catch {}
+  });
+
+  async function checkUpdate() {
+    checkingUpdate = true; updateMsg = ''; updateInfo = null;
+    try {
+      const { CheckForUpdate } = await import('../../wailsjs/go/appcore/App');
+      updateInfo = await CheckForUpdate();
+      if (updateInfo?.error) updateMsg = 'Check failed: ' + updateInfo.error;
+      else if (!updateInfo?.available) updateMsg = 'You are on the latest version.';
+    } catch (e: any) { updateMsg = 'Error: ' + (e?.message || e); }
+    checkingUpdate = false;
+  }
+
+  async function applyUpdate() {
+    if (!updateInfo?.available || !updateInfo?.selfApplies) return;
+    applyingUpdate = true; updateMsg = 'Downloading & applying — GoVault will restart when done…';
+    try {
+      const { ApplyUpdate } = await import('../../wailsjs/go/appcore/App');
+      await ApplyUpdate();
+    } catch (e: any) { updateMsg = 'Update failed: ' + (e?.message || e); applyingUpdate = false; }
+  }
+
+  async function openRelease() {
+    try { const { BrowserOpenURL } = await import('../../wailsjs/runtime/runtime'); if (updateInfo?.releaseUrl) BrowserOpenURL(updateInfo.releaseUrl); } catch {}
+  }
 </script>
 
 <div class="space-y-6">
@@ -442,6 +477,54 @@
             <div class="text-xs" style="color: var(--text-secondary); opacity: 0.7;">
               <span class="font-tech uppercase" style="color: var(--error);">Clear Stats</span> wipes share/hashrate/session history to shrink the DB. Found blocks and lifetime totals are kept.
             </div>
+          {/if}
+        </div>
+      </div>
+
+      <!-- Updates -->
+      <div class="rounded-xl p-6 card-glow" style="background-color: var(--bg-card);">
+        <h3 class="text-sm font-medium font-tech uppercase tracking-wider mb-4" style="color: var(--text-secondary);">Updates</h3>
+        <div class="space-y-4">
+          <div class="flex items-center justify-between gap-3">
+            <div>
+              <div class="text-xs" style="color: var(--text-secondary); opacity: 0.7;">Current version</div>
+              <div class="text-sm font-data" style="color: var(--text-primary);">{appVersion || '—'}</div>
+            </div>
+            <button
+              class="px-3 py-2 rounded-lg text-xs font-medium font-tech uppercase tracking-wider transition-colors"
+              style="background-color: var(--bg-secondary); border: 1px solid var(--border); color: var(--text-primary);"
+              on:click={checkUpdate}
+              disabled={checkingUpdate || applyingUpdate}
+            >{checkingUpdate ? 'Checking…' : 'Check for Updates'}</button>
+          </div>
+
+          {#if updateInfo?.available}
+            <div class="rounded-lg p-3" style="background-color: var(--bg-secondary); border: 1px solid var(--accent);">
+              <div class="text-sm font-tech uppercase tracking-wider" style="color: var(--accent);">Update available — {updateInfo.latest}</div>
+              {#if updateInfo.notes}
+                <div class="text-xs mt-2 font-data" style="color: var(--text-secondary); white-space: pre-wrap; max-height: 8rem; overflow: auto;">{updateInfo.notes}</div>
+              {/if}
+              <div class="flex gap-2 mt-3">
+                {#if updateInfo.selfApplies}
+                  <button
+                    class="px-3 py-2 rounded-lg text-xs font-medium font-tech uppercase tracking-wider transition-all glow-border-hover"
+                    style="background: rgba(var(--accent-rgb), 0.1); color: var(--accent); border: 1px solid var(--accent); {applyingUpdate ? 'opacity: 0.7;' : ''}"
+                    on:click={applyUpdate}
+                    disabled={applyingUpdate}
+                  >{applyingUpdate ? 'Updating…' : 'Update Now'}</button>
+                {:else}
+                  <button
+                    class="px-3 py-2 rounded-lg text-xs font-medium font-tech uppercase tracking-wider transition-colors"
+                    style="background-color: var(--bg-secondary); border: 1px solid var(--border); color: var(--text-primary);"
+                    on:click={openRelease}
+                  >Open Download Page</button>
+                {/if}
+              </div>
+            </div>
+          {/if}
+
+          {#if updateMsg}
+            <span class="text-xs font-data" style="color: {(updateMsg.toLowerCase().includes('fail') || updateMsg.startsWith('Error')) ? 'var(--error)' : 'var(--text-secondary)'};">{updateMsg}</span>
           {/if}
         </div>
       </div>
