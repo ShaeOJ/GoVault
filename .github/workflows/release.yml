@@ -142,3 +142,32 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           files: ${{ matrix.asset_name }}
+
+  build-headless:
+    needs: create-release
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: "1.24"
+
+      - name: Build headless edge node (all platforms, pure Go)
+        env:
+          CGO_ENABLED: "0"
+        run: |
+          mkdir -p dist
+          b() { GOOS=$1 GOARCH=$2 go build -ldflags="-s -w" -o "dist/$3" ./cmd/govault-headless; }
+          b windows amd64 govault-headless-windows-amd64.exe
+          b linux   amd64 govault-headless-linux-amd64
+          b linux   arm64 govault-headless-linux-arm64
+          b darwin  amd64 govault-headless-macos-amd64
+          b darwin  arm64 govault-headless-macos-arm64
+
+      - name: Upload headless release assets
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist/govault-headless-*
