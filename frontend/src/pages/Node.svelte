@@ -18,6 +18,9 @@
   let username = 'bitcoin';
   let password = '';
   let useSSL = false;
+  // ZMQ hashblock endpoint — blank = poll-only. Set to enable instant block
+  // notifications (requires the node to run -zmqpubhashblock=<endpoint>).
+  let zmqBlock = '';
 
   // Proxy mode fields
   let proxyUrl = '';
@@ -61,6 +64,15 @@
   $: configFileName = configFiles[coinId]?.file || 'bitcoin.conf';
   $: configPath = configFiles[coinId]?.path || '%APPDATA%\\Bitcoin\\bitcoin.conf';
 
+  // Default ZMQ hashblock port per coin (matches the node's -zmqpubhashblock).
+  const zmqPortDefaults: Record<string, number> = { btc: 28332, bch: 28332, bc2: 28332, xec: 28332, dgb: 28336 };
+  function suggestZmq() {
+    const p = zmqPortDefaults[coinId] || 28332;
+    zmqBlock = `tcp://${host || '127.0.0.1'}:${p}`;
+  }
+  // Port extracted from the endpoint, for the generated node-side config line.
+  $: zmqPort = (zmqBlock.match(/:(\d+)\s*$/) || [])[1] || '';
+
   $: generatedConfig = [
     '# GoVault - RPC Configuration',
     'server=1',
@@ -72,6 +84,7 @@
     '',
     '# Required for mining',
     'txindex=1',
+    ...(zmqBlock ? ['', '# Instant block notifications (ZMQ)', `zmqpubhashblock=tcp://0.0.0.0:${zmqPort || '28332'}`] : []),
   ].join('\n');
 
   async function copyConfig() {
@@ -138,6 +151,7 @@
         username = cfg.node.username || username;
         password = cfg.node.password || '';
         useSSL = cfg.node.useSSL || false;
+        zmqBlock = cfg.node.zmqBlock || '';
       }
       if (cfg?.proxy) {
         proxyUrl = cfg.proxy.url || '';
@@ -220,7 +234,7 @@
     try {
       const { GetConfig, UpdateConfig, ConnectNode } = await import('../../wailsjs/go/appcore/App');
       const cfg = await GetConfig();
-      cfg.node = { host, port, username, password, useSSL };
+      cfg.node = { ...cfg.node, host, port, username, password, useSSL, zmqBlock: zmqBlock.trim() };
       cfg.miningMode = 'solo';
       await UpdateConfig(cfg);
       miningMode = 'solo';
@@ -437,6 +451,27 @@
           <div class="inline-flex items-center gap-1">
             <Toggle bind:checked={useSSL} label="Use SSL/TLS" />
             <Info tip="Encrypted RPC connection. Rarely needed locally" size={12} />
+          </div>
+
+          <div>
+            <label class="block text-xs mb-1.5 inline-flex items-center gap-1" style="color: var(--text-secondary);" for="zmq">ZMQ Block Endpoint <span style="color: var(--text-secondary); opacity: 0.7;">(optional)</span> <Info tip="Instant new-block notifications. Blank = poll-only. Requires the node to run zmqpubhashblock at this endpoint (added to the generated config below). e.g. tcp://127.0.0.1:28332" size={12} /></label>
+            <div class="flex gap-2">
+              <input
+                id="zmq"
+                bind:value={zmqBlock}
+                class="flex-1 rounded-lg px-3 py-2 text-sm input-themed"
+                placeholder="tcp://127.0.0.1:{zmqPortDefaults[coinId] || 28332} — blank for poll-only"
+              />
+              <button
+                type="button"
+                class="px-3 py-2 rounded-lg text-xs font-tech uppercase tracking-wider transition-colors"
+                style="background-color: var(--bg-secondary); border: 1px solid var(--border); color: var(--text-primary);"
+                on:click={suggestZmq}
+                title="Fill from host + default ZMQ port for this coin"
+              >
+                Auto
+              </button>
+            </div>
           </div>
 
           <div class="flex gap-3 pt-2">
