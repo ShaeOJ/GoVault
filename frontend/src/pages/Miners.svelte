@@ -3,6 +3,7 @@
   import { miners, selectedMiner, discoveredMiners } from '../lib/stores/miners';
   import { formatHashrate, formatDifficulty, formatChance, formatPower, formatCurrency, formatEfficiency, timeAgo } from '../lib/utils/format';
   import type { MinerInfo, DiscoveredMiner } from '../lib/stores/miners';
+  import { parseMiner } from '../lib/deviceInfo';
   import { EventsOn } from '../../wailsjs/runtime/runtime';
   import Icon from '../lib/components/common/Icon.svelte';
   import Info from '../lib/components/common/Info.svelte';
@@ -314,6 +315,7 @@
       {#each minerList as m (m.id)}
         {@const status = getMinerStatus(m)}
         {@const points = minerSparklines[m.id] || []}
+        {@const dev = parseMiner(m.userAgent)}
         <button
           class="rounded-xl card-glow text-left w-full overflow-hidden"
           style="background-color: var(--bg-card);"
@@ -329,6 +331,15 @@
               <span class="text-sm font-bold truncate" style="color: var(--text-primary);">{m.workerName || m.id}</span>
             </div>
             <span class="text-xs font-data glow-text flex-shrink-0 ml-2 inline-flex items-center gap-1" style="color: {status.color}; text-shadow: 0 0 4px {status.color}40;">{status.label} <Info tip="Active: recent shares. Stale: no shares for extended period. Dead: connection likely lost" size={11} /></span>
+          </div>
+
+          <!-- Device / ASIC read-out -->
+          <div class="flex items-center gap-1.5 px-4 pb-1 min-w-0" style="opacity: {dev.dim ? 0.5 : 1};">
+            <span class="text-sm flex-shrink-0" style="color: var(--accent);">{dev.icon}</span>
+            <span class="text-xs font-medium truncate" style="color: var(--text-secondary);">{dev.model}</span>
+            {#if dev.asicDisp}
+              <span class="text-xs font-data flex-shrink-0" style="color: var(--text-secondary); opacity: 0.7;">{dev.asicDisp}</span>
+            {/if}
           </div>
 
           <!-- Hero Hashrate with Sparkline -->
@@ -453,6 +464,15 @@
             <div class="text-sm font-data" style="color: var(--text-primary);">{selected.ipAddress}</div>
           </div>
           {#if selected.userAgent}
+          {@const selDev = parseMiner(selected.userAgent)}
+          <div>
+            <div class="text-xs inline-flex items-center gap-1" style="color: var(--text-secondary);">Device <Info tip="Recognized miner model and ASIC chips, from the reported user agent" size={11} /></div>
+            <div class="text-sm font-medium inline-flex items-center gap-1.5" style="color: var(--text-primary);">
+              <span style="color: var(--accent);">{selDev.icon}</span>
+              <span>{selDev.model}</span>
+              {#if selDev.asicDisp}<span class="font-data" style="color: var(--text-secondary);">· {selDev.asicDisp}</span>{/if}
+            </div>
+          </div>
           <div>
             <div class="text-xs inline-flex items-center gap-1" style="color: var(--text-secondary);">User Agent <Info tip="Mining software/firmware identifier" size={11} /></div>
             <div class="text-sm font-data" style="color: var(--text-primary);">{selected.userAgent}</div>

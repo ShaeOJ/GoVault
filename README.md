@@ -1,119 +1,101 @@
-# GoVault
+```
+ ██████╗  ██████╗ ██╗   ██╗ █████╗ ██╗   ██╗██╗  ████████╗
+██╔════╝ ██╔═══██╗██║   ██║██╔══██╗██║   ██║██║  ╚══██╔══╝
+██║  ███╗██║   ██║██║   ██║███████║██║   ██║██║     ██║
+██║   ██║██║   ██║╚██╗ ██╔╝██╔══██║██║   ██║██║     ██║
+╚██████╔╝╚██████╔╝ ╚████╔╝ ██║  ██║╚██████╔╝███████╗██║
+ ╚═════╝  ╚═════╝   ╚═══╝  ╚═╝  ╚═╝ ╚═════╝ ╚══════╝╚═╝
+      S T R A T U M   T E R M I N A L  ·  by ASICpool
+```
 
-**Your Private Mining Vault**
+# GoVault — Your Private Mining Vault
 
-A personal solo mining stratum server, built for the home miner who refuses to hand over their hashrate to some pool operator in a bunker somewhere. GoVault runs on your desktop, connects to your own Bitcoin node, and puts you in full control of your mining operation.
+> **Point your machinery at your own node. Keep the block. Keep the reward.**
+> A solo-mining stratum terminal for the home operator who refuses to hand their hashrate to some pool operator in a bunker somewhere.
 
-No middlemen. No pool fees. Just you, your hardware, and the blockchain.
+No middlemen. No custody. No pool fees. Just you, your hardware, and the chain — wrapped in a native desktop app you can double-click.
 
 ---
 
-## About
+## ▚ WHAT IT IS
 
-GoVault is a **Stratum V1 solo mining server** packaged as a native desktop application. It's designed from the ground up for home mining hardware — the Bitaxes, NerdMiners, and other small-scale devices that make solo mining a hobby worth pursuing.
+GoVault is a **Stratum V1 mining server** packaged as a single-file native desktop app (Go core + Svelte UI, built with [Wails](https://wails.io)). It runs two ways:
 
-Connect your miners, point them at GoVault, and mine directly against your own full node. Every hash goes toward finding *your* block.
+- **SOLO** — plug into your own full node and build every block yourself. Every hash goes toward finding *your* block.
+- **RELAY (proxy)** — no node? Forward your whole fleet to an upstream solo pool (**ASICpool** presets built in) over one clean connection, with optional per-miner pass-through.
 
-Built with Go on the backend and Svelte on the frontend, delivered as a single executable via [Wails](https://wails.io).
+Built for the small stuff — Bitaxes, NerdMiners, NerdQAxe boards, and the rest of the home-lab wasteland.
 
-## Features
+## ▚ FEATURE MATRIX
 
-- **Solo mining stratum server** — Full Stratum V1 implementation, no pool required
-- **Multi-coin support** — BTC, BCH, DGB, BC2, XEC
-- **Built for home mining hardware** — Bitaxe, NerdAxe, NerdMiner, BitDSK, Avalon Q
-- **Real-time dashboard** — Live hashrate charts, share counters, and network stats
-- **Auto-discovery** — Finds miners on your local network automatically
-- **Variable difficulty** — Tuned for home miners, from NerdMiner (~0.001 diff) to Avalon Q
-- **6 UI themes** — Nuclear, TRON, Vault-Tec, Crimson, Ultraviolet, Plasma
-- **SQLite persistence** — Stats, shares, and history survive restarts
-- **Desktop app** — Native Windows, macOS, and Linux via Wails
+- **⚡ ZMQ instant block detection** — subscribe to your node's `hashblock` broadcast and push fresh work to miners the *millisecond* a block lands. Pure-Go (no libzmq), with an automatic RPC poll fallback if the link drops. Fewer stale shares, less wasted effort.
+- **🖥 ASIC device recognition** — miners are auto-identified from their user-agent and shown as `4× BM1370`, `Bitaxe Gamma`, `NerdQAxe++`, and friends — chip count × model, right in the fleet view.
+- **🛰 Solo *or* relay** — run against your own node, or relay to an upstream pool. ASICpool BTC / BCH / DGB presets one click away.
+- **📡 Auto-discovery** — finds AxeOS miners on your LAN automatically, with power/thermal telemetry.
+- **🎚 Variable difficulty** — tuned for the full home range, from NerdMiner (~0.001) to big ASICs.
+- **📊 Live dashboard** — real-time hashrate charts, best-share tracking, share counters, network stats.
+- **🎨 6 cathode themes** — Nuclear, TRON, Vault-Tec, Crimson, Ultraviolet, Plasma.
+- **💾 Portable by design** — config, SQLite DB, logs, and WebView2 data all live in a `data/` folder *next to the exe*. Copy the folder, take your vault with you.
+- **🔄 In-app updater** — checks GitHub releases and updates itself in place.
+- **🪟🍎🐧 Native everywhere** — Windows, macOS, Linux (incl. ARM64 / Raspberry Pi), plus a headless edge-node build.
 
-## Screenshots
+## ▚ INSTALL
 
-*Coming soon — Dashboard, Miners, and Settings views.*
+Grab the latest from **[Releases](https://github.com/ShaeOJ/GoVault/releases/latest)**:
 
-<!--
-![Dashboard](screenshots/dashboard.png)
-![Miners](screenshots/miners.png)
-![Settings](screenshots/settings.png)
--->
+- **Windows** — `GoVault-amd64-installer.exe` (installer) or `GoVault-windows-amd64.exe` (portable)
+- **macOS** — `GoVault-macos-arm64.zip` (Apple Silicon) / `GoVault-macos-amd64.zip` (Intel)
+- **Linux** — `GoVault-linux-amd64` / `GoVault-linux-arm64`
+- **Headless** — `govault-headless-*` (HTTP + SSE dashboard, no GUI libs)
 
-## Quick Start
+## ▚ BUILD FROM SOURCE
 
-### Prerequisites
-
-- **Go** 1.21+
-- **Node.js** 18+
-- **Wails CLI** v2 — install with `go install github.com/wailsapp/wails/v2/cmd/wails@latest`
-- A **Bitcoin full node** (or other supported coin) with RPC enabled
-
-### Build
+**Prerequisites:** Go 1.21+, Node.js 18+, Wails CLI v2 (`go install github.com/wailsapp/wails/v2/cmd/wails@v2.11.0`), and a full node with RPC enabled.
 
 ```bash
-# Clone the repo
 git clone https://github.com/ShaeOJ/GoVault.git
 cd GoVault
 
-# Build the desktop app
-wails build
-
-# Run it
-./build/bin/GoVault
+wails build            # desktop app -> build/bin/GoVault
+wails build -nsis      # + Windows installer -> build/bin/GoVault-amd64-installer.exe
+wails dev              # live dev with hot reload
 ```
 
-### Development
+## ▚ CONFIGURATION
 
-```bash
-# Live development with hot reload
-wails dev
-```
-
-## Configuration
-
-On first launch, GoVault creates a config file at:
-- **Windows:** `%APPDATA%\GoVault\config.json`
-- **macOS:** `~/Library/Application Support/GoVault/config.json`
-- **Linux:** `~/.config/GoVault/config.json`
-
-### Key settings
+On first launch GoVault writes its config, database, and logs to a **`data/` folder beside the executable** (portable). Override with `GOVAULT_CONFIG_FILE` / `GOVAULT_DATA_DIR` for appliance/headless setups.
 
 | Setting | Default | Description |
 |---------|---------|-------------|
 | Stratum Port | `10333` | Port your miners connect to |
-| Payout Address | — | Your wallet address for the coinbase transaction |
+| Mining Mode | `solo` | `solo` (own node) or `proxy` (upstream pool) |
+| Payout Address | — | Your wallet address for the coinbase |
 | Coinbase Tag | — | Custom text embedded in blocks you find |
-| Coin | `btc` | Which network to mine (btc, bch, dgb, bc2, xec) |
+| ZMQ Block Endpoint | — | e.g. `tcp://127.0.0.1:28332` — enables instant block detection |
+| Fallback Poll | `30s` | RPC heartbeat while ZMQ is primary |
 
-### Node RPC
+**For ZMQ mode**, run your node with `-zmqpubhashblock=tcp://127.0.0.1:28332`. Leave the endpoint blank to stay in classic poll-only mode.
 
-GoVault needs a connection to a full node's RPC interface. Configure the host, port, username, and password in the Settings page. The app provides a generated config snippet for your node software.
+## ▚ SUPPORTED HARDWARE
 
-## Supported Hardware
+| Device | Type | Typical Hashrate |
+|--------|------|-------------------|
+| Bitaxe (Ultra / Supra / Gamma) | ASIC | ~500 GH/s – 1.2 TH/s |
+| NerdAxe / NerdQAxe / NerdQAxe++ | ASIC | ~500 GH/s – 2 TH/s |
+| NerdMiner | ESP32 | ~50 KH/s |
+| BitDSK | ASIC | ~1 TH/s |
+| Avalon Q | ASIC | ~90 TH/s |
 
-| Device | Type | Typical Hashrate | Status |
-|--------|------|-------------------|--------|
-| Bitaxe | ASIC | ~500 GH/s - 1.2 TH/s | Fully supported |
-| NerdAxe | ASIC | ~500 GH/s | Fully supported |
-| NerdMiner | ESP32 | ~50 KH/s | Fully supported |
-| BitDSK | ASIC | ~1 TH/s | Fully supported |
-| Avalon Q | ASIC | ~90 TH/s | Fully supported |
+Variable difficulty covers the whole span — from NerdMiner's ~0.001 up to big-ASIC hashrate.
 
-The variable difficulty system handles the full range — from NerdMiner's ~0.001 difficulty up to Avalon Q's high hashrate.
+## ▚ TECH STACK
 
-## Tech Stack
+Go · Svelte 4 · Wails v2 · TailwindCSS · Chart.js · SQLite (pure-Go `modernc.org/sqlite`) · Share Tech Mono / JetBrains Mono
 
-| Component | Technology |
-|-----------|------------|
-| Backend | Go |
-| Frontend | Svelte 4 |
-| Desktop Framework | Wails v2 |
-| Styling | TailwindCSS |
-| Charts | Chart.js |
-| Database | SQLite (via modernc.org/sqlite, pure Go) |
-| Fonts | Share Tech Mono, JetBrains Mono |
+## ▚ LICENSE
 
-## License
+GoVault is licensed under the [GNU General Public License v3.0](LICENSE) — free to use, modify, and distribute under the terms of the GPL v3.
 
-GoVault is licensed under the [GNU General Public License v3.0](LICENSE).
-
-You are free to use, modify, and distribute this software under the terms of the GPL v3. See the `LICENSE` file for the full text.
+```
+  // mine like it's yours, because it is //
+```

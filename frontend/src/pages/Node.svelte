@@ -281,10 +281,12 @@
   }
 
   const poolPresets = [
-    { name: 'CKPool Solo', url: 'solo.ckpool.org:3333', desc: 'Most popular solo pool, 2% fee' },
-    { name: 'CKPool Solo (High Diff)', url: 'solo.ckpool.org:3334', desc: 'For high-hashrate setups' },
+    { name: 'ASICpool BTC', url: 'asicpool.space:4333', desc: 'Canadian 0% solo pool (Bitcoin)' },
+    { name: 'ASICpool BTC (Low Diff)', url: 'asicpool.space:4334', desc: 'Bitcoin — for low-hashrate devices' },
+    { name: 'ASICpool BCH', url: 'asicpool.space:5333', desc: 'Bitcoin Cash solo pool' },
+    { name: 'ASICpool DGB', url: 'asicpool.space:6333', desc: 'DigiByte (SHA-256) solo pool' },
+    { name: 'CKPool Solo', url: 'solo.ckpool.org:3333', desc: 'Popular external solo pool, 2% fee' },
     { name: 'Public Pool', url: 'public-pool.io:3333', desc: 'Open source, no fee solo pool' },
-    { name: 'ASICpool', url: 'asicpool.space:4333', desc: 'Canadian solo pool' },
   ];
 
   function applyPreset(preset: typeof poolPresets[0]) {
