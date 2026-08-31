@@ -67,7 +67,11 @@ jobs:
 
       - name: Install NSIS (Windows installer)
         if: matrix.nsis
-        run: choco install nsis -y
+        shell: pwsh
+        run: |
+          choco install nsis -y
+          # choco doesn't add NSIS to PATH; expose makensis to later steps.
+          "C:\Program Files (x86)\NSIS" | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
 
       - name: Install Linux deps
         if: startsWith(matrix.platform, 'linux')
