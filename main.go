@@ -3,14 +3,39 @@ package main
 import (
 	"context"
 	"embed"
+	"os"
+	"path/filepath"
 
 	"govault/internal/appcore"
 
 	"github.com/wailsapp/wails/v2"
 	"github.com/wailsapp/wails/v2/pkg/options"
 	"github.com/wailsapp/wails/v2/pkg/options/assetserver"
+	"github.com/wailsapp/wails/v2/pkg/options/windows"
 	"github.com/wailsapp/wails/v2/pkg/runtime"
 )
+
+// webviewDataDir keeps WebView2's user-data folder LOCAL to the executable
+// (<exe>/data/webview2) instead of Wails' default %APPDATA%\<exeName>\EBWebView.
+// The default path is fragile: it uses the exe's basename ("GoVault.exe") as a
+// directory name, so a stray file of that name in %APPDATA% makes WebView2 fail
+// with "We couldn't create the data directory" and the app never opens a window.
+// Keeping it beside the exe (where we already store config/db) also makes the
+// build portable. Returns "" on failure so Wails falls back to its default.
+func webviewDataDir() string {
+	exe, err := os.Executable()
+	if err != nil {
+		return ""
+	}
+	if resolved, err := filepath.EvalSymlinks(exe); err == nil {
+		exe = resolved
+	}
+	dir := filepath.Join(filepath.Dir(exe), "data", "webview2")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		return "" // not writable here — let Wails use its default
+	}
+	return dir
+}
 
 //go:embed all:frontend/dist
 var assets embed.FS
@@ -37,6 +62,12 @@ func main() {
 		MinHeight: 600,
 		AssetServer: &assetserver.Options{
 			Assets: assets,
+		},
+		Windows: &windows.Options{
+			// Store WebView2 data beside the exe (portable) rather than in
+			// %APPDATA%\GoVault.exe\EBWebView, which can't be created when a
+			// stray file of that name exists. See webviewDataDir.
+			WebviewUserDataPath: webviewDataDir(),
 		},
 		BackgroundColour: &options.RGBA{R: 10, G: 14, B: 26, A: 1},
 		// Wire the Wails-backed host before the core starts up.
