@@ -1,40 +1,53 @@
 ```
   ┌─────────────────────────────────────────────────────────────┐
-  │  ▄▄ GoVault ▄▄   S T R A T U M   T E R M I N A L   //  v1.3.0 │
+  │  ▄▄ GoVault ▄▄   S T R A T U M   T E R M I N A L   //  v1.4.0 │
   │  ── an ASICpool transmission ── 0% custody · 0% bunker ──     │
   └─────────────────────────────────────────────────────────────┘
 ```
 
-> **INCOMING TRANSMISSION — GoVault v1.3.0**
-> Point your machinery at your own node. Keep the block. Keep the reward.
-> This build tightens the loop between your node and your miners to milliseconds.
+> **INCOMING TRANSMISSION — GoVault v1.4.0**
+> A correctness release. If you solo-mine **Bitcoin Cash (BCH)**, **eCash (XEC)**,
+> or **Bitcoin Cash II (BCH2)** with a `bitcoincash:` / `ecash:` (CashAddr) payout
+> address, **update before you mine another block.**
 
 ---
 
-## ⚡ FEATURE SPOTLIGHT — ZMQ Instant Block Detection
+## 🛠️ CRITICAL FIX — CashAddr payout addresses were mis-decoded (BCH / XEC / BCH2)
 
-GoVault no longer waits around asking your node "any new blocks yet?" on a timer. In **solo mode** it can now plug straight into your node's **ZMQ `hashblock`** broadcast and react the *instant* a new block lands on the network.
+GoVault's CashAddr decoder read the address version byte from the wrong bit
+boundary, which **shifted the decoded hash by 3 bits** — so a `bitcoincash:` /
+`ecash:` payout address was turned into a **different, valid-looking address**
+when the coinbase was built. The address still *passed* validation (its checksum
+was fine), so nothing looked wrong up front — but a block found while solo-mining
+BCH/XEC/BCH2 to a CashAddr would have paid the **wrong destination**.
 
-- **Instant new-work broadcast.** The moment your node hears a new block, GoVault pushes fresh work to every connected miner — cutting the window where your rigs waste hashes on a dead tip (fewer stale shares, less orphaned effort).
-- **Pure-Go ZMQ.** No `libzmq`, no cgo, no extra install — it's baked into the single portable binary. Nothing new to deploy.
-- **Self-healing.** ZMQ is the fast path; an RPC poll runs underneath as a heartbeat. If the ZMQ link ever hiccups, GoVault keeps mining on the poll fallback and reconnects automatically.
-- **Tunable.** `Fallback Poll` interval defaults to 30s and can be dropped for fast-block coins or remote nodes so an outage can never strand you on a stale tip for long.
+- **Who's affected:** solo mode, coin = BCH / XEC / BCH2, payout entered as a
+  CashAddr (`bitcoincash:…`, `ecash:…`, `bitcoincashii:…`, with or without the
+  prefix). **Legacy `1…`/`3…` addresses were never affected.**
+- **BTC, DGB, LTC, BC2 were never affected** — their base58 / bech32 decoding was
+  always correct. This bug was CashAddr-only.
+- **The fix:** the version byte + hash are now decoded together from the full
+  payload, so CashAddr → scriptPubKey is exact. Verified against canonical BCH
+  vectors and an eCash round-trip; regression tests added so it can't drift again.
 
-**Switch it on:** `Node → ZMQ Block Endpoint` → e.g. `tcp://127.0.0.1:28332`
-**Node side:** run your daemon with `-zmqpubhashblock=tcp://127.0.0.1:28332`
-Leave the field blank to stay in classic poll-only mode — no node changes required.
+**What to do:** update to v1.4.0, then re-check **Settings → Payout Address** shows
+the address you expect. If you'd been solo-mining BCH/XEC to a CashAddr, switch to
+this build before continuing.
 
 ---
 
-## 🛰️ ALSO IN THIS BUILD
+## 🛰️ ALSO IN THIS BUILD — payout-address mismatch warning
 
-- **FIXED — the app now launches, everywhere.** Squashed a WebView2 startup crash (`"We couldn't create the data directory"`) that could leave the window refusing to open. GoVault now keeps its WebView2 data **local to the executable**, so it's fully portable and never trips over a stale `%APPDATA%` path again.
-- **NEW — ASICpool is built into the proxy.** The Upstream Pool presets now lead with **ASICpool** endpoints for **BTC**, **BTC (low-diff)**, **BCH**, and **DGB** — one click to relay your fleet to the 0% Canadian solo pool. CKPool and Public Pool remain as alternatives.
-- **NEW — Windows installer.** Prefer Start-Menu shortcuts over a loose `.exe`? Grab `GoVault-amd64-installer.exe` below. The standalone `GoVault-windows-amd64.exe` is still here for portable / no-install use.
+Rigs moved over from public-pool / solo.ckpool often send their **wallet address
+as the Stratum username** — but in GoVault **solo mode the coinbase pays the single
+configured Payout Address**, and the username is just a worker label. To stop that
+mismatch from being silent, GoVault now logs a clear warning at authorize time when
+a miner connects with a username that's a valid address different from your
+configured payout — so "why isn't my address in the coinbase?" answers itself.
 
 ---
 
-## 📥 GET IT RUNNING
+## 💾 GET IT
 
 ### Windows
 - **Installer (recommended):** download **`GoVault-amd64-installer.exe`**, run it, launch from the Start Menu.

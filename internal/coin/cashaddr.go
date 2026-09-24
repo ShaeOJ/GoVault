@@ -127,12 +127,26 @@ func DecodeCashAddr(expectedPrefix, addr string) (int, []byte, error) {
 		return 0, nil, fmt.Errorf("cashaddr data too short")
 	}
 
-	// First 5-bit value is the version byte
-	versionByte := data[0]
-	// Address type is in bits 4-3 (top 2 bits of the 5-bit value)
-	// Actually: high 1 bit = address type (0=P2PKH, 1=P2SH), low 3 bits = hash size code
+	// Convert the whole 5-bit payload to bytes; the result is: version_byte || hash.
+	// NOTE: the version byte must be recovered from the 8-bit-packed payload, NOT by
+	// taking the first 5-bit group. The earlier code did the latter and then
+	// convert-bits'd only data[1:], which mis-aligned the hash by 3 bits and produced
+	// a WRONG hash160 for every CashAddr (BCH/XEC/BCH2) — silently paying coinbases
+	// to the wrong address.
+	payloadBytes, err := convertBits(data, 5, 8, false)
+	if err != nil {
+		return 0, nil, fmt.Errorf("convert bits: %w", err)
+	}
+	if len(payloadBytes) < 1 {
+		return 0, nil, fmt.Errorf("cashaddr payload too short")
+	}
+
+	// Version byte layout: bit 7 reserved (0), bits 6-3 = address type (0=P2PKH,
+	// 1=P2SH), bits 2-0 = hash size code.
+	versionByte := payloadBytes[0]
 	addrType := int(versionByte >> 3)
 	hashSizeCode := int(versionByte & 0x07)
+	hashBytes := payloadBytes[1:]
 
 	// Hash size lookup (code -> bytes)
 	hashSizes := map[int]int{
@@ -143,12 +157,6 @@ func DecodeCashAddr(expectedPrefix, addr string) (int, []byte, error) {
 	expectedSize, ok := hashSizes[hashSizeCode]
 	if !ok {
 		return 0, nil, fmt.Errorf("invalid hash size code: %d", hashSizeCode)
-	}
-
-	// Convert remaining 5-bit values to 8-bit bytes
-	hashBytes, err := convertBits(data[1:], 5, 8, false)
-	if err != nil {
-		return 0, nil, fmt.Errorf("convert bits: %w", err)
 	}
 
 	if len(hashBytes) != expectedSize {

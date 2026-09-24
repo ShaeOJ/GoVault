@@ -56,6 +56,18 @@ func (jm *JobManager) SetPayoutAddress(addr string) {
 	jm.mu.Unlock()
 }
 
+// PayoutAddress returns the currently configured coinbase payout address.
+func (jm *JobManager) PayoutAddress() string {
+	jm.mu.RLock()
+	defer jm.mu.RUnlock()
+	return jm.payoutAddress
+}
+
+// CoinDef returns the coin definition this job manager builds coinbases for.
+func (jm *JobManager) CoinDef() *coin.CoinDef {
+	return jm.coinDef
+}
+
 // CreateJob builds a new mining job from a block template.
 func (jm *JobManager) CreateJob(tmpl *node.BlockTemplate, extranonce1Size int) (*Job, error) {
 	if jm.payoutAddress == "" {

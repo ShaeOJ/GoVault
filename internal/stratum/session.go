@@ -8,28 +8,30 @@ import (
 	"fmt"
 	"net"
 	"strconv"
+	"strings"
 	"sync"
 	"time"
 
+	"govault/internal/coin"
 	"govault/internal/upstream"
 )
 
 // Session represents a single miner connection.
 type Session struct {
-	ID          string
-	conn        net.Conn
-	server      *Server
-	extranonce1 string
-	remoteIP    string
-	subscribed  bool
-	authorized  bool
-	workerName  string
-	userAgent   string
-	currentDiff float64
+	ID           string
+	conn         net.Conn
+	server       *Server
+	extranonce1  string
+	remoteIP     string
+	subscribed   bool
+	authorized   bool
+	workerName   string
+	userAgent    string
+	currentDiff  float64
 	connectedAt  time.Time
 	lastActivity time.Time
-	reader      *bufio.Reader
-	writeMu     sync.Mutex
+	reader       *bufio.Reader
+	writeMu      sync.Mutex
 
 	vardiffState *VardiffState
 
@@ -52,8 +54,8 @@ type Session struct {
 
 	// Difficulty transition grace period (matches ckpool diff_change_job_id).
 	// Shares for jobs issued before diffChangeJobID are validated against oldDiff.
-	oldDiff          float64
-	diffChangeJobID  string
+	oldDiff         float64
+	diffChangeJobID string
 
 	// diffMu protects currentDiff, oldDiff, diffChangeJobID, and the share
 	// counters above. These are written by Handle() and read/written by
@@ -599,6 +601,13 @@ func (s *Session) handleAuthorize(req *Request) {
 	s.sendResponse(req.ID, true, nil)
 	s.server.log.Infof("stratum", "miner %s authorized as %s", s.conn.RemoteAddr(), workerName)
 
+	// Solo mode only: warn if the miner's username looks like a payout address
+	// that differs from the configured one (common when a rig is moved over from
+	// public-pool/solo.ckpool, where the username IS the payout address).
+	if !s.server.proxyMode {
+		s.warnPayoutMismatch(workerName)
+	}
+
 	// In proxy mode, set difficulty to upstream diff immediately.
 	// In solo mode, restore last known difficulty for this worker.
 	if s.server.proxyMode {
@@ -639,6 +648,47 @@ func (s *Session) handleAuthorize(req *Request) {
 
 	// Send current job if available
 	s.server.sendCurrentJob(s)
+}
+
+// warnPayoutMismatch logs a warning when a solo miner authorizes with a username
+// whose address part is a valid address for the coin but differs from the
+// configured coinbase payout address. In GoVault solo mode the coinbase pays the
+// single configured payout address and the username is only a worker label — but
+// rigs coming from public-pool / solo.ckpool (where the username IS the payout
+// address) commonly expect the username to be paid, which silently would not
+// happen here. Surfacing it at authorize time makes the misconfiguration obvious.
+func (s *Session) warnPayoutMismatch(workerName string) {
+	jm := s.server.jobManager
+	if jm == nil {
+		return
+	}
+	if candidate, ok := payoutMismatch(jm.CoinDef(), jm.PayoutAddress(), workerName); ok {
+		s.server.log.Warnf("stratum",
+			"miner %s authorized with username %q, a valid %s address that differs from the configured payout address %q — in SOLO mode the coinbase pays the CONFIGURED address, not the username. If %q should be paid, set it as Settings → Payout Address.",
+			s.conn.RemoteAddr(), candidate, jm.CoinDef().Name, jm.PayoutAddress(), candidate)
+	}
+}
+
+// payoutMismatch reports whether workerName's address part is a valid address for
+// coinDef that differs from the configured payout address, returning that address.
+// Returns ok=false (no warning) when nothing is configured, the username has no
+// valid address, or it already matches the payout address.
+func payoutMismatch(coinDef *coin.CoinDef, payout, workerName string) (string, bool) {
+	if payout == "" || coinDef == nil {
+		return "", false
+	}
+	// The address is the part before the first '.' (the ".worker" suffix, if any).
+	candidate := workerName
+	if i := strings.IndexByte(candidate, '.'); i >= 0 {
+		candidate = candidate[:i]
+	}
+	if candidate == "" || candidate == payout {
+		return "", false
+	}
+	if ok, _ := coin.ValidateAddress(coinDef, candidate); ok {
+		return candidate, true
+	}
+	return "", false
 }
 
 func (s *Session) handleSubmit(req *Request) {
@@ -971,7 +1021,6 @@ func (s *Session) handleSuggestDifficulty(req *Request) {
 		s.workerName, diff, s.currentDiff)
 }
 
-
 func (s *Session) sendNotify(job *Job, cleanJobs bool) {
 	params := []interface{}{
 		job.ID,
@@ -1081,7 +1130,7 @@ var _ json.Marshaler = (*MinerInfo)(nil)
 func (m *MinerInfo) MarshalJSON() ([]byte, error) {
 	type Alias MinerInfo
 	return json.Marshal(&struct {
-		ConnectedAt string `json:"connectedAt"`
+		ConnectedAt   string `json:"connectedAt"`
 		LastShareTime string `json:"lastShareTime"`
 		*Alias
 	}{
