@@ -21,6 +21,9 @@
   // ZMQ hashblock endpoint — blank = poll-only. Set to enable instant block
   // notifications (requires the node to run -zmqpubhashblock=<endpoint>).
   let zmqBlock = '';
+  // How often (seconds) the RPC poll runs as a fallback when ZMQ is enabled.
+  // ZMQ is the instant path, so this only needs to be a slow safety net. 0 = 30s default.
+  let fallbackPollSec = 30;
 
   // Proxy mode fields
   let proxyUrl = '';
@@ -152,6 +155,7 @@
         password = cfg.node.password || '';
         useSSL = cfg.node.useSSL || false;
         zmqBlock = cfg.node.zmqBlock || '';
+        fallbackPollSec = cfg.node.fallbackPollSec || 30;
       }
       if (cfg?.proxy) {
         proxyUrl = cfg.proxy.url || '';
@@ -234,7 +238,7 @@
     try {
       const { GetConfig, UpdateConfig, ConnectNode } = await import('../../wailsjs/go/appcore/App');
       const cfg = await GetConfig();
-      cfg.node = { ...cfg.node, host, port, username, password, useSSL, zmqBlock: zmqBlock.trim() };
+      cfg.node = { ...cfg.node, host, port, username, password, useSSL, zmqBlock: zmqBlock.trim(), fallbackPollSec: Math.max(0, Math.floor(Number(fallbackPollSec) || 0)) };
       cfg.miningMode = 'solo';
       await UpdateConfig(cfg);
       miningMode = 'solo';
@@ -475,6 +479,21 @@
               </button>
             </div>
           </div>
+
+          {#if zmqBlock.trim()}
+            <div>
+              <label class="block text-xs mb-1.5 inline-flex items-center gap-1" style="color: var(--text-secondary);" for="fallbackPoll">Fallback Poll Interval <span style="color: var(--text-secondary); opacity: 0.7;">(seconds)</span> <Info tip="With ZMQ enabled, blocks are detected instantly — the RPC poll is only a safety net in case a ZMQ message is ever missed. A slower interval (e.g. 60s) is fine and lighter on your node. Default 30s." size={12} /></label>
+              <input
+                id="fallbackPoll"
+                type="number"
+                min="5"
+                step="5"
+                bind:value={fallbackPollSec}
+                class="w-40 rounded-lg px-3 py-2 text-sm input-themed"
+                placeholder="30"
+              />
+            </div>
+          {/if}
 
           <div class="flex gap-3 pt-2">
             <button

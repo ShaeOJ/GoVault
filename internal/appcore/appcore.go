@@ -408,17 +408,13 @@ func (a *App) startSolo() error {
 	mon.SetRefreshInterval(10 * time.Second)
 	mon.OnNewBlock = func(tmpl *node.BlockTemplate) {
 		if usingZMQ {
-			// Fallback path: ZMQ handles blocks first and advances blockHeight.
-			// Skip anything already handled so we don't force a needless work
-			// restart on the tip miners are already mining.
-			a.netMu.RLock()
-			last := a.blockHeight
-			a.netMu.RUnlock()
-			if tmpl.Height <= last {
-				return
+			// Fallback path: ZMQ is primary and advances blockHeight first.
+			// applyBlockTemplate dedups by height atomically, so this only actually
+			// broadcasts when ZMQ genuinely missed the block — no race, no needless
+			// work restart on a tip miners are already mining.
+			if a.applyBlockTemplate(tmpl, "poll-fallback") {
+				a.log.Warnf("app", "poll fallback broadcast height=%d — ZMQ appears to have missed it", tmpl.Height)
 			}
-			a.log.Warnf("app", "poll fallback: new block height=%d — ZMQ missed it, broadcasting job", tmpl.Height)
-			a.applyBlockTemplate(tmpl, "poll-fallback")
 			return
 		}
 		a.applyBlockTemplate(tmpl, "poll")
@@ -472,24 +468,36 @@ func (a *App) startSolo() error {
 	return nil
 }
 
-// applyBlockTemplate broadcasts a new block template to the running stratum
-// server, records the new height, and emits the UI event. Shared by the ZMQ
-// notification path and the RPC poll fallback in solo mode. source is a short
-// label ("zmq", "poll", "poll-fallback") for the log line.
-func (a *App) applyBlockTemplate(tmpl *node.BlockTemplate, source string) {
+// applyBlockTemplate broadcasts a new-block template (clean_jobs work restart) to
+// the running stratum server, records the new height, and emits the UI event.
+// Shared by the ZMQ notification path and the RPC poll fallback in solo mode.
+// source is a short label ("zmq", "poll", "poll-fallback") for the log line.
+//
+// The height check-and-set is ATOMIC (under netMu): whichever notify path reaches
+// a given tip first wins and the other becomes a no-op. This closes the race where
+// the poll ticks in the tiny window before ZMQ records the new height and both
+// would broadcast the same block (a redundant clean_jobs restart). Returns whether
+// it actually broadcast (false = tip already handled).
+func (a *App) applyBlockTemplate(tmpl *node.BlockTemplate, source string) bool {
+	a.netMu.Lock()
+	if tmpl.Height <= a.blockHeight {
+		a.netMu.Unlock()
+		return false
+	}
+	a.blockHeight = tmpl.Height
+	a.netMu.Unlock()
+
 	a.svcMu.RLock()
 	srv := a.stratum
 	a.svcMu.RUnlock()
 	if srv != nil {
 		srv.NewBlockTemplate(tmpl)
 	}
-	a.netMu.Lock()
-	a.blockHeight = tmpl.Height
-	a.netMu.Unlock()
 	a.log.Infof("app", "new block template (%s): height=%d txns=%d", source, tmpl.Height, len(tmpl.Transactions))
 	a.emit("node:new-block", map[string]interface{}{
 		"height": tmpl.Height,
 	})
+	return true
 }
 
 func (a *App) startProxy() error {

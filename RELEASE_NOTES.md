@@ -1,49 +1,33 @@
 ```
   ┌─────────────────────────────────────────────────────────────┐
-  │  ▄▄ GoVault ▄▄   S T R A T U M   T E R M I N A L   //  v1.4.0 │
+  │  ▄▄ GoVault ▄▄   S T R A T U M   T E R M I N A L   //  v1.4.1 │
   │  ── an ASICpool transmission ── 0% custody · 0% bunker ──     │
   └─────────────────────────────────────────────────────────────┘
 ```
 
-> **INCOMING TRANSMISSION — GoVault v1.4.0**
-> A correctness release. If you solo-mine **Bitcoin Cash (BCH)**, **eCash (XEC)**,
-> or **Bitcoin Cash II (BCH2)** with a `bitcoincash:` / `ecash:` (CashAddr) payout
-> address, **update before you mine another block.**
+> **INCOMING TRANSMISSION — GoVault v1.4.1**
+> A small, sharp follow-up to v1.4.0: tidier block detection and a knob for the
+> ZMQ fallback poll.
 
 ---
 
-## 🛠️ CRITICAL FIX — CashAddr payout addresses were mis-decoded (BCH / XEC / BCH2)
+## 🎛️ NEW — set your ZMQ fallback poll interval
 
-GoVault's CashAddr decoder read the address version byte from the wrong bit
-boundary, which **shifted the decoded hash by 3 bits** — so a `bitcoincash:` /
-`ecash:` payout address was turned into a **different, valid-looking address**
-when the coinbase was built. The address still *passed* validation (its checksum
-was fine), so nothing looked wrong up front — but a block found while solo-mining
-BCH/XEC/BCH2 to a CashAddr would have paid the **wrong destination**.
+With **ZMQ** enabled, GoVault hears new blocks *instantly*; the RPC poll is only a
+safety net for the rare case a ZMQ message is missed. You can now set how often
+that fallback runs, right in **Setup → ZMQ Block Endpoint → Fallback Poll Interval
+(seconds)**. Leave it at **30s**, or dial it up to **60s+** for a lighter touch on
+your node — ZMQ still catches blocks the instant they land either way.
 
-- **Who's affected:** solo mode, coin = BCH / XEC / BCH2, payout entered as a
-  CashAddr (`bitcoincash:…`, `ecash:…`, `bitcoincashii:…`, with or without the
-  prefix). **Legacy `1…`/`3…` addresses were never affected.**
-- **BTC, DGB, LTC, BC2 were never affected** — their base58 / bech32 decoding was
-  always correct. This bug was CashAddr-only.
-- **The fix:** the version byte + hash are now decoded together from the full
-  payload, so CashAddr → scriptPubKey is exact. Verified against canonical BCH
-  vectors and an eCash round-trip; regression tests added so it can't drift again.
+## 🧹 FIX — no more double work-restart on a new block
 
-**What to do:** update to v1.4.0, then re-check **Settings → Payout Address** shows
-the address you expect. If you'd been solo-mining BCH/XEC to a CashAddr, switch to
-this build before continuing.
+When ZMQ and the fallback poll noticed the same block at almost the same moment,
+they could each broadcast a fresh job for it — a harmless but wasteful extra
+work-restart. Block detection now records the new tip **atomically**, so whichever
+path sees it first wins and the other stays quiet. One block, one clean job.
 
----
-
-## 🛰️ ALSO IN THIS BUILD — payout-address mismatch warning
-
-Rigs moved over from public-pool / solo.ckpool often send their **wallet address
-as the Stratum username** — but in GoVault **solo mode the coinbase pays the single
-configured Payout Address**, and the username is just a worker label. To stop that
-mismatch from being silent, GoVault now logs a clear warning at authorize time when
-a miner connects with a username that's a valid address different from your
-configured payout — so "why isn't my address in the coinbase?" answers itself.
+*(Everything from v1.4.0 still applies — including the critical **CashAddr
+(BCH/XEC/BCH2) payout fix**. If you skipped it, grab this build.)*
 
 ---
 
