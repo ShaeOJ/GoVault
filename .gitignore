@@ -9,6 +9,8 @@ node_modules/
 
 # Frontend build artifacts
 frontend/dist/
+# Stray top-level build output (root-anchored so it never matches internal/webui/dist)
+/dist/
 
 # User data (DB, config, logs)
 build/bin/data/
