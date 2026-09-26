@@ -291,6 +291,7 @@
     { name: 'ASICpool DGB', url: 'asicpool.space:6333', desc: 'DigiByte (SHA-256) solo pool' },
     { name: 'CKPool Solo', url: 'solo.ckpool.org:3333', desc: 'Popular external solo pool, 2% fee' },
     { name: 'Public Pool', url: 'public-pool.io:3333', desc: 'Open source, no fee solo pool' },
+    { name: 'BTC PoW Lab', url: 'stratum.btcpowlab-pool.com:3333', desc: 'Hybrid Solo: 85% finder, 10% community, 5% Lab' },
   ];
 
   function applyPreset(preset: typeof poolPresets[0]) {
