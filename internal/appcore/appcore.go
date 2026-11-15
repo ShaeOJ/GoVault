@@ -21,6 +21,7 @@ import (
 	"govault/internal/logger"
 	"govault/internal/miner"
 	"govault/internal/node"
+	"govault/internal/proxysplit"
 	"govault/internal/stratum"
 	"govault/internal/update"
 	"govault/internal/upstream"
@@ -43,8 +44,13 @@ type App struct {
 
 	upstream *upstream.Client
 
-	// svcMu protects stratum, upstream, and monitor pointers which are
-	// written by Start/StopStratum and read from statsLoop + Wails methods.
+	// proxyRouter is set instead of upstream when running dual-pool hashrate
+	// splitting (config.Proxy.Split.Enabled). nil in every other mode.
+	proxyRouter *proxysplit.Router
+
+	// svcMu protects stratum, upstream, proxyRouter, and monitor pointers
+	// which are written by Start/StopStratum and read from statsLoop + Wails
+	// methods.
 	svcMu sync.RWMutex
 
 	// Database persistence
@@ -245,6 +251,8 @@ func (a *App) OnShutdown(ctx context.Context) {
 	a.svcMu.Lock()
 	uc := a.upstream
 	a.upstream = nil
+	router := a.proxyRouter
+	a.proxyRouter = nil
 	srv := a.stratum
 	mon := a.monitor
 	a.monitor = nil
@@ -254,6 +262,9 @@ func (a *App) OnShutdown(ctx context.Context) {
 
 	if uc != nil {
 		uc.Stop()
+	}
+	if router != nil {
+		router.Stop()
 	}
 	if srv != nil && srv.IsRunning() {
 		srv.Stop()
@@ -505,6 +516,12 @@ func (a *App) startProxy() error {
 	if proxyCfg.URL == "" {
 		return fmt.Errorf("proxy URL not configured")
 	}
+	// Dual-pool hashrate splitting is a separate wiring: two upstream
+	// connections, routed by internal/proxysplit.Router. Checked before
+	// PassThrough since config.Validate() already rejects combining the two.
+	if proxyCfg.Split != nil && proxyCfg.Split.Enabled {
+		return a.startProxySplit()
+	}
 	// Per-miner pass-through is a separate wiring: each miner gets its own
 	// upstream connection under its own worker identity.
 	if proxyCfg.PassThrough {
@@ -648,6 +665,97 @@ func (a *App) startProxy() error {
 	}
 
 	a.log.Info("app", "stratum server started (proxy mode)")
+	return nil
+}
+
+// startProxySplit runs dual-pool hashrate splitting (config.Proxy.Split):
+// Pool A is the top-level URL/WorkerName/Password fields, Pool B is
+// Split.PoolB. Both upstream connections are routed by proxysplit.Router,
+// which decides automatically (weighted by Split.SplitPercentA) which pool's
+// job is "active" at any moment and fails over instantly if either
+// disconnects — all without ever reconnecting a connected miner. See
+// internal/proxysplit for the mechanism.
+func (a *App) startProxySplit() error {
+	proxyCfg := a.config.Proxy
+	split := proxyCfg.Split
+	if proxyCfg.WorkerName == "" || split.PoolB.WorkerName == "" {
+		return fmt.Errorf("hashrate splitting requires a worker name for both pools")
+	}
+
+	pwA := proxyCfg.Password
+	if pwA == "" {
+		pwA = "x"
+	}
+	pwB := split.PoolB.Password
+	if pwB == "" {
+		pwB = "x"
+	}
+
+	a.log.Infof("app", "starting stratum (split proxy) → A=%s worker=%s | B=%s worker=%s split=%d%%/%d%%",
+		proxyCfg.URL, proxyCfg.WorkerName, split.PoolB.URL, split.PoolB.WorkerName,
+		split.SplitPercentA, 100-split.SplitPercentA)
+
+	clientA := upstream.NewClient(proxyCfg.URL, proxyCfg.WorkerName, pwA, a.log)
+	if err := clientA.Connect(); err != nil {
+		return fmt.Errorf("pool A connect: %w", err)
+	}
+	clientB := upstream.NewClient(split.PoolB.URL, split.PoolB.WorkerName, pwB, a.log)
+	if err := clientB.Connect(); err != nil {
+		clientA.Stop()
+		return fmt.Errorf("pool B connect: %w", err)
+	}
+
+	coinDef := coin.Get(a.config.Mining.Coin)
+	srv := stratum.NewServer(
+		&a.config.Stratum,
+		&a.config.Mining,
+		&a.config.Vardiff,
+		nil, // no local node
+		a.log,
+		coinDef,
+	)
+
+	router := proxysplit.NewRouter(a.log, srv, split.SplitPercentA, clientA, clientB)
+	if err := router.Start(proxysplit.LabelA); err != nil {
+		clientA.Stop()
+		clientB.Stop()
+		return fmt.Errorf("start split router: %w", err)
+	}
+
+	a.svcMu.Lock()
+	a.stratum = srv
+	a.proxyRouter = router
+	a.svcMu.Unlock()
+
+	a.wireStratumCallbacks()
+
+	// Network-diff/block-height bookkeeping, mirroring the single-pool
+	// path's uc.OnJob — but only for jobs the router actually broadcasts.
+	router.OnBroadcastJob = func(label string, params *upstream.JobParams) {
+		a.updateNetworkDiffFromNBits(params.NBits)
+		if params.CleanJobs {
+			a.netMu.Lock()
+			a.blockHeight++
+			h := a.blockHeight
+			a.netMu.Unlock()
+			a.emit("node:new-block", map[string]interface{}{
+				"height": h,
+			})
+		}
+	}
+
+	a.stratum.OnShareForward = router.SubmitShare
+
+	if err := a.stratum.Start(); err != nil {
+		router.Stop()
+		a.svcMu.Lock()
+		a.stratum = nil
+		a.proxyRouter = nil
+		a.svcMu.Unlock()
+		return err
+	}
+
+	a.log.Info("app", "stratum server started (split proxy mode)")
 	return nil
 }
 
@@ -844,6 +952,8 @@ func (a *App) StopStratum() error {
 	a.svcMu.Lock()
 	uc := a.upstream
 	a.upstream = nil
+	router := a.proxyRouter
+	a.proxyRouter = nil
 	mon := a.monitor
 	a.monitor = nil
 	zsub := a.zmq
@@ -853,6 +963,9 @@ func (a *App) StopStratum() error {
 
 	if uc != nil {
 		uc.Stop()
+	}
+	if router != nil {
+		router.Stop()
 	}
 	if zsub != nil {
 		zsub.Stop()
@@ -1477,8 +1590,43 @@ func (a *App) TestUpstreamConnection(url, worker, password string) map[string]in
 func (a *App) GetUpstreamStatus() map[string]interface{} {
 	a.svcMu.RLock()
 	uc := a.upstream
+	router := a.proxyRouter
 	srv := a.stratum
 	a.svcMu.RUnlock()
+
+	if router != nil {
+		clientA := router.Client(proxysplit.LabelA)
+		clientB := router.Client(proxysplit.LabelB)
+		status := router.Status()
+		connA := clientA != nil && clientA.IsConnected()
+		connB := clientB != nil && clientB.IsConnected()
+		var diffA, diffB float64
+		if clientA != nil {
+			diffA = clientA.UpstreamDifficulty()
+		}
+		if clientB != nil {
+			diffB = clientB.UpstreamDifficulty()
+		}
+		return map[string]interface{}{
+			"connected":     connA || connB,
+			"mode":          "proxy",
+			"split":         true,
+			"activePool":    status.ActivePool,
+			"splitPercentA": status.SplitPercentA,
+			"poolA": map[string]interface{}{
+				"connected":    connA,
+				"authorized":   clientA != nil && clientA.IsAuthorized(),
+				"upstreamDiff": diffA,
+				"healthy":      status.HealthyA,
+			},
+			"poolB": map[string]interface{}{
+				"connected":    connB,
+				"authorized":   clientB != nil && clientB.IsAuthorized(),
+				"upstreamDiff": diffB,
+				"healthy":      status.HealthyB,
+			},
+		}
+	}
 
 	// Per-miner pass-through has no single shared upstream — each miner owns its
 	// own connection to the pool. Report "connected" when the stratum server is
@@ -1522,7 +1670,7 @@ func (a *App) GetProxyDiagnostics() map[string]interface{} {
 		return map[string]interface{}{"enabled": false}
 	}
 	d := srv.GetProxyDiagnostics()
-	return map[string]interface{}{
+	result := map[string]interface{}{
 		"enabled":        true,
 		"sharesIn":       d.SharesIn,
 		"sharesFwd":      d.SharesFwd,
@@ -1533,6 +1681,40 @@ func (a *App) GetProxyDiagnostics() map[string]interface{} {
 		"upstreamDiff":   d.UpstreamDiff,
 		"minerDiffs":     d.MinerDiffs,
 	}
+
+	a.svcMu.RLock()
+	router := a.proxyRouter
+	a.svcMu.RUnlock()
+	if router != nil {
+		st := router.Status()
+		result["split"] = true
+		result["activePool"] = st.ActivePool
+		result["splitPercentA"] = st.SplitPercentA
+		result["sharesFwdA"] = st.SharesFwdA
+		result["sharesFwdB"] = st.SharesFwdB
+		result["switchCount"] = st.SwitchCount
+		if !st.LastSwitchAt.IsZero() {
+			result["lastSwitchAt"] = st.LastSwitchAt.Unix()
+		}
+		result["poolAHealthy"] = st.HealthyA
+		result["poolBHealthy"] = st.HealthyB
+	}
+
+	return result
+}
+
+// SwitchActivePool manually switches which pool is "active" in dual-pool
+// hashrate-split mode (operator override — the configured percentage split
+// drives this automatically otherwise). label must be "A" or "B". No-op if
+// splitting isn't currently running.
+func (a *App) SwitchActivePool(label string) error {
+	a.svcMu.RLock()
+	router := a.proxyRouter
+	a.svcMu.RUnlock()
+	if router == nil {
+		return fmt.Errorf("hashrate splitting is not active")
+	}
+	return router.Switch(label)
 }
 
 // updateNetworkDiffFromNBits computes network difficulty from a compact target.

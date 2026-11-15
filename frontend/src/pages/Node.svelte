@@ -31,6 +31,29 @@
   let proxyPassword = 'x';
   let proxyPassThrough = false;
 
+  // Hashrate-split fields (shared proxy mode only — mutually exclusive with
+  // proxyPassThrough). Pool A = the proxyUrl/proxyWorker/proxyPassword fields
+  // above; Pool B is separate. splitPercentA is Pool A's share, Pool B gets
+  // the rest — kept in sync so they always sum to 100.
+  let splitEnabled = false;
+  let splitUrl = '';
+  let splitWorker = '';
+  let splitPassword = 'x';
+  let splitPercentA = 80;
+  $: splitPercentB = 100 - splitPercentA;
+  function setSplitPercentA(v: number) {
+    splitPercentA = Math.max(1, Math.min(99, Math.round(v) || 0));
+  }
+  function setSplitPercentB(v: number) {
+    splitPercentA = 100 - Math.max(1, Math.min(99, Math.round(v) || 0));
+  }
+  function onSplitPercentAInput(e: Event) {
+    setSplitPercentA(Number((e.currentTarget as HTMLInputElement).value));
+  }
+  function onSplitPercentBInput(e: Event) {
+    setSplitPercentB(Number((e.currentTarget as HTMLInputElement).value));
+  }
+
   let testing = false;
   let testResult: any = null;
   let testError = '';
@@ -162,6 +185,13 @@
         proxyWorker = cfg.proxy.workerName || '';
         proxyPassword = cfg.proxy.password || 'x';
         proxyPassThrough = cfg.proxy.passThrough || false;
+        if (cfg.proxy.split) {
+          splitEnabled = cfg.proxy.split.enabled || false;
+          splitUrl = cfg.proxy.split.poolB?.url || '';
+          splitWorker = cfg.proxy.split.poolB?.workerName || '';
+          splitPassword = cfg.proxy.split.poolB?.password || 'x';
+          splitPercentA = cfg.proxy.split.splitPercentA || 80;
+        }
       }
       miningMode = cfg?.miningMode === 'proxy' ? 'proxy' : 'solo';
 
@@ -183,6 +213,12 @@
     }
     loadStratumURL();
     loaded = true;
+
+    // Keep the active-pool indicator live while hashrate splitting is on.
+    const splitPoll = setInterval(() => {
+      if (miningMode === 'proxy' && splitEnabled) refreshUpstreamStatus();
+    }, 8000);
+    return () => clearInterval(splitPoll);
   });
 
   async function refreshStatus() {
@@ -230,6 +266,40 @@
     proxyTesting = false;
   }
 
+  // Pool B connection test state (hashrate splitting)
+  let splitTesting = false;
+  let splitTestResult: any = null;
+  let splitTestError = '';
+
+  async function testSplitConnection() {
+    splitTesting = true;
+    splitTestResult = null;
+    splitTestError = '';
+    try {
+      const { TestUpstreamConnection } = await import('../../wailsjs/go/appcore/App');
+      const result = await TestUpstreamConnection(splitUrl, splitWorker, splitPassword || 'x');
+      if (result?.connected) {
+        splitTestResult = result;
+      } else {
+        splitTestError = result?.error || 'Connection failed';
+      }
+    } catch (e: any) {
+      splitTestError = e?.message || String(e);
+    }
+    splitTesting = false;
+  }
+
+  let switchingPool = false;
+  async function switchActivePool(label: 'A' | 'B') {
+    switchingPool = true;
+    try {
+      const { SwitchActivePool } = await import('../../wailsjs/go/appcore/App');
+      await SwitchActivePool(label);
+      await refreshUpstreamStatus();
+    } catch {}
+    switchingPool = false;
+  }
+
   async function saveAndConnect() {
     saving = true;
     savingStep = 'saving';
@@ -259,10 +329,39 @@
     proxySaving = true;
     proxyTestError = '';
     proxySaveSuccess = false;
+
+    if (splitEnabled) {
+      if (proxyPassThrough) {
+        proxyTestError = 'Hashrate splitting cannot be combined with per-miner pass-through.';
+        proxySaving = false;
+        return;
+      }
+      if (!splitUrl.trim() || !splitWorker.trim()) {
+        proxyTestError = 'Hashrate splitting requires a Pool B URL and worker name.';
+        proxySaving = false;
+        return;
+      }
+      if (splitPercentA < 1 || splitPercentA > 99) {
+        proxyTestError = 'Split percentage must be between 1 and 99.';
+        proxySaving = false;
+        return;
+      }
+    }
+
     try {
       const { GetConfig, UpdateConfig, IsStratumRunning, StopStratum, StartStratum } = await import('../../wailsjs/go/appcore/App');
       const cfg = await GetConfig();
-      cfg.proxy = { url: proxyUrl, workerName: proxyWorker, password: proxyPassword || 'x', passThrough: proxyPassThrough };
+      cfg.proxy = {
+        url: proxyUrl,
+        workerName: proxyWorker,
+        password: proxyPassword || 'x',
+        passThrough: proxyPassThrough,
+        split: splitEnabled ? {
+          enabled: true,
+          poolB: { url: splitUrl, workerName: splitWorker, password: splitPassword || 'x' },
+          splitPercentA,
+        } : undefined,
+      };
       cfg.mining = { ...cfg.mining, coin: coinId };
       cfg.miningMode = 'proxy';
       await UpdateConfig(cfg);
@@ -721,6 +820,108 @@
             </p>
           </div>
 
+          <!-- Hashrate splitting (shared mode only) -->
+          <div class="rounded-lg p-3" style="background-color: var(--bg-secondary); border: 1px solid var(--border); {proxyPassThrough ? 'opacity: 0.5;' : ''}">
+            <div class="inline-flex items-center gap-1">
+              <Toggle bind:checked={splitEnabled} label="Split hashrate between two pools" disabled={proxyPassThrough} />
+              <Info tip="Automatically splits your hashrate between the pool above (Pool A) and a second pool (Pool B) by percentage, switching which pool's job is active job-by-job so it converges on the target split over time. Pool switches never reconnect your miners. Not available with per-miner pass-through." size={12} />
+            </div>
+
+            {#if proxyPassThrough}
+              <p class="text-xs mt-2" style="color: var(--text-secondary); opacity: 0.7;">Turn off per-miner pass-through to enable hashrate splitting.</p>
+            {:else if splitEnabled}
+              <div class="space-y-3 mt-3">
+                <div>
+                  <label class="block text-xs mb-1.5" style="color: var(--text-secondary);" for="split-url">Pool B URL</label>
+                  <input
+                    id="split-url"
+                    bind:value={splitUrl}
+                    class="w-full rounded-lg px-3 py-2 text-sm input-themed"
+                    placeholder="stratum+tcp://second-pool.example:3333"
+                  />
+                </div>
+                <div>
+                  <label class="block text-xs mb-1.5" style="color: var(--text-secondary);" for="split-worker">Pool B Worker Name</label>
+                  <input
+                    id="split-worker"
+                    bind:value={splitWorker}
+                    class="w-full rounded-lg px-3 py-2 text-sm input-themed"
+                    placeholder="your_address_on_pool_b"
+                  />
+                </div>
+                <div>
+                  <label class="block text-xs mb-1.5" style="color: var(--text-secondary);" for="split-pass">Pool B Password</label>
+                  <input
+                    id="split-pass"
+                    bind:value={splitPassword}
+                    class="w-full rounded-lg px-3 py-2 text-sm input-themed"
+                    placeholder="x"
+                  />
+                </div>
+
+                <div>
+                  <div class="text-xs mb-1.5 inline-flex items-center gap-1" style="color: var(--text-secondary);">
+                    Split Ratio <Info tip="Must sum to 100. Editing one field updates the other automatically." size={12} />
+                  </div>
+                  <div class="flex items-center gap-2">
+                    <div class="flex-1">
+                      <label class="block text-[10px] mb-1 opacity-70" style="color: var(--text-secondary);" for="split-pct-a">Pool A %</label>
+                      <input
+                        id="split-pct-a"
+                        type="number"
+                        min="1"
+                        max="99"
+                        value={splitPercentA}
+                        on:input={onSplitPercentAInput}
+                        class="w-full rounded-lg px-3 py-2 text-sm input-themed"
+                      />
+                    </div>
+                    <span class="text-sm pt-4" style="color: var(--text-secondary);">/</span>
+                    <div class="flex-1">
+                      <label class="block text-[10px] mb-1 opacity-70" style="color: var(--text-secondary);" for="split-pct-b">Pool B %</label>
+                      <input
+                        id="split-pct-b"
+                        type="number"
+                        min="1"
+                        max="99"
+                        value={splitPercentB}
+                        on:input={onSplitPercentBInput}
+                        class="w-full rounded-lg px-3 py-2 text-sm input-themed"
+                      />
+                    </div>
+                  </div>
+                </div>
+
+                <button
+                  class="w-full px-4 py-2 rounded-lg text-sm font-medium font-tech uppercase tracking-wider transition-colors flex items-center justify-center gap-2"
+                  style="background-color: var(--bg-primary); border: 1px solid var(--border); color: var(--text-primary); {splitTesting ? 'opacity: 0.7;' : ''}"
+                  on:click={testSplitConnection}
+                  disabled={splitTesting}
+                >
+                  {#if splitTesting}
+                    <ThemedSpinner size={16} />
+                    Testing Pool B...
+                  {:else}
+                    Test Pool B Connection
+                  {/if}
+                </button>
+
+                {#if splitTestResult}
+                  <div class="rounded-lg p-3" style="background: rgba(var(--accent-rgb), 0.05); border: 1px solid rgba(var(--accent-rgb), 0.2);">
+                    <div class="text-sm font-medium mb-1" style="color: var(--success);">Pool B Connection Successful</div>
+                    <div class="text-xs font-data" style="color: var(--text-secondary);">EN2 Size: {splitTestResult.extranonce2Size} bytes</div>
+                  </div>
+                {/if}
+                {#if splitTestError}
+                  <div class="rounded-lg p-3" style="background: rgba(255,50,50,0.05); border: 1px solid rgba(255,50,50,0.2);">
+                    <div class="text-sm font-medium mb-1" style="color: var(--error);">Pool B Connection Failed</div>
+                    <div class="text-xs font-data" style="color: var(--text-secondary);">{splitTestError}</div>
+                  </div>
+                {/if}
+              </div>
+            {/if}
+          </div>
+
           <div class="flex gap-3 pt-2">
             <button
               class="flex-1 px-4 py-2 rounded-lg text-sm font-medium font-tech uppercase tracking-wider transition-colors flex items-center justify-center gap-2"
@@ -796,7 +997,52 @@
                 <span class="text-sm font-medium glow-text" style="color: var(--success);">Connected</span>
               </div>
 
-              {#if upstreamStatus.passThrough}
+              {#if upstreamStatus.split}
+                <div class="space-y-3">
+                  <div class="rounded-lg p-3" style="background-color: var(--bg-secondary);">
+                    <div class="text-xs" style="color: var(--text-secondary);">Active Pool</div>
+                    <div class="text-sm font-medium font-data" style="color: var(--accent);">
+                      Pool {upstreamStatus.activePool} ({upstreamStatus.activePool === 'A' ? upstreamStatus.splitPercentA : 100 - upstreamStatus.splitPercentA}% target)
+                    </div>
+                  </div>
+
+                  {#each ['A', 'B'] as label (label)}
+                    {@const pool = label === 'A' ? upstreamStatus.poolA : upstreamStatus.poolB}
+                    <div class="rounded-lg p-3 flex items-center justify-between" style="background-color: var(--bg-secondary); {!pool.healthy ? 'border: 1px solid var(--error);' : ''}">
+                      <div>
+                        <div class="text-xs inline-flex items-center gap-1.5" style="color: var(--text-secondary);">
+                          Pool {label}
+                          {#if upstreamStatus.activePool === label}
+                            <span class="text-[10px] font-tech uppercase px-1.5 py-0.5 rounded" style="background: rgba(var(--accent-rgb), 0.15); color: var(--accent);">Active</span>
+                          {/if}
+                          {#if !pool.healthy}
+                            <span class="text-[10px] font-tech uppercase px-1.5 py-0.5 rounded" style="background: rgba(255,50,50,0.15); color: var(--error);">Down</span>
+                          {/if}
+                        </div>
+                        <div class="text-sm font-medium font-data" style="color: {pool.connected ? 'var(--text-primary)' : 'var(--error)'};">
+                          {pool.connected ? `Diff ${pool.upstreamDiff || '—'}` : 'Disconnected'}
+                        </div>
+                      </div>
+                      {#if upstreamStatus.activePool !== label && pool.healthy}
+                        <button
+                          class="px-2.5 py-1 text-[11px] rounded-lg font-tech uppercase tracking-wider transition-colors"
+                          style="background: rgba(var(--accent-rgb), 0.1); color: var(--accent); border: 1px solid rgba(var(--accent-rgb), 0.3); {switchingPool ? 'opacity: 0.6;' : ''}"
+                          on:click={() => switchActivePool(label)}
+                          disabled={switchingPool}
+                        >
+                          Switch
+                        </button>
+                      {/if}
+                    </div>
+                  {/each}
+
+                  {#if !upstreamStatus.poolA.healthy || !upstreamStatus.poolB.healthy}
+                    <div class="rounded-lg p-3 text-xs" style="background: rgba(255,50,50,0.05); border: 1px solid rgba(255,50,50,0.2); color: var(--text-secondary);">
+                      Failover active — 100% of hashrate is temporarily routed to the surviving pool until the other reconnects.
+                    </div>
+                  {/if}
+                </div>
+              {:else if upstreamStatus.passThrough}
                 <div class="grid grid-cols-2 gap-3">
                   <div class="rounded-lg p-3" style="background-color: var(--bg-secondary);">
                     <div class="text-xs" style="color: var(--text-secondary);">Mode</div>

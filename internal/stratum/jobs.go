@@ -24,6 +24,25 @@ type Job struct {
 	// Internal data for block reconstruction
 	Template *node.BlockTemplate
 	SegWit   bool // whether this coin uses SegWit (for block serialization)
+
+	// Dual-pool hashrate splitting (empty/zero for solo jobs and single-pool
+	// proxy jobs). SourcePool identifies which upstream pool this job came
+	// from ("A" or "B"); RealJobID is that pool's OWN job ID (distinct from
+	// ID above, which may be namespaced for map-key uniqueness across both
+	// pools) and must be used when forwarding a share to that pool's
+	// SubmitShare. RealEN2Size is a snapshot of that pool's extranonce2 size
+	// at the moment this job was registered, so a share submitted against an
+	// old job (e.g. right at a pool-switch boundary) still reconstructs the
+	// correct byte layout regardless of what either pool's live state has
+	// moved on to since.
+	SourcePool  string
+	RealJobID   string
+	RealEN2Size int
+
+	// seq is a monotonic registration-order counter used to find the oldest
+	// job to evict, independent of what format ID happens to be in (plain
+	// sequential hex for solo/single-pool, or pool-namespaced for split mode).
+	seq uint64
 }
 
 // JobManager creates and tracks mining jobs from block templates.
@@ -31,6 +50,7 @@ type JobManager struct {
 	jobs    map[string]*Job
 	mu      sync.RWMutex
 	nextID  atomic.Uint64
+	nextSeq atomic.Uint64
 	maxJobs int
 
 	payoutAddress   string
@@ -121,44 +141,63 @@ func (jm *JobManager) CreateJob(tmpl *node.BlockTemplate, extranonce1Size int) (
 		NTime:          ntime,
 		Template:       tmpl,
 		SegWit:         jm.coinDef.SegWit,
+		seq:            jm.nextSeq.Add(1),
 	}
 
 	jm.mu.Lock()
 	jm.jobs[jobID] = job
-	// Trim old jobs
-	if len(jm.jobs) > jm.maxJobs {
-		var oldest string
-		var oldestID uint64 = ^uint64(0)
-		for id := range jm.jobs {
-			var idNum uint64
-			fmt.Sscanf(id, "%x", &idNum)
-			if idNum < oldestID {
-				oldestID = idNum
-				oldest = id
-			}
-		}
-		delete(jm.jobs, oldest)
-	}
+	jm.evictOldestLocked()
 	jm.mu.Unlock()
 
 	return job, nil
 }
 
+// evictOldestLocked removes the lowest-seq job if the manager is over maxJobs.
+// Caller must hold jm.mu. seq (registration order), not the ID string, is the
+// ordering key — IDs can be plain sequential hex (solo/single-pool) or
+// pool-namespaced strings (split mode), so they aren't reliably hex-parseable.
+func (jm *JobManager) evictOldestLocked() {
+	if len(jm.jobs) <= jm.maxJobs {
+		return
+	}
+	var oldestID string
+	var oldestSeq uint64 = ^uint64(0)
+	for id, j := range jm.jobs {
+		if j.seq < oldestSeq {
+			oldestSeq = j.seq
+			oldestID = id
+		}
+	}
+	if oldestID != "" {
+		delete(jm.jobs, oldestID)
+	}
+}
+
 // RegisterUpstreamJob creates a Job from raw upstream stratum fields.
 // Unlike CreateJob, this does not build a coinbase or merkle branches — it
 // stores the upstream-provided values directly. Template is nil.
+//
+// mapID is the key this job is stored/broadcast under (plain pass-through of
+// the pool's own job ID in single-pool proxy mode; pool-namespaced, e.g.
+// "A:3f", in split mode so both pools' jobs can coexist without collision).
+// realJobID is the upstream pool's OWN job ID — identical to mapID in
+// single-pool mode, but must be tracked separately in split mode since that's
+// what has to be sent back in that pool's mining.submit. sourcePool/
+// realEN2Size are empty/zero outside split mode.
 func (jm *JobManager) RegisterUpstreamJob(
-	jobID, prevHash, coinbase1, coinbase2 string,
+	mapID, realJobID, prevHash, coinbase1, coinbase2 string,
 	merkleBranches []string,
 	version, nbits, ntime string,
 	cleanJobs bool,
+	sourcePool string,
+	realEN2Size int,
 ) *Job {
 	if merkleBranches == nil {
 		merkleBranches = []string{}
 	}
 
 	job := &Job{
-		ID:             jobID,
+		ID:             mapID,
 		PrevHash:       prevHash,
 		Coinbase1:      coinbase1,
 		Coinbase2:      coinbase2,
@@ -167,29 +206,18 @@ func (jm *JobManager) RegisterUpstreamJob(
 		NBits:          nbits,
 		NTime:          ntime,
 		Template:       nil, // proxy mode: no local template
+		SourcePool:     sourcePool,
+		RealJobID:      realJobID,
+		RealEN2Size:    realEN2Size,
+		seq:            jm.nextSeq.Add(1),
 	}
 
 	jm.mu.Lock()
 	// Note: do NOT wipe jobs on cleanJobs — the flag tells miners to abandon
 	// old work, but we must keep old jobs so in-flight ASIC shares (pipeline
 	// delay) still find their job data and get validated for hashrate tracking.
-	jm.jobs[jobID] = job
-	// Trim old jobs (same as CreateJob)
-	if len(jm.jobs) > jm.maxJobs {
-		var oldest string
-		var oldestID uint64 = ^uint64(0)
-		for id := range jm.jobs {
-			var idNum uint64
-			fmt.Sscanf(id, "%x", &idNum)
-			if idNum < oldestID {
-				oldestID = idNum
-				oldest = id
-			}
-		}
-		if oldest != "" && oldest != jobID {
-			delete(jm.jobs, oldest)
-		}
-	}
+	jm.jobs[mapID] = job
+	jm.evictOldestLocked()
 	jm.mu.Unlock()
 
 	return job

@@ -346,8 +346,9 @@ func (s *Session) wireDedicatedUpstream(uc *upstream.Client) {
 			return
 		}
 		job := s.server.jobManager.RegisterUpstreamJob(
-			params.JobID, params.PrevHash, params.Coinbase1, params.Coinbase2,
+			params.JobID, params.JobID, params.PrevHash, params.Coinbase1, params.Coinbase2,
 			params.MerkleBranches, params.Version, params.NBits, params.NTime, params.CleanJobs,
+			"", 0,
 		)
 		s.server.shareValidator.CleanDuplicates(s.server.jobManager.ActiveJobIDs())
 		s.sendNotify(job, params.CleanJobs)
@@ -476,8 +477,9 @@ func (s *Session) handleAuthorize(req *Request) {
 
 		if earlyJob := s.dedicatedUpstream.DrainEarlyJob(); earlyJob != nil {
 			job := s.server.jobManager.RegisterUpstreamJob(
-				earlyJob.JobID, earlyJob.PrevHash, earlyJob.Coinbase1, earlyJob.Coinbase2,
+				earlyJob.JobID, earlyJob.JobID, earlyJob.PrevHash, earlyJob.Coinbase1, earlyJob.Coinbase2,
 				earlyJob.MerkleBranches, earlyJob.Version, earlyJob.NBits, earlyJob.NTime, earlyJob.CleanJobs,
+				"", 0,
 			)
 			s.sendNotify(job, earlyJob.CleanJobs)
 		} else {
@@ -520,8 +522,9 @@ func (s *Session) handleAuthorize(req *Request) {
 				return
 			}
 			job := s.server.jobManager.RegisterUpstreamJob(
-				params.JobID, params.PrevHash, params.Coinbase1, params.Coinbase2,
+				params.JobID, params.JobID, params.PrevHash, params.Coinbase1, params.Coinbase2,
 				params.MerkleBranches, params.Version, params.NBits, params.NTime, params.CleanJobs,
+				"", 0,
 			)
 			s.server.shareValidator.CleanDuplicates(s.server.jobManager.ActiveJobIDs())
 			s.sendNotify(job, params.CleanJobs)
@@ -570,8 +573,9 @@ func (s *Session) handleAuthorize(req *Request) {
 		// Send earliest available job from this miner's upstream.
 		if earlyJob := uc.DrainEarlyJob(); earlyJob != nil {
 			job := s.server.jobManager.RegisterUpstreamJob(
-				earlyJob.JobID, earlyJob.PrevHash, earlyJob.Coinbase1, earlyJob.Coinbase2,
+				earlyJob.JobID, earlyJob.JobID, earlyJob.PrevHash, earlyJob.Coinbase1, earlyJob.Coinbase2,
 				earlyJob.MerkleBranches, earlyJob.Version, earlyJob.NBits, earlyJob.NTime, earlyJob.CleanJobs,
+				"", 0,
 			)
 			s.sendNotify(job, earlyJob.CleanJobs)
 		} else {
@@ -930,6 +934,26 @@ func (s *Session) handleSubmit(req *Request) {
 				// connection. The pool knows this connection's EN1 from subscribe,
 				// so we send only the miner's EN2 (no prefix reconstruction needed).
 				accepted, reason = s.dedicatedUpstream.SubmitShare(s.workerName, jobID, en2, ntime, nonce, versionBits)
+			} else if s.server.splitMode {
+				// Dual-pool split: the real pool's EN1 was folded into this job's
+				// Coinbase1 at broadcast time (see proxysplit.Router), so the
+				// miner-visible extranonce region is just this session's stable
+				// local prefix + the miner's EN2 + zero-pad slack, sized exactly
+				// to that job's snapshotted RealEN2Size (which pool backed it may
+				// differ from whichever pool is active NOW — using the job's own
+				// snapshot, not live state, is what makes switch-boundary shares
+				// still resolve correctly).
+				job := s.server.GetJob(jobID)
+				if job == nil {
+					accepted, reason = false, "stale job"
+				} else {
+					padLen := job.RealEN2Size - s.server.splitPrefixBytes - s.server.extranonce2Size
+					if padLen < 0 {
+						padLen = 0 // shouldn't happen — router sizes these to guarantee padLen>=0
+					}
+					realEN2 := s.extranonce1 + en2 + strings.Repeat("00", padLen)
+					accepted, reason = s.server.OnShareForward(s.workerName, jobID, realEN2, ntime, nonce, versionBits)
+				}
 			} else {
 				// Shared upstream: reconstruct full EN2 with the miner's EN1 prefix.
 				minerPrefix := s.extranonce1[len(s.server.upstreamEN1):]

@@ -35,6 +35,28 @@ type ProxyConfig struct {
 	// (default) the relay runs shared mode: one upstream connection under
 	// WorkerName, all miners aggregated as a single worker on the pool.
 	PassThrough bool `json:"passThrough,omitempty"`
+
+	// Split, when non-nil and Enabled, splits shared-mode hashrate between this
+	// pool ("Pool A", using the URL/WorkerName/Password fields above) and a
+	// second pool ("Pool B") by percentage. Mutually exclusive with PassThrough.
+	// nil (the default/zero value) means existing single-pool configs are
+	// completely unaffected.
+	Split *SplitConfig `json:"split,omitempty"`
+}
+
+// SplitConfig configures dual-pool hashrate splitting (shared proxy mode only).
+type SplitConfig struct {
+	Enabled bool         `json:"enabled"`
+	PoolB   PoolEndpoint `json:"poolB"`
+	// SplitPercentA is Pool A's share of hashrate, 1-99. Pool B gets the rest.
+	SplitPercentA int `json:"splitPercentA"`
+}
+
+// PoolEndpoint is a stratum pool connection target.
+type PoolEndpoint struct {
+	URL        string `json:"url"`
+	WorkerName string `json:"workerName"`
+	Password   string `json:"password"`
 }
 
 type NodeConfig struct {
@@ -217,6 +239,20 @@ func (c *Config) Validate() error {
 		// a top-level worker isn't required. Shared mode needs one.
 		if c.Proxy.WorkerName == "" && !c.Proxy.PassThrough {
 			return fmt.Errorf("proxy mode requires a worker name")
+		}
+		if c.Proxy.Split != nil && c.Proxy.Split.Enabled {
+			if c.Proxy.PassThrough {
+				return fmt.Errorf("hashrate splitting cannot be combined with pass-through mode")
+			}
+			if c.Proxy.Split.PoolB.URL == "" {
+				return fmt.Errorf("hashrate splitting requires a Pool B URL")
+			}
+			if c.Proxy.Split.PoolB.WorkerName == "" {
+				return fmt.Errorf("hashrate splitting requires a Pool B worker name")
+			}
+			if c.Proxy.Split.SplitPercentA < 1 || c.Proxy.Split.SplitPercentA > 99 {
+				return fmt.Errorf("split percentage must be between 1 and 99")
+			}
 		}
 	} else {
 		if c.Node.Port < 1 || c.Node.Port > 65535 {

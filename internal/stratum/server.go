@@ -53,6 +53,18 @@ type Server struct {
 	upstreamDiffMu   sync.RWMutex
 	proxyVersionMask uint32 // version-rolling mask from upstream (0 = no rolling)
 
+	// Dual-pool hashrate-split mode fields. Independent of upstreamEN1/
+	// proxyPrefixBytes above (those stay untouched for single-pool proxy
+	// mode) — splitMode sessions get a purely LOCAL, stable extranonce1
+	// (never containing any real pool's EN1), because the real pool's EN1 is
+	// folded into that job's Coinbase1 by the proxysplit router instead. This
+	// is what lets the active pool change without ever reconnecting a miner.
+	// See internal/proxysplit/router.go for the fold/pad construction.
+	splitMode        bool
+	splitPrefixBytes int // bytes of the (virtual) EN2 space used as miner prefix
+	activePoolLabel  string
+	activePoolMu     sync.RWMutex
+
 	upLatMs float64 // EMA of upstream share round-trip latency (ms)
 	upLatMu sync.Mutex
 
@@ -313,6 +325,18 @@ func (s *Server) removeSession(session *Session) {
 }
 
 func (s *Server) generateExtranonce1() string {
+	if s.splitMode {
+		if s.splitPrefixBytes == 0 {
+			// Degraded fallback (joint EN2 budget too small for isolation) —
+			// same risk profile as the single-pool proxyPrefixBytes==0 case
+			// below, just with no upstream EN1 to even partially disambiguate.
+			return ""
+		}
+		mask := uint32((1 << (8 * s.splitPrefixBytes)) - 1)
+		counter := s.nextEN1.Add(1) & mask
+		format := fmt.Sprintf("%%0%dx", s.splitPrefixBytes*2)
+		return fmt.Sprintf(format, counter)
+	}
 	if s.proxyMode {
 		if s.OnMinerConnect != nil {
 			// Per-miner mode: assign a unique placeholder; real EN1 is sent via
@@ -341,6 +365,28 @@ func (s *Server) SetProxyMode(upstreamEN1 string, localEN2Size, prefixBytes int,
 	s.proxyPrefixBytes = prefixBytes
 	s.proxyVersionMask = versionMask
 	s.shareValidator.skipDupeCheck = true // let upstream pool handle duplicates
+}
+
+// SetProxySplitMode configures the server for dual-pool hashrate-split
+// operation. Unlike SetProxyMode, there's no single upstreamEN1 — sessions
+// get a stable local EN1 (see generateExtranonce1), and virtualEN2Size is the
+// FIXED extranonce2 size advertised to every miner for the life of their
+// connection (computed by the router as the smaller of both pools' real EN2
+// sizes minus prefixBytes, so it always fits regardless of which pool is
+// active — see proxysplit.Router).
+func (s *Server) SetProxySplitMode(prefixBytes, virtualEN2Size int, versionMask uint32) {
+	s.proxyMode = true // reuse the general proxy-mode flag (skipDupeCheck etc.
+	// below already keys off it the same way single-pool proxy mode does)
+	s.splitMode = true
+	s.splitPrefixBytes = prefixBytes
+	s.extranonce2Size = virtualEN2Size
+	s.proxyVersionMask = versionMask
+	s.shareValidator.skipDupeCheck = true // let upstream pools handle duplicates
+}
+
+// IsSplitMode returns true if the server is running dual-pool hashrate split.
+func (s *Server) IsSplitMode() bool {
+	return s.splitMode
 }
 
 // SetPerMinerMode configures the server for 1:1 miner→upstream pass-through.
@@ -453,6 +499,7 @@ type ProxyDiagnostics struct {
 	MinerDiffs     map[string]float64 `json:"minerDiffs"` // worker → session diff
 	MinerDupes     map[string]uint64  `json:"minerDupes"` // worker → duplicate count
 	MinerAccepted  map[string]uint64  `json:"minerAccepted"` // worker → accepted count
+	ActivePool     string             `json:"activePool,omitempty"` // split mode only: "A" or "B"
 }
 
 // GetProxyDiagnostics returns current proxy pipeline counters.
@@ -470,6 +517,7 @@ func (s *Server) GetProxyDiagnostics() ProxyDiagnostics {
 		MinerDiffs:     make(map[string]float64),
 		MinerDupes:     make(map[string]uint64),
 		MinerAccepted:  make(map[string]uint64),
+		ActivePool:     s.ActivePoolLabel(),
 	}
 
 	s.sessionMu.RLock()
@@ -495,9 +543,64 @@ func (s *Server) GetProxyDiagnostics() ProxyDiagnostics {
 	return d
 }
 
+// GetJob returns the job registered under id, or nil if unknown/evicted. Used
+// by the proxysplit router to resolve a submitted job's source pool.
+func (s *Server) GetJob(id string) *Job {
+	return s.jobManager.GetJob(id)
+}
+
+// RegisterAndMaybeBroadcastSplitJob registers a dual-pool-split job (folded/
+// padded coinbase already computed by the caller — see proxysplit.Router) and
+// broadcasts it to miners only when broadcast is true (i.e. sourcePool is the
+// currently-active pool). When false, the job is still registered so shares
+// already in flight against it (e.g. right at a pool-switch boundary) still
+// resolve correctly — the inactive pool stays a "hot" registered source.
+func (s *Server) RegisterAndMaybeBroadcastSplitJob(
+	mapID, realJobID, prevHash, coinbase1, coinbase2 string,
+	merkleBranches []string,
+	version, nbits, ntime string,
+	cleanJobs bool,
+	sourcePool string,
+	realEN2Size int,
+	broadcast bool,
+) *Job {
+	job := s.jobManager.RegisterUpstreamJob(
+		mapID, realJobID, prevHash, coinbase1, coinbase2,
+		merkleBranches, version, nbits, ntime, cleanJobs,
+		sourcePool, realEN2Size,
+	)
+
+	activeIDs := s.jobManager.ActiveJobIDs()
+	s.shareValidator.CleanDuplicates(activeIDs)
+
+	if broadcast {
+		s.log.Debugf("stratum", "[split] registered+broadcasting job %q from pool %s (active jobs: %d)", job.ID, sourcePool, len(activeIDs))
+		s.BroadcastJob(job, cleanJobs)
+	} else {
+		s.log.Debugf("stratum", "[split] registered (standby) job %q from pool %s (active jobs: %d)", job.ID, sourcePool, len(activeIDs))
+	}
+
+	return job
+}
+
+// SetActivePoolLabel records which pool ("A"/"B") is currently live, surfaced
+// via GetProxyDiagnostics for the dashboard. No-op outside split mode.
+func (s *Server) SetActivePoolLabel(label string) {
+	s.activePoolMu.Lock()
+	s.activePoolLabel = label
+	s.activePoolMu.Unlock()
+}
+
+func (s *Server) ActivePoolLabel() string {
+	s.activePoolMu.RLock()
+	defer s.activePoolMu.RUnlock()
+	return s.activePoolLabel
+}
+
 // BroadcastUpstreamJob registers a job from upstream and broadcasts to all miners.
 func (s *Server) BroadcastUpstreamJob(params *upstream.JobParams) {
 	job := s.jobManager.RegisterUpstreamJob(
+		params.JobID,
 		params.JobID,
 		params.PrevHash,
 		params.Coinbase1,
@@ -507,6 +610,8 @@ func (s *Server) BroadcastUpstreamJob(params *upstream.JobParams) {
 		params.NBits,
 		params.NTime,
 		params.CleanJobs,
+		"",
+		0,
 	)
 
 	activeIDs := s.jobManager.ActiveJobIDs()

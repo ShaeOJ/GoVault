@@ -134,6 +134,10 @@ export function StopStratum() {
   return window['go']['appcore']['App']['StopStratum']();
 }
 
+export function SwitchActivePool(arg1) {
+  return window['go']['appcore']['App']['SwitchActivePool'](arg1);
+}
+
 export function TestNodeConnection(arg1, arg2, arg3, arg4, arg5) {
   return window['go']['appcore']['App']['TestNodeConnection'](arg1, arg2, arg3, arg4, arg5);
 }

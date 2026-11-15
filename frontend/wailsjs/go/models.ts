@@ -49,11 +49,62 @@ export namespace config {
 	        this.dbMaxSizeMB = source["dbMaxSizeMB"];
 	    }
 	}
+	export class PoolEndpoint {
+	    url: string;
+	    workerName: string;
+	    password: string;
+	
+	    static createFrom(source: any = {}) {
+	        return new PoolEndpoint(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.url = source["url"];
+	        this.workerName = source["workerName"];
+	        this.password = source["password"];
+	    }
+	}
+	export class SplitConfig {
+	    enabled: boolean;
+	    poolB: PoolEndpoint;
+	    splitPercentA: number;
+	
+	    static createFrom(source: any = {}) {
+	        return new SplitConfig(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.enabled = source["enabled"];
+	        this.poolB = this.convertValues(source["poolB"], PoolEndpoint);
+	        this.splitPercentA = source["splitPercentA"];
+	    }
+	
+		convertValues(a: any, classs: any, asMap: boolean = false): any {
+		    if (!a) {
+		        return a;
+		    }
+		    if (a.slice && a.map) {
+		        return (a as any[]).map(elem => this.convertValues(elem, classs));
+		    } else if ("object" === typeof a) {
+		        if (asMap) {
+		            for (const key of Object.keys(a)) {
+		                a[key] = new classs(a[key]);
+		            }
+		            return a;
+		        }
+		        return new classs(a);
+		    }
+		    return a;
+		}
+	}
 	export class ProxyConfig {
 	    url: string;
 	    workerName: string;
 	    password: string;
 	    passThrough?: boolean;
+	    split?: SplitConfig;
 	
 	    static createFrom(source: any = {}) {
 	        return new ProxyConfig(source);
@@ -65,7 +116,26 @@ export namespace config {
 	        this.workerName = source["workerName"];
 	        this.password = source["password"];
 	        this.passThrough = source["passThrough"];
+	        this.split = this.convertValues(source["split"], SplitConfig);
 	    }
+	
+		convertValues(a: any, classs: any, asMap: boolean = false): any {
+		    if (!a) {
+		        return a;
+		    }
+		    if (a.slice && a.map) {
+		        return (a as any[]).map(elem => this.convertValues(elem, classs));
+		    } else if ("object" === typeof a) {
+		        if (asMap) {
+		            for (const key of Object.keys(a)) {
+		                a[key] = new classs(a[key]);
+		            }
+		            return a;
+		        }
+		        return new classs(a);
+		    }
+		    return a;
+		}
 	}
 	export class VardiffConfig {
 	    minDiff: number;
@@ -205,6 +275,8 @@ export namespace config {
 		    return a;
 		}
 	}
+	
+	
 	
 	
 	

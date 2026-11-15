@@ -73,6 +73,8 @@ export function StartStratum():Promise<void>;
 
 export function StopStratum():Promise<void>;
 
+export function SwitchActivePool(arg1:string):Promise<void>;
+
 export function TestNodeConnection(arg1:string,arg2:number,arg3:string,arg4:string,arg5:boolean):Promise<Record<string, any>>;
 
 export function TestUpstreamConnection(arg1:string,arg2:string,arg3:string):Promise<Record<string, any>>;
