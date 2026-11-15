@@ -1045,6 +1045,12 @@ func (a *App) GetDashboardStats() miner.DashboardStats {
 		if cB := router.Client(proxysplit.LabelB); cB != nil {
 			ds.PoolBDiff = cB.UpstreamDifficulty()
 		}
+		if nd, ok := networkDiffFromNBits(st.NBitsA); ok {
+			ds.NetworkDiffA = nd
+		}
+		if nd, ok := networkDiffFromNBits(st.NBitsB); ok {
+			ds.NetworkDiffB = nd
+		}
 	}
 
 	return ds
@@ -1739,27 +1745,39 @@ func (a *App) SwitchActivePool(label string) error {
 
 // updateNetworkDiffFromNBits computes network difficulty from a compact target.
 func (a *App) updateNetworkDiffFromNBits(nbitsHex string) {
-	if nbitsHex == "" {
+	nd, ok := networkDiffFromNBits(nbitsHex)
+	if !ok {
 		return
+	}
+	a.netMu.Lock()
+	a.networkDiff = nd
+	a.netMu.Unlock()
+}
+
+// networkDiffFromNBits converts a compact-target hex string (as sent in a
+// stratum job's nBits field) to a network difficulty float. ok is false for
+// an empty/malformed input. Shared by the global network-diff tracker above
+// and the per-pool (split mode) network-diff readout in GetDashboardStats.
+func networkDiffFromNBits(nbitsHex string) (float64, bool) {
+	if nbitsHex == "" {
+		return 0, false
 	}
 	nbitsBytes, err := hex.DecodeString(nbitsHex)
 	if err != nil || len(nbitsBytes) != 4 {
-		return
+		return 0, false
 	}
 	_ = binary.BigEndian.Uint32(nbitsBytes) // validate it parses
 
 	target := stratum.CompactToBig(nbitsHex)
 	if target.Sign() <= 0 {
-		return
+		return 0, false
 	}
 
 	pdiff1 := stratum.Pdiff1Target()
 	netDiffF := new(big.Float).SetInt(pdiff1)
 	netDiffF.Quo(netDiffF, new(big.Float).SetInt(target))
 	nd, _ := netDiffF.Float64()
-	a.netMu.Lock()
-	a.networkDiff = nd
-	a.netMu.Unlock()
+	return nd, true
 }
 
 // === Database ===

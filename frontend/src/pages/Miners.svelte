@@ -43,6 +43,8 @@
     splitPercentA: number;
     poolADiff: number;
     poolBDiff: number;
+    networkDiffA: number;
+    networkDiffB: number;
     poolAHealthy: boolean;
     poolBHealthy: boolean;
     sharesFwdA: number;
@@ -125,6 +127,8 @@
         splitPercentA: s.splitPercentA,
         poolADiff: s.poolADiff || 0,
         poolBDiff: s.poolBDiff || 0,
+        networkDiffA: s.networkDiffA || 0,
+        networkDiffB: s.networkDiffB || 0,
         poolAHealthy: !!s.poolAHealthy,
         poolBHealthy: !!s.poolBHealthy,
         sharesFwdA: s.sharesFwdA || 0,
@@ -246,6 +250,7 @@
     <div class="grid grid-cols-2 gap-4">
       {#each ['A', 'B'] as label (label)}
         {@const diff = label === 'A' ? splitStats.poolADiff : splitStats.poolBDiff}
+        {@const netDiff = label === 'A' ? splitStats.networkDiffA : splitStats.networkDiffB}
         {@const shares = label === 'A' ? splitStats.sharesFwdA : splitStats.sharesFwdB}
         {@const healthy = label === 'A' ? splitStats.poolAHealthy : splitStats.poolBHealthy}
         {@const pct = label === 'A' ? splitStats.splitPercentA : 100 - splitStats.splitPercentA}
@@ -262,7 +267,11 @@
             {/if}
           </div>
           <div class="text-xl font-bold font-data" style="color: {healthy ? 'var(--text-primary)' : 'var(--error)'};">{healthy ? formatDifficulty(diff) : 'Disconnected'}</div>
-          <div class="text-xs mt-1" style="color: var(--text-secondary);">{shares} shares forwarded</div>
+          <div class="text-xs mt-1 inline-flex items-center gap-1" style="color: var(--text-secondary);">
+            Network: {formatDifficulty(netDiff)}
+            <Info tip="Network difficulty as last reported by this pool's own job" size={11} />
+          </div>
+          <div class="text-xs mt-0.5" style="color: var(--text-secondary);">{shares} shares forwarded</div>
         </div>
       {/each}
     </div>

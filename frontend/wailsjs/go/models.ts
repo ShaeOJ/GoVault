@@ -334,6 +334,8 @@ export namespace miner {
 	    splitPercentA?: number;
 	    poolADiff?: number;
 	    poolBDiff?: number;
+	    networkDiffA?: number;
+	    networkDiffB?: number;
 	    poolAHealthy?: boolean;
 	    poolBHealthy?: boolean;
 	    sharesFwdA?: number;
@@ -369,6 +371,8 @@ export namespace miner {
 	        this.splitPercentA = source["splitPercentA"];
 	        this.poolADiff = source["poolADiff"];
 	        this.poolBDiff = source["poolBDiff"];
+	        this.networkDiffA = source["networkDiffA"];
+	        this.networkDiffB = source["networkDiffB"];
 	        this.poolAHealthy = source["poolAHealthy"];
 	        this.poolBHealthy = source["poolBHealthy"];
 	        this.sharesFwdA = source["sharesFwdA"];

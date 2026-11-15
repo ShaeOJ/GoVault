@@ -420,6 +420,12 @@ type Status struct {
 	SharesFwdB    uint64
 	SwitchCount   uint64
 	LastSwitchAt  time.Time // zero value if never switched
+	// NBitsA/NBitsB are each pool's own last-seen compact target (hex), from
+	// its own most recent job — independent of which pool is active, so the
+	// caller can derive each pool's reported network difficulty for
+	// comparison (e.g. to spot a pool lagging behind on block height).
+	NBitsA string
+	NBitsB string
 }
 
 // Status returns a snapshot of current split-mode diagnostics.
@@ -428,6 +434,13 @@ func (r *Router) Status() Status {
 	active := r.active
 	healthyA := r.healthy[LabelA]
 	healthyB := r.healthy[LabelB]
+	var nbitsA, nbitsB string
+	if j := r.lastJob[LabelA]; j != nil {
+		nbitsA = j.NBits
+	}
+	if j := r.lastJob[LabelB]; j != nil {
+		nbitsB = j.NBits
+	}
 	r.mu.Unlock()
 
 	var lastSwitch time.Time
@@ -444,6 +457,8 @@ func (r *Router) Status() Status {
 		SharesFwdB:    r.sharesFwdB.Load(),
 		SwitchCount:   r.switchCount.Load(),
 		LastSwitchAt:  lastSwitch,
+		NBitsA:        nbitsA,
+		NBitsB:        nbitsB,
 	}
 }
 

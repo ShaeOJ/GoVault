@@ -42,6 +42,8 @@ type DashboardStats struct {
 	SplitPercentA int     `json:"splitPercentA,omitempty"`
 	PoolADiff     float64 `json:"poolADiff,omitempty"`
 	PoolBDiff     float64 `json:"poolBDiff,omitempty"`
+	NetworkDiffA  float64 `json:"networkDiffA,omitempty"` // each pool's own last-reported network difficulty
+	NetworkDiffB  float64 `json:"networkDiffB,omitempty"`
 	PoolAHealthy  bool    `json:"poolAHealthy,omitempty"`
 	PoolBHealthy  bool    `json:"poolBHealthy,omitempty"`
 	SharesFwdA    uint64  `json:"sharesFwdA,omitempty"`

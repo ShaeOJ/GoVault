@@ -369,12 +369,12 @@
         tooltip="Pool A's current difficulty. 'Active' means it's the pool currently receiving your hashrate"
       />
       <StatCard
-        label="Pool A Shares"
-        value={formatNumber(stats?.sharesFwdA || 0)}
-        subtext={stats.poolAHealthy ? '' : 'DISCONNECTED'}
-        iconName="nodes"
-        color={stats.poolAHealthy ? 'green' : 'red'}
-        tooltip="Shares forwarded to Pool A since the proxy started"
+        label="Pool A Network Diff"
+        value={formatDifficulty(stats?.networkDiffA || 0)}
+        subtext={`${formatNumber(stats?.sharesFwdA || 0)} shares fwd${stats.poolAHealthy ? '' : ' · DISCONNECTED'}`}
+        iconName="hexshield"
+        color={stats.poolAHealthy ? 'accent' : 'red'}
+        tooltip="Network difficulty as last reported by Pool A's own job — compare to Pool B's to spot a pool lagging behind on block height"
       />
       <StatCard
         label="Pool B Difficulty"
@@ -385,12 +385,12 @@
         tooltip="Pool B's current difficulty. 'Active' means it's the pool currently receiving your hashrate"
       />
       <StatCard
-        label="Pool B Shares"
-        value={formatNumber(stats?.sharesFwdB || 0)}
-        subtext={stats.poolBHealthy ? '' : 'DISCONNECTED'}
-        iconName="nodes"
-        color={stats.poolBHealthy ? 'green' : 'red'}
-        tooltip="Shares forwarded to Pool B since the proxy started"
+        label="Pool B Network Diff"
+        value={formatDifficulty(stats?.networkDiffB || 0)}
+        subtext={`${formatNumber(stats?.sharesFwdB || 0)} shares fwd${stats.poolBHealthy ? '' : ' · DISCONNECTED'}`}
+        iconName="hexshield"
+        color={stats.poolBHealthy ? 'accent' : 'red'}
+        tooltip="Network difficulty as last reported by Pool B's own job — compare to Pool A's to spot a pool lagging behind on block height"
       />
     {:else if miningMode === 'proxy'}
       <StatCard
