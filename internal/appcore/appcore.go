@@ -1027,6 +1027,26 @@ func (a *App) GetDashboardStats() miner.DashboardStats {
 		ds.ProxySharesRejected = diag.SharesRejected
 	}
 
+	a.svcMu.RLock()
+	router := a.proxyRouter
+	a.svcMu.RUnlock()
+	if router != nil {
+		st := router.Status()
+		ds.Split = true
+		ds.ActivePool = st.ActivePool
+		ds.SplitPercentA = st.SplitPercentA
+		ds.PoolAHealthy = st.HealthyA
+		ds.PoolBHealthy = st.HealthyB
+		ds.SharesFwdA = st.SharesFwdA
+		ds.SharesFwdB = st.SharesFwdB
+		if cA := router.Client(proxysplit.LabelA); cA != nil {
+			ds.PoolADiff = cA.UpstreamDifficulty()
+		}
+		if cB := router.Client(proxysplit.LabelB); cB != nil {
+			ds.PoolBDiff = cB.UpstreamDifficulty()
+		}
+	}
+
 	return ds
 }
 

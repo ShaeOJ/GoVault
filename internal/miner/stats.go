@@ -35,6 +35,17 @@ type DashboardStats struct {
 	ProxySharesAccepted uint64  `json:"proxySharesAccepted"`
 	ProxySharesRejected uint64  `json:"proxySharesRejected"`
 	PoolPingMs          float64 `json:"poolPingMs"` // avg upstream share round-trip (proxy)
+
+	// Dual-pool hashrate-split fields (proxy mode only, when splitting is on)
+	Split         bool    `json:"split,omitempty"`
+	ActivePool    string  `json:"activePool,omitempty"`
+	SplitPercentA int     `json:"splitPercentA,omitempty"`
+	PoolADiff     float64 `json:"poolADiff,omitempty"`
+	PoolBDiff     float64 `json:"poolBDiff,omitempty"`
+	PoolAHealthy  bool    `json:"poolAHealthy,omitempty"`
+	PoolBHealthy  bool    `json:"poolBHealthy,omitempty"`
+	SharesFwdA    uint64  `json:"sharesFwdA,omitempty"`
+	SharesFwdB    uint64  `json:"sharesFwdB,omitempty"`
 }
 
 // StatsAggregator collects and aggregates mining statistics.

@@ -329,6 +329,15 @@ export namespace miner {
 	    proxySharesAccepted: number;
 	    proxySharesRejected: number;
 	    poolPingMs: number;
+	    split?: boolean;
+	    activePool?: string;
+	    splitPercentA?: number;
+	    poolADiff?: number;
+	    poolBDiff?: number;
+	    poolAHealthy?: boolean;
+	    poolBHealthy?: boolean;
+	    sharesFwdA?: number;
+	    sharesFwdB?: number;
 	
 	    static createFrom(source: any = {}) {
 	        return new DashboardStats(source);
@@ -355,6 +364,15 @@ export namespace miner {
 	        this.proxySharesAccepted = source["proxySharesAccepted"];
 	        this.proxySharesRejected = source["proxySharesRejected"];
 	        this.poolPingMs = source["poolPingMs"];
+	        this.split = source["split"];
+	        this.activePool = source["activePool"];
+	        this.splitPercentA = source["splitPercentA"];
+	        this.poolADiff = source["poolADiff"];
+	        this.poolBDiff = source["poolBDiff"];
+	        this.poolAHealthy = source["poolAHealthy"];
+	        this.poolBHealthy = source["poolBHealthy"];
+	        this.sharesFwdA = source["sharesFwdA"];
+	        this.sharesFwdB = source["sharesFwdB"];
 	    }
 	}
 	export class DiscoveredMiner {

@@ -359,7 +359,40 @@
 
   <!-- Second Row -->
   <div class="grid grid-cols-2 lg:grid-cols-4 gap-4">
-    {#if miningMode === 'proxy'}
+    {#if miningMode === 'proxy' && stats?.split}
+      <StatCard
+        label="Pool A Difficulty"
+        value={formatDifficulty(stats?.poolADiff || 0)}
+        subtext={stats.activePool === 'A' ? `active · ${stats.splitPercentA}% target` : 'standby'}
+        iconName="gauge"
+        color={stats.activePool === 'A' ? 'gold' : 'gray'}
+        tooltip="Pool A's current difficulty. 'Active' means it's the pool currently receiving your hashrate"
+      />
+      <StatCard
+        label="Pool A Shares"
+        value={formatNumber(stats?.sharesFwdA || 0)}
+        subtext={stats.poolAHealthy ? '' : 'DISCONNECTED'}
+        iconName="nodes"
+        color={stats.poolAHealthy ? 'green' : 'red'}
+        tooltip="Shares forwarded to Pool A since the proxy started"
+      />
+      <StatCard
+        label="Pool B Difficulty"
+        value={formatDifficulty(stats?.poolBDiff || 0)}
+        subtext={stats.activePool === 'B' ? `active · ${100 - stats.splitPercentA}% target` : 'standby'}
+        iconName="gauge"
+        color={stats.activePool === 'B' ? 'gold' : 'gray'}
+        tooltip="Pool B's current difficulty. 'Active' means it's the pool currently receiving your hashrate"
+      />
+      <StatCard
+        label="Pool B Shares"
+        value={formatNumber(stats?.sharesFwdB || 0)}
+        subtext={stats.poolBHealthy ? '' : 'DISCONNECTED'}
+        iconName="nodes"
+        color={stats.poolBHealthy ? 'green' : 'red'}
+        tooltip="Shares forwarded to Pool B since the proxy started"
+      />
+    {:else if miningMode === 'proxy'}
       <StatCard
         label="Pool Difficulty"
         value={formatDifficulty(stats?.upstreamDiff || 0)}

@@ -34,6 +34,22 @@
   }
   let fleet: FleetOverviewData | null = null;
 
+  // Dual-pool hashrate-split status (from the shared DashboardStats push —
+  // same event Dashboard.svelte listens to, so this stays live even if this
+  // page is opened without ever visiting Dashboard first).
+  interface SplitStats {
+    split: boolean;
+    activePool: string;
+    splitPercentA: number;
+    poolADiff: number;
+    poolBDiff: number;
+    poolAHealthy: boolean;
+    poolBHealthy: boolean;
+    sharesFwdA: number;
+    sharesFwdB: number;
+  }
+  let splitStats: SplitStats | null = null;
+
   // Per-miner sparkline data cache
   let minerSparklines: Record<string, SparkPoint[]> = {};
 
@@ -100,6 +116,20 @@
       miners.update(list => list.map(m =>
         m.id === minerId ? { ...m, sharesRejected: m.sharesRejected + 1 } : m
       ));
+    }));
+
+    unsubs.push(EventsOn('stats:updated', (s: any) => {
+      splitStats = s?.split ? {
+        split: true,
+        activePool: s.activePool,
+        splitPercentA: s.splitPercentA,
+        poolADiff: s.poolADiff || 0,
+        poolBDiff: s.poolBDiff || 0,
+        poolAHealthy: !!s.poolAHealthy,
+        poolBHealthy: !!s.poolBHealthy,
+        sharesFwdA: s.sharesFwdA || 0,
+        sharesFwdB: s.sharesFwdB || 0,
+      } : null;
     }));
 
     await refreshMiners();
@@ -210,6 +240,33 @@
       {/if}
     </button>
   </div>
+
+  <!-- Hashrate-Split Status -->
+  {#if splitStats}
+    <div class="grid grid-cols-2 gap-4">
+      {#each ['A', 'B'] as label (label)}
+        {@const diff = label === 'A' ? splitStats.poolADiff : splitStats.poolBDiff}
+        {@const shares = label === 'A' ? splitStats.sharesFwdA : splitStats.sharesFwdB}
+        {@const healthy = label === 'A' ? splitStats.poolAHealthy : splitStats.poolBHealthy}
+        {@const pct = label === 'A' ? splitStats.splitPercentA : 100 - splitStats.splitPercentA}
+        <div class="rounded-xl p-4 card-glow" style="background-color: var(--bg-card); {!healthy ? 'border: 1px solid var(--error);' : ''}">
+          <div class="flex items-center justify-between mb-2">
+            <div class="flex items-center gap-2">
+              <span style="color: {splitStats.activePool === label ? 'var(--accent)' : 'var(--text-secondary)'};"><Icon name="nodes" size={18} /></span>
+              <span class="text-xs font-tech uppercase tracking-wider" style="color: var(--text-secondary);">Pool {label} &middot; {pct}% target</span>
+            </div>
+            {#if splitStats.activePool === label}
+              <span class="text-[10px] font-tech uppercase px-1.5 py-0.5 rounded" style="background: rgba(var(--accent-rgb), 0.15); color: var(--accent);">Active</span>
+            {:else if !healthy}
+              <span class="text-[10px] font-tech uppercase px-1.5 py-0.5 rounded" style="background: rgba(255,50,50,0.15); color: var(--error);">Down</span>
+            {/if}
+          </div>
+          <div class="text-xl font-bold font-data" style="color: {healthy ? 'var(--text-primary)' : 'var(--error)'};">{healthy ? formatDifficulty(diff) : 'Disconnected'}</div>
+          <div class="text-xs mt-1" style="color: var(--text-secondary);">{shares} shares forwarded</div>
+        </div>
+      {/each}
+    </div>
+  {/if}
 
   <!-- Fleet Overview -->
   {#if minerList.length > 0 && fleet}
