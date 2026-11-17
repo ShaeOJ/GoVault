@@ -77,7 +77,7 @@ jobs:
         if: startsWith(matrix.platform, 'linux')
         run: |
           sudo apt-get update
-          sudo apt-get install -y libgtk-3-dev libayatana-appindicator3-dev
+          sudo apt-get install -y libgtk-3-dev libayatana-appindicator3-dev xvfb
           if [ "${{ matrix.tags }}" = "webkit2_41" ]; then
             sudo apt-get install -y libwebkit2gtk-4.1-dev
           else
@@ -85,7 +85,13 @@ jobs:
           fi
 
       - name: Build
-        run: wails build -platform ${{ matrix.platform }} ${{ matrix.tags && format('-tags {0}', matrix.tags) || '' }} ${{ matrix.nsis && '-nsis' || '' }} -ldflags "-X govault/internal/version.Version=${{ github.ref_name }}"
+        run: |
+          BUILD_CMD="wails build -platform ${{ matrix.platform }} ${{ matrix.tags && format('-tags {0}', matrix.tags) || '' }} ${{ matrix.nsis && '-nsis' || '' }} -ldflags \"-X govault/internal/version.Version=${{ github.ref_name }}\""
+          if [[ "${{ matrix.platform }}" == linux/* ]]; then
+            xvfb-run -a bash -c "$BUILD_CMD"
+          else
+            eval "$BUILD_CMD"
+          fi
 
       - name: Package Windows
         if: startsWith(matrix.platform, 'windows')
