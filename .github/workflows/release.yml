@@ -85,6 +85,7 @@ jobs:
           fi
 
       - name: Build
+        shell: bash
         run: |
           BUILD_CMD="wails build -platform ${{ matrix.platform }} ${{ matrix.tags && format('-tags {0}', matrix.tags) || '' }} ${{ matrix.nsis && '-nsis' || '' }} -ldflags \"-X govault/internal/version.Version=${{ github.ref_name }}\""
           if [[ "${{ matrix.platform }}" == linux/* ]]; then
