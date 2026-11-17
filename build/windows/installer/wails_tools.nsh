@@ -8,16 +8,16 @@
     !define INFO_PROJECTNAME "GoVault"
 !endif
 !ifndef INFO_COMPANYNAME
-    !define INFO_COMPANYNAME "GoVault"
+    !define INFO_COMPANYNAME "Shae Jones Thomson"
 !endif
 !ifndef INFO_PRODUCTNAME
-    !define INFO_PRODUCTNAME "GoVault"
+    !define INFO_PRODUCTNAME "TheVault"
 !endif
 !ifndef INFO_PRODUCTVERSION
     !define INFO_PRODUCTVERSION "1.0.0"
 !endif
 !ifndef INFO_COPYRIGHT
-    !define INFO_COPYRIGHT "Copyright........."
+    !define INFO_COPYRIGHT "Copyright © 2026 Shae Jones Thomson"
 !endif
 !ifndef PRODUCT_EXECUTABLE
     !define PRODUCT_EXECUTABLE "${INFO_PROJECTNAME}.exe"

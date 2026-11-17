@@ -68,6 +68,13 @@ type App struct {
 	fleetPowerTime  time.Time
 	fleetPowerMu    sync.Mutex
 
+	// Recent-share tracking for the dashboard's "Top Share Difficulty" bar
+	// graph + last-accepted-share detail panel. In-memory only (seeded from
+	// the shares table on startup) — mirrors asicpool's live wallet panel.
+	shareBars []ShareBarPoint
+	lastShare *LastShareInfo
+	shareMu   sync.Mutex
+
 	stopStats     chan struct{}
 	stopStatsOnce sync.Once
 
@@ -85,6 +92,7 @@ type App struct {
 type AppHost interface {
 	Emit(event string, data ...interface{})
 	Minimise()
+	Hide() // fully hide (no taskbar entry) — used when a tray icon is available
 	Show()
 	Unminimise()
 	Quit()
@@ -207,6 +215,7 @@ func (a *App) OnStartup(ctx context.Context) {
 		a.db = db
 		a.buffer = database.NewBuffer(db)
 		a.loadStatsFromDB()
+		a.loadShareBarsFromDB()
 		if a.log != nil {
 			a.log.Infof("app", "database opened at %s", cfg.DBPath())
 		}
@@ -295,14 +304,19 @@ func (a *App) OnShutdown(ctx context.Context) {
 // running in the background (mining continues) by minimising the window and
 // returning true to veto the quit. A real quit only happens via Shutdown(),
 // which sets forceQuit first. Returning true = prevent close.
+//
+// This deliberately minimises rather than fully hides: a prior version called
+// host.Hide() here, but WindowHide()+WindowShow() proved unreliable in testing
+// (the window could get stuck invisible with no way to bring it back short of
+// force-killing the process, including via a second launch hitting the
+// single-instance lock and silently no-op'ing against the stuck instance).
+// Minimise() keeps a taskbar entry as a working fallback recovery path even if
+// the tray's "Show GoVault" has trouble, at the cost of the taskbar entry
+// staying visible while backgrounded.
 func (a *App) OnBeforeClose(ctx context.Context) bool {
 	if a.forceQuit {
 		return false // real quit requested — allow it
 	}
-	// Minimise to the taskbar instead of quitting so mining keeps running and the
-	// app stays visible/clickable there (Wails v2 has no native system-tray icon;
-	// minimise is the closest to "minimise to tray"). Relaunching the shortcut also
-	// restores it via the single-instance lock.
 	a.emit("app:minimized-to-background")
 	a.host.Minimise()
 	return true // keep running
@@ -876,7 +890,7 @@ func (a *App) wireStratumCallbacks() {
 		a.emit("stratum:miner-disconnected", map[string]string{"id": id})
 	}
 
-	a.stratum.OnShareAccepted = func(minerID string, sessionDiff, actualDiff float64) {
+	a.stratum.OnShareAccepted = func(minerID string, sessionDiff, actualDiff float64, nonce, header, hash string) {
 		a.registry.RecordShare(minerID, actualDiff, true)
 		a.stats.RecordShare(minerID, sessionDiff, true)
 		a.stats.RecordBestDifficulty(actualDiff)
@@ -889,9 +903,36 @@ func (a *App) wireStratumCallbacks() {
 				Accepted:    true,
 			})
 		}
+
+		workerName := ""
+		if info := a.registry.Get(minerID); info != nil {
+			workerName = info.WorkerName
+		}
+		now := time.Now().UnixMilli()
+
+		a.shareMu.Lock()
+		a.shareBars = append(a.shareBars, ShareBarPoint{Time: now, Difficulty: actualDiff})
+		if len(a.shareBars) > recentShareBarCount {
+			a.shareBars = a.shareBars[len(a.shareBars)-recentShareBarCount:]
+		}
+		a.lastShare = &LastShareInfo{
+			Header:     header,
+			Nonce:      nonce,
+			Hash:       hash,
+			Difficulty: actualDiff,
+			Time:       now,
+			Worker:     workerName,
+		}
+		a.shareMu.Unlock()
+
 		a.emit("stratum:share-accepted", map[string]interface{}{
 			"minerId":    minerID,
 			"difficulty": actualDiff,
+			"nonce":      nonce,
+			"header":     header,
+			"hash":       hash,
+			"worker":     workerName,
+			"time":       now,
 		})
 	}
 
@@ -1019,12 +1060,18 @@ func (a *App) GetDashboardStats() miner.DashboardStats {
 	)
 
 	ds.MiningMode = a.config.MiningMode
+	ds.CoinID = a.config.Mining.Coin
+	ds.CoinSymbol = coin.Get(a.config.Mining.Coin).Symbol
+	if srv != nil {
+		ds.StratumUptimeSec = srv.UptimeSeconds()
+	}
 	if srv != nil && srv.IsProxyMode() {
 		diag := srv.GetProxyDiagnostics()
 		ds.UpstreamDiff = diag.UpstreamDiff
 		ds.ProxySharesFwd = diag.SharesFwd
 		ds.ProxySharesAccepted = diag.SharesAccepted
 		ds.ProxySharesRejected = diag.SharesRejected
+		ds.PoolPingMs = srv.AvgUpstreamLatencyMs()
 	}
 
 	a.svcMu.RLock()
@@ -1843,9 +1890,10 @@ func (a *App) statsLoop() {
 			a.emit("stats:updated", stats)
 		case <-hashrateTicker.C:
 			hashrate := a.stats.EstimateHashrate()
-			a.stats.RecordHashrate(hashrate)
+			shareRate := a.stats.EstimateShareRate()
+			a.stats.RecordHashrate(hashrate, shareRate)
 			if a.db != nil {
-				a.db.InsertHashrate(time.Now().Unix(), hashrate)
+				a.db.InsertHashrate(time.Now().Unix(), hashrate, shareRate)
 			}
 			// Update per-miner hashrates in registry
 			for _, m := range a.registry.GetAll() {
@@ -1949,8 +1997,9 @@ func (a *App) loadStatsFromDB() {
 	var points []miner.HashratePoint
 	for _, h := range history {
 		points = append(points, miner.HashratePoint{
-			Timestamp: h.Timestamp,
-			Hashrate:  h.Hashrate,
+			Timestamp:       h.Timestamp,
+			Hashrate:        h.Hashrate,
+			SharesPerSecond: h.SharesPerSecond,
 		})
 	}
 
@@ -1966,6 +2015,69 @@ func (a *App) loadStatsFromDB() {
 		a.log.Infof("app", "restored stats: %d accepted, %d rejected, %d blocks, %d hashrate points",
 			cumulative.TotalAccepted, cumulative.TotalRejected, cumulative.BlocksFound, len(points))
 	}
+}
+
+// recentShareBarCount caps the in-memory ring buffer backing the dashboard's
+// "Top Share Difficulty" bar graph (last N accepted shares).
+const recentShareBarCount = 48
+
+// ShareBarPoint is one bar in the dashboard's recent-share-difficulty graph.
+type ShareBarPoint struct {
+	Time       int64   `json:"time"` // unix ms
+	Difficulty float64 `json:"difficulty"`
+}
+
+// LastShareInfo is the most recently accepted share's full decode-ready
+// detail (nonce/header/hash), for the dashboard's "Last Accepted Share" panel.
+// Mirrors asicpool's wallet-page equivalent. In-memory/live only — not
+// persisted, so it resets on restart (same as asicpool's per-session view).
+type LastShareInfo struct {
+	Header     string  `json:"header"`
+	Nonce      string  `json:"nonce"`
+	Hash       string  `json:"hash"`
+	Difficulty float64 `json:"difficulty"`
+	Time       int64   `json:"time"` // unix ms
+	Worker     string  `json:"worker"`
+}
+
+// loadShareBarsFromDB seeds the recent-share bar graph from persisted shares
+// so it isn't empty right after a restart.
+func (a *App) loadShareBarsFromDB() {
+	if a.db == nil {
+		return
+	}
+	entries, err := a.db.RecentAcceptedShares(recentShareBarCount)
+	if err != nil {
+		if a.log != nil {
+			a.log.Errorf("app", "failed to load recent share bars: %v", err)
+		}
+		return
+	}
+	bars := make([]ShareBarPoint, len(entries))
+	for i, e := range entries {
+		bars[i] = ShareBarPoint{Time: e.Timestamp * 1000, Difficulty: e.Difficulty}
+	}
+	a.shareMu.Lock()
+	a.shareBars = bars
+	a.shareMu.Unlock()
+}
+
+// GetShareBars returns the last N accepted shares' difficulty, oldest-first,
+// for the dashboard's bar graph.
+func (a *App) GetShareBars() []ShareBarPoint {
+	a.shareMu.Lock()
+	defer a.shareMu.Unlock()
+	out := make([]ShareBarPoint, len(a.shareBars))
+	copy(out, a.shareBars)
+	return out
+}
+
+// GetLastShare returns the most recently accepted share's detail, or nil if
+// none has landed yet this session.
+func (a *App) GetLastShare() *LastShareInfo {
+	a.shareMu.Lock()
+	defer a.shareMu.Unlock()
+	return a.lastShare
 }
 
 func (a *App) saveCumulativeStats() {

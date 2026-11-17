@@ -35,9 +35,10 @@ type Server struct {
 	nextEN1         atomic.Uint32
 	nextSessionID   atomic.Uint32
 
-	running atomic.Bool
-	stopCh  chan struct{}
-	wg      sync.WaitGroup
+	running  atomic.Bool
+	startSec atomic.Int64 // unix seconds when Start() last succeeded
+	stopCh   chan struct{}
+	wg       sync.WaitGroup
 
 	log    *logger.Logger
 	config *config.StratumConfig
@@ -81,7 +82,7 @@ type Server struct {
 	// Event callbacks
 	OnMinerConnected    func(MinerInfo)
 	OnMinerDisconnected func(string)
-	OnShareAccepted     func(string, float64, float64) // minerID, sessionDiff, actualDiff
+	OnShareAccepted     func(minerID string, sessionDiff, actualDiff float64, nonce, header, hash string)
 	OnShareRejected     func(string, string)
 	OnBlockFound        func(hash string, height int64, accepted bool)
 	LookupWorkerDiff    func(workerName string) float64
@@ -164,6 +165,7 @@ func (s *Server) Start() error {
 
 	s.listener = listener
 	s.running.Store(true)
+	s.startSec.Store(time.Now().Unix())
 	s.log.Infof("stratum", "server started on %s", addr)
 
 	s.wg.Add(1)
@@ -211,6 +213,19 @@ func (s *Server) Stop() {
 
 func (s *Server) IsRunning() bool {
 	return s.running.Load()
+}
+
+// UptimeSeconds returns how long the server has been running since its last
+// Start(), or 0 if it isn't running.
+func (s *Server) UptimeSeconds() int64 {
+	if !s.running.Load() {
+		return 0
+	}
+	start := s.startSec.Load()
+	if start == 0 {
+		return 0
+	}
+	return time.Now().Unix() - start
 }
 
 func (s *Server) acceptLoop() {
@@ -466,14 +481,15 @@ func (s *Server) UpstreamDifficulty() float64 {
 	return s.upstreamDiff
 }
 
-// recordUpstreamLatency feeds an EMA of the upstream share round-trip time.
+// recordUpstreamLatency feeds an EMA of the upstream share round-trip time,
+// smoothed over roughly the last 10 shares (alpha = 1/10).
 func (s *Server) recordUpstreamLatency(d time.Duration) {
 	ms := float64(d.Microseconds()) / 1000.0
 	s.upLatMu.Lock()
 	if s.upLatMs == 0 {
 		s.upLatMs = ms
 	} else {
-		s.upLatMs = s.upLatMs*0.8 + ms*0.2
+		s.upLatMs = s.upLatMs*0.9 + ms*0.1
 	}
 	s.upLatMu.Unlock()
 }

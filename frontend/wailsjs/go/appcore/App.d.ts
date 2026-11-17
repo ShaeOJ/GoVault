@@ -35,6 +35,8 @@ export function GetFleetOverview():Promise<appcore.FleetOverview>;
 
 export function GetHashrateHistory(arg1:string):Promise<Array<miner.HashratePoint>>;
 
+export function GetLastShare():Promise<appcore.LastShareInfo>;
+
 export function GetMinerHashrateHistory(arg1:string):Promise<Array<miner.HashratePoint>>;
 
 export function GetMiners():Promise<Array<miner.MinerInfo>>;
@@ -46,6 +48,8 @@ export function GetNodeStatus():Promise<Record<string, any>>;
 export function GetProxyDiagnostics():Promise<Record<string, any>>;
 
 export function GetRecentLogs(arg1:number):Promise<Array<logger.LogEntry>>;
+
+export function GetShareBars():Promise<Array<appcore.ShareBarPoint>>;
 
 export function GetStratumURL():Promise<string>;
 

@@ -8,12 +8,16 @@ import (
 
 	"govault/internal/appcore"
 
+	"github.com/getlantern/systray"
 	"github.com/wailsapp/wails/v2"
 	"github.com/wailsapp/wails/v2/pkg/options"
 	"github.com/wailsapp/wails/v2/pkg/options/assetserver"
 	"github.com/wailsapp/wails/v2/pkg/options/windows"
 	"github.com/wailsapp/wails/v2/pkg/runtime"
 )
+
+//go:embed build/windows/icon.ico
+var trayIcon []byte
 
 // webviewDataDir keeps WebView2's user-data folder LOCAL to the executable
 // (<exe>/data/webview2) instead of Wails' default %APPDATA%\<exeName>\EBWebView.
@@ -47,19 +51,62 @@ type wailsHost struct{ ctx context.Context }
 
 func (w wailsHost) Emit(event string, data ...interface{}) { runtime.EventsEmit(w.ctx, event, data...) }
 func (w wailsHost) Minimise()                              { runtime.WindowMinimise(w.ctx) }
+func (w wailsHost) Hide()                                  { runtime.WindowHide(w.ctx) }
 func (w wailsHost) Show()                                  { runtime.WindowShow(w.ctx) }
 func (w wailsHost) Unminimise()                            { runtime.WindowUnminimise(w.ctx) }
 func (w wailsHost) Quit()                                  { runtime.Quit(w.ctx) }
 
+// main keeps wails.Run() on the real main goroutine, exactly as it ran before
+// the tray was added. WebView2 is a single-threaded-apartment COM component:
+// whatever OS thread creates the window must be the one continuously pumping
+// its message loop. An earlier version of this file handed the main goroutine
+// to systray.Run() instead and launched wails.Run() from a plain `go func`,
+// which let Go's scheduler run the Wails/WebView2 window on a thread other
+// than the one that created it — the window would then sit there with a valid
+// handle and near-zero CPU but never answer window messages (Explorer reports
+// "Not Responding") because nothing was pumping it anymore. systray.Run()
+// instead gets its own background goroutine; it doesn't require the main
+// thread on Windows the way Cocoa's tray does on macOS.
 func main() {
 	app := appcore.NewApp()
+	go runTray(app)
+	runWails(app)
+}
 
+func runTray(app *appcore.App) {
+	systray.Run(func() {
+		systray.SetIcon(trayIcon)
+		systray.SetTitle("TheVault")
+		systray.SetTooltip("TheVault")
+
+		showItem := systray.AddMenuItem("Show TheVault", "Show the main window")
+		systray.AddSeparator()
+		quitItem := systray.AddMenuItem("Quit", "Quit TheVault")
+
+		go func() {
+			for {
+				select {
+				case <-showItem.ClickedCh:
+					app.ShowWindow()
+				case <-quitItem.ClickedCh:
+					app.Shutdown()
+				}
+			}
+		}()
+	}, func() {
+		// Nothing extra to do — appcore.App.OnShutdown (wired as Wails' own
+		// OnShutdown hook in runWails) already handles stopping mining/DB/etc.
+	})
+}
+
+func runWails(app *appcore.App) {
 	err := wails.Run(&options.App{
-		Title:     "GoVault",
+		Title:     "TheVault",
 		Width:     1280,
 		Height:    800,
 		MinWidth:  960,
 		MinHeight: 600,
+		Frameless: true,
 		AssetServer: &assetserver.Options{
 			Assets: assets,
 		},

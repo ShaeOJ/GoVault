@@ -1,7 +1,7 @@
 // Device recognition for stratum miners. Parses the user-agent reported in
 // mining.subscribe into a friendly model name, the representative ASIC chip,
 // and a chip-count display (e.g. "4× BM1370"). Ported from the ASICpool
-// (FirePool2) dashboard so GoVault shows the same hardware read-out.
+// (FirePool2) dashboard so TheVault shows the same hardware read-out.
 
 // Known Bitaxe device family names keyed by their ASIC chip.
 const ASIC_DEV: Record<string, string> = {

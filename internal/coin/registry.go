@@ -79,6 +79,20 @@ var Coins = map[string]*CoinDef{
 		GBTRules:           []string{"segwit"},
 		TargetBlockTimeSec: 600,
 	},
+	"bsv": {
+		Name:               "Bitcoin SV",
+		Symbol:             "BSV",
+		CoinID:             "bsv",
+		SegWit:             false, // BSV does not support SegWit
+		P2PKHVersion:       0x00,
+		P2SHVersion:        0x05,
+		P2PKHPrefixChar:    '1',
+		P2SHPrefixChar:     '3',
+		DefaultRPCPort:     8332,
+		DefaultRPCUsername: "bitcoinsv",
+		GBTRules:           []string{},
+		TargetBlockTimeSec: 600,
+	},
 	"xec": {
 		Name:               "eCash",
 		Symbol:             "XEC",

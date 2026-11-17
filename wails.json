@@ -9,5 +9,12 @@
   "author": {
     "name": "Shae Jones Thomson",
     "email": "digitalnom@gmail.com"
+  },
+  "info": {
+    "companyName": "Shae Jones Thomson",
+    "productName": "TheVault",
+    "productVersion": "1.0.0",
+    "copyright": "Copyright © 2026 Shae Jones Thomson",
+    "comments": "Beta"
   }
 }

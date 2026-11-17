@@ -8,8 +8,9 @@ import (
 
 // HashratePoint is a single data point in a hashrate time series.
 type HashratePoint struct {
-	Timestamp int64   `json:"t"`
-	Hashrate  float64 `json:"h"`
+	Timestamp       int64   `json:"t"`
+	Hashrate        float64 `json:"h"`
+	SharesPerSecond float64 `json:"s"`
 }
 
 // DashboardStats holds the aggregated stats for the frontend dashboard.
@@ -27,6 +28,10 @@ type DashboardStats struct {
 	BlockChance         float64 `json:"blockChance"`
 	StratumRunning      bool    `json:"stratumRunning"`
 	BlockHeight         int64   `json:"blockHeight"`
+	StratumUptimeSec    int64   `json:"stratumUptimeSec"`
+	SharesPerSecond     float64 `json:"sharesPerSecond"`
+	CoinID              string  `json:"coinId"`
+	CoinSymbol          string  `json:"coinSymbol"`
 
 	// Proxy mode fields
 	MiningMode          string  `json:"miningMode"`
@@ -187,13 +192,14 @@ func (s *StatsAggregator) RecordBlock() {
 }
 
 // RecordHashrate records a hashrate data point for the time series.
-func (s *StatsAggregator) RecordHashrate(hashrate float64) {
+func (s *StatsAggregator) RecordHashrate(hashrate, sharesPerSecond float64) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
 	point := HashratePoint{
-		Timestamp: time.Now().Unix(),
-		Hashrate:  hashrate,
+		Timestamp:       time.Now().Unix(),
+		Hashrate:        hashrate,
+		SharesPerSecond: sharesPerSecond,
 	}
 
 	s.hashrateHistory = append(s.hashrateHistory, point)
@@ -211,6 +217,15 @@ func (s *StatsAggregator) EstimateHashrate() float64 {
 	defer s.mu.RUnlock()
 
 	return s.estimateHashrateAdaptive(hashrateWindow, "")
+}
+
+// EstimateShareRate returns the current qualifying-shares-per-second rate,
+// independent of difficulty swings (mirrors EstimateHashrate).
+func (s *StatsAggregator) EstimateShareRate() float64 {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	return s.estimateShareRateAdaptive(hashrateWindow)
 }
 
 // EstimateMinerHashrate estimates hashrate for a specific miner.
@@ -264,6 +279,41 @@ func (s *StatsAggregator) estimateHashrateAdaptive(maxWindow time.Duration, mine
 	return totalDiff * math.Pow(2, 32) / windowSec
 }
 
+// estimateShareRateAdaptive mirrors estimateHashrateAdaptive but counts
+// qualifying shares themselves rather than difficulty, giving a shares/sec
+// readout independent of difficulty swings.
+func (s *StatsAggregator) estimateShareRateAdaptive(maxWindow time.Duration) float64 {
+	now := time.Now()
+	cutoff := now.Add(-maxWindow)
+
+	var count int
+	var earliest time.Time
+
+	for i := len(s.shareRecords) - 1; i >= 0; i-- {
+		r := s.shareRecords[i]
+		if r.timestamp.Before(cutoff) {
+			break
+		}
+		count++
+		earliest = r.timestamp
+	}
+
+	if count == 0 {
+		return 0
+	}
+
+	windowSec := now.Sub(earliest).Seconds()
+	maxSec := maxWindow.Seconds()
+	if windowSec > maxSec {
+		windowSec = maxSec
+	}
+	if windowSec < 30 {
+		windowSec = 30
+	}
+
+	return float64(count) / windowSec
+}
+
 // GetDashboardStats returns aggregate stats for the dashboard.
 func (s *StatsAggregator) GetDashboardStats(activeMiners int, networkDiff, networkHashrate float64, blockHeight int64, stratumRunning bool) DashboardStats {
 	s.mu.RLock()
@@ -292,6 +342,7 @@ func (s *StatsAggregator) GetDashboardStats(activeMiners int, networkDiff, netwo
 		BlockChance:       blockChance,
 		StratumRunning:    stratumRunning,
 		BlockHeight:       blockHeight,
+		SharesPerSecond:   s.estimateShareRateAdaptive(hashrateWindow),
 	}
 }
 

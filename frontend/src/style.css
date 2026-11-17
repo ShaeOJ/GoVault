@@ -31,8 +31,29 @@
   --font-mono: 'JetBrains Mono', monospace;
 }
 
-/* ── Nuclear Theme (default) ─────────────────────── */
-:root,
+/* Default color tokens (vault-tec's palette) so the page isn't unstyled before
+   a theme class is applied. Must come BEFORE the theme blocks below — :root
+   and a theme class share specificity, so source order decides the winner,
+   and every theme class needs to win over this fallback. */
+:root {
+  --bg-primary: #0d0f08;
+  --bg-secondary: #141a0e;
+  --bg-card: #1a1f12;
+  --bg-card-hover: #252d1a;
+  --accent: #f5a623;
+  --accent-rgb: 245, 166, 35;
+  --accent-glow: rgba(245, 166, 35, 0.3);
+  --accent-secondary: #00ff41;
+  --text-primary: #fff5e0;
+  --text-secondary: #9f9070;
+  --border: rgba(245, 166, 35, 0.12);
+  --success: #00ff41;
+  --warning: #f5a623;
+  --error: #ff3333;
+  --glass-rgb: 10, 13, 10;
+}
+
+/* ── Nuclear Theme ────────────────────────────────── */
 .theme-nuclear {
   --bg-primary: #0a0e0a;
   --bg-secondary: #0f1a0f;
@@ -88,7 +109,7 @@
   --anim-event-duration: 600ms;
 }
 
-/* ── Vault-Tec Theme ─────────────────────────────── */
+/* ── Vault-Tec Theme (default) ───────────────────── */
 .theme-vault-tec {
   --bg-primary: #0d0f08;
   --bg-secondary: #141a0e;
@@ -104,6 +125,8 @@
   --success: #00ff41;
   --warning: #f5a623;
   --error: #ff3333;
+  /* asicpool's frosted-glass card wash (see .theme-vault-tec .card-glow::before below) */
+  --glass-rgb: 10, 13, 10;
   /* Animation vars */
   --anim-hover-duration: 250ms;
   --anim-hover-glow-spread: 10px;
@@ -116,50 +139,50 @@
   --anim-event-duration: 800ms;
 }
 
-/* ── Bitcoin Theme ───────────────────────────────── */
-.theme-bitcoin {
-  --bg-primary: #0f0c08;
-  --bg-secondary: #1a1408;
-  --bg-card: #1f1a0f;
-  --bg-card-hover: #2f2518;
-  --accent: #f7931a;
-  --accent-rgb: 247, 147, 26;
-  --accent-glow: rgba(247, 147, 26, 0.3);
-  --accent-secondary: #ffd700;
-  --text-primary: #fff0d0;
-  --text-secondary: #9f8a60;
-  --border: rgba(247, 147, 26, 0.12);
-  --success: #22cc55;
-  --warning: #ffd700;
-  --error: #ff4444;
+/* ── Synthwave Theme (matches asicpool's) ────────── */
+.theme-synthwave {
+  --bg-primary: #140a1f;
+  --bg-secondary: #1c0e2b;
+  --bg-card: #241238;
+  --bg-card-hover: #2f1848;
+  --accent: #ff3ea5;
+  --accent-rgb: 255, 62, 165;
+  --accent-glow: rgba(255, 62, 165, 0.35);
+  --accent-secondary: #00e5ff;
+  --text-primary: #f7e6ff;
+  --text-secondary: #b090c8;
+  --border: rgba(255, 62, 165, 0.16);
+  --success: #00e5ff;
+  --warning: #ffcc00;
+  --error: #ff2e6e;
   /* Animation vars */
-  --anim-hover-duration: 150ms;
-  --anim-hover-glow-spread: 18px;
+  --anim-hover-duration: 180ms;
+  --anim-hover-glow-spread: 16px;
   --anim-hover-scale: 1.005;
-  --anim-pulse-duration: 1.4s;
+  --anim-pulse-duration: 1.3s;
   --anim-pulse-timing: ease-in-out;
-  --anim-pulse-min-opacity: 0.2;
-  --anim-spinner-duration: 0.8s;
+  --anim-pulse-min-opacity: 0.25;
+  --anim-spinner-duration: 1s;
   --anim-spinner-timing: linear;
-  --anim-event-duration: 400ms;
+  --anim-event-duration: 450ms;
 }
 
-/* ── Monochrome Theme ──────────────────────────── */
-.theme-monochrome {
-  --bg-primary: #080808;
-  --bg-secondary: #111111;
-  --bg-card: #161616;
-  --bg-card-hover: #1e1e1e;
-  --accent: #cccccc;
-  --accent-rgb: 204, 204, 204;
-  --accent-glow: rgba(204, 204, 204, 0.3);
-  --accent-secondary: #888888;
-  --text-primary: #e0e0e0;
-  --text-secondary: #707070;
-  --border: rgba(204, 204, 204, 0.12);
-  --success: #44cc66;
-  --warning: #ddaa00;
-  --error: #ee4444;
+/* ── Mono Theme (matches asicpool's) ─────────────── */
+.theme-mono {
+  --bg-primary: #0a0a0a;
+  --bg-secondary: #141414;
+  --bg-card: #181818;
+  --bg-card-hover: #262626;
+  --accent: #dadada;
+  --accent-rgb: 218, 218, 218;
+  --accent-glow: rgba(218, 218, 218, 0.22);
+  --accent-secondary: #8c8c8c;
+  --text-primary: #f2f2f2;
+  --text-secondary: #8a8a8a;
+  --border: rgba(255, 255, 255, 0.13);
+  --success: #ffffff;
+  --warning: #a6a6a6;
+  --error: #6f6f6f;
   /* Animation vars */
   --anim-hover-duration: 200ms;
   --anim-hover-glow-spread: 10px;
@@ -172,32 +195,36 @@
   --anim-event-duration: 400ms;
 }
 
-/* ── Steampunk Theme ─────────────────────────────── */
-.theme-steampunk {
-  --bg-primary: #0c0a08;
-  --bg-secondary: #141210;
-  --bg-card: #1a1714;
-  --bg-card-hover: #252118;
-  --accent: #cd7f32;
-  --accent-rgb: 205, 127, 50;
-  --accent-glow: rgba(205, 127, 50, 0.3);
-  --accent-secondary: #708090;
-  --text-primary: #e8dcc8;
-  --text-secondary: #8a7e6a;
-  --border: rgba(205, 127, 50, 0.12);
-  --success: #5a9a6a;
-  --warning: #cd7f32;
-  --error: #a04030;
+/* ── Light Theme (matches asicpool's) — inverse of the dark
+   themes: light surfaces, dark text. Accent is a darkened amber so it
+   stays readable on white. --glass-rgb flips to white so the frosted
+   cards become translucent-white panels instead of dark ones. */
+.theme-light {
+  --bg-primary: #e7e9e1;
+  --bg-secondary: #dcded3;
+  --bg-card: #ffffff;
+  --bg-card-hover: #f3f5ec;
+  --accent: #a85e00;
+  --accent-rgb: 168, 94, 0;
+  --accent-glow: rgba(168, 94, 0, 0.22);
+  --accent-secondary: #2e7d32;
+  --text-primary: #191b14;
+  --text-secondary: #585d4c;
+  --border: rgba(25, 27, 20, 0.16);
+  --success: #2e7d32;
+  --warning: #a85e00;
+  --error: #c62828;
+  --glass-rgb: 255, 255, 255;
   /* Animation vars */
-  --anim-hover-duration: 250ms;
-  --anim-hover-glow-spread: 10px;
+  --anim-hover-duration: 220ms;
+  --anim-hover-glow-spread: 8px;
   --anim-hover-scale: 1;
-  --anim-pulse-duration: 2s;
-  --anim-pulse-timing: ease;
-  --anim-pulse-min-opacity: 0.5;
-  --anim-spinner-duration: 1.8s;
-  --anim-spinner-timing: steps(8);
-  --anim-event-duration: 600ms;
+  --anim-pulse-duration: 1.6s;
+  --anim-pulse-timing: ease-in-out;
+  --anim-pulse-min-opacity: 0.35;
+  --anim-spinner-duration: 1s;
+  --anim-spinner-timing: linear;
+  --anim-event-duration: 400ms;
 }
 
 /* ── Base Styles ─────────────────────────────────── */
@@ -206,9 +233,44 @@ html, body {
   padding: 0;
   background-color: var(--bg-primary);
   color: var(--text-primary);
-  font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  font-family: var(--font-tech);
   -webkit-font-smoothing: antialiased;
   overflow: hidden;
+}
+
+/* ── asicpool-style CRT scanline + vignette (all themes, matching asicpool
+   exactly — it applies this globally to body::before/::after, only the
+   vignette is dropped for its light theme since dark corners read as dirty
+   on a white page) ──────────────────────────────────────────────────── */
+body::before {
+  content: ""; position: fixed; inset: 0; z-index: 9999; pointer-events: none;
+  background: repeating-linear-gradient(
+    to bottom, rgba(0,0,0,0) 0, rgba(0,0,0,0) 2px, rgba(0,0,0,0.10) 3px, rgba(0,0,0,0) 4px);
+  mix-blend-mode: multiply;
+}
+body::after {
+  content: ""; position: fixed; inset: 0; z-index: 9998; pointer-events: none;
+  background: radial-gradient(ellipse at center, transparent 55%, rgba(0,0,0,0.45) 100%);
+}
+.theme-light body::after { background: none; }
+
+/* asicpool-style always-on frosted-glass card sheen, all themes (matches
+   asicpool — it applies --glass-rgb globally, not just on one theme; each
+   theme supplies its own --glass-rgb value, light's flips to white).
+   Layered as a pseudo-element since cards set background-color inline
+   per-instance in Svelte markup, not via a shared .card class this rule
+   could otherwise override. */
+.card-glow::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  pointer-events: none;
+  z-index: -1;
+  background:
+    linear-gradient(160deg, rgba(var(--glass-rgb), 0.28), rgba(var(--glass-rgb), 0.44) 62%, rgba(var(--glass-rgb), 0.50)),
+    linear-gradient(135deg, rgba(var(--accent-rgb), 0.08), transparent 55%);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.08);
 }
 
 #app {
@@ -332,13 +394,13 @@ html, body {
 }
 
 /* Bitcoin: Warm ember glow from bottom (orange gradient) */
-.theme-bitcoin .card-glow::after {
+.theme-synthwave .card-glow::after {
   background: linear-gradient(to top,
     rgba(247, 147, 26, 0.08) 0%,
     rgba(255, 215, 0, 0.03) 30%,
     transparent 60%);
 }
-.theme-bitcoin .card-glow:hover::after {
+.theme-synthwave .card-glow:hover::after {
   opacity: 1;
 }
 
@@ -348,7 +410,7 @@ html, body {
   50%  { opacity: 0.08; }
   100% { opacity: 0.04; }
 }
-.theme-monochrome .card-glow::after {
+.theme-mono .card-glow::after {
   background: repeating-linear-gradient(
     0deg,
     transparent,
@@ -357,7 +419,7 @@ html, body {
     rgba(204, 204, 204, 0.03) 4px
   );
 }
-.theme-monochrome .card-glow:hover::after {
+.theme-mono .card-glow:hover::after {
   opacity: 1;
   animation: monoFlicker 150ms steps(2) 3;
 }
@@ -368,10 +430,10 @@ html, body {
   50%  { box-shadow: inset 0 0 20px rgba(205, 127, 50, 0.2); }
   100% { box-shadow: inset 0 0 8px rgba(205, 127, 50, 0.1); }
 }
-.theme-steampunk .card-glow::after {
+.theme-light .card-glow::after {
   background: transparent;
 }
-.theme-steampunk .card-glow:hover::after {
+.theme-light .card-glow:hover::after {
   opacity: 1;
   animation: steamGlow 400ms ease 1;
 }
@@ -485,7 +547,7 @@ html, body {
   50% { opacity: 0.2; }
   65% { opacity: 1; }
 }
-.theme-bitcoin .status-pulse {
+.theme-synthwave .status-pulse {
   animation: bitcoinEmberPulse var(--anim-pulse-duration) ease-in-out infinite;
 }
 
@@ -497,7 +559,7 @@ html, body {
   65% { opacity: 0.1; }
   66% { opacity: 1; }
 }
-.theme-monochrome .status-pulse {
+.theme-mono .status-pulse {
   animation: monoBlink var(--anim-pulse-duration) step-end infinite;
 }
 
@@ -506,7 +568,7 @@ html, body {
   0%, 100% { opacity: 1; }
   50% { opacity: var(--anim-pulse-min-opacity); }
 }
-.theme-steampunk .status-pulse {
+.theme-light .status-pulse {
   animation: steamTick var(--anim-pulse-duration) ease infinite;
 }
 
@@ -524,7 +586,7 @@ html, body {
 }
 
 /* Bitcoin spinner: add opacity pulse during rotation (ember glow) */
-.theme-bitcoin .themed-spinner {
+.theme-synthwave .themed-spinner {
   animation: spin var(--anim-spinner-duration) linear infinite,
              bitcoinCoinGlow var(--anim-spinner-duration) ease-in-out infinite;
 }
@@ -534,7 +596,7 @@ html, body {
 }
 
 /* Monochrome spinner: sharp blink (cursor-like) */
-.theme-monochrome .themed-spinner {
+.theme-mono .themed-spinner {
   animation: monoCursorBlink 0.8s steps(2) infinite;
 }
 @keyframes monoCursorBlink {
@@ -543,7 +605,7 @@ html, body {
 }
 
 /* Steampunk spinner: stepped rotation (mechanical gear feel) */
-.theme-steampunk .themed-spinner {
+.theme-light .themed-spinner {
   animation: spin var(--anim-spinner-duration) var(--anim-spinner-timing) infinite;
 }
 
@@ -583,15 +645,15 @@ html, body {
   background: linear-gradient(90deg, #f5a623, #00ff41, #f5a623);
   box-shadow: 0 0 20px rgba(245, 166, 35, 0.4);
 }
-.theme-bitcoin .block-banner {
+.theme-synthwave .block-banner {
   background: linear-gradient(90deg, #f7931a, #ffd700, #f7931a);
   box-shadow: 0 0 30px rgba(247, 147, 26, 0.5);
 }
-.theme-monochrome .block-banner {
+.theme-mono .block-banner {
   background: linear-gradient(90deg, #cccccc, #888888, #cccccc);
   box-shadow: 0 0 30px rgba(204, 204, 204, 0.4);
 }
-.theme-steampunk .block-banner {
+.theme-light .block-banner {
   background: linear-gradient(90deg, #cd7f32, #708090, #cd7f32);
   box-shadow: 0 0 25px rgba(205, 127, 50, 0.4);
 }
@@ -664,6 +726,28 @@ html, body {
 }
 
 /* ── Logo Theme Tint ─────────────────────────────── */
+.logo-wrap {
+  position: relative;
+  display: inline-block;
+}
+.logo-wrap::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: var(--accent);
+  opacity: 0.25;
+  -webkit-mask-image: var(--logo-url);
+  mask-image: var(--logo-url);
+  -webkit-mask-size: contain;
+  mask-size: contain;
+  -webkit-mask-repeat: no-repeat;
+  mask-repeat: no-repeat;
+  -webkit-mask-position: center;
+  mask-position: center;
+  mix-blend-mode: color;
+  pointer-events: none;
+  transition: background 300ms ease;
+}
 .logo-tint {
   filter: drop-shadow(0 0 6px rgba(var(--accent-rgb), 0.5));
   transition: filter 300ms ease;
@@ -675,4 +759,7 @@ html, body {
 /* ── Wails window drag ───────────────────────────── */
 .wails-drag {
   --wails-draggable: drag;
+}
+.no-drag {
+  --wails-draggable: no-drag;
 }

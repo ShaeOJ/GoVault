@@ -72,6 +72,31 @@ func (db *DB) RecentShares(limit int) ([]ShareEntry, error) {
 	return result, rows.Err()
 }
 
+// RecentAcceptedShares returns the most recent N accepted shares, oldest-first,
+// for seeding the dashboard's recent-share-difficulty bar graph on startup.
+func (db *DB) RecentAcceptedShares(limit int) ([]ShareEntry, error) {
+	rows, err := db.conn.Query(`SELECT timestamp, difficulty FROM shares WHERE accepted=1 ORDER BY id DESC LIMIT ?`, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var result []ShareEntry
+	for rows.Next() {
+		var s ShareEntry
+		if err := rows.Scan(&s.Timestamp, &s.Difficulty); err != nil {
+			return nil, err
+		}
+		s.Accepted = true
+		result = append(result, s)
+	}
+	// DB returns newest-first; reverse to chronological for rendering.
+	for i, j := 0, len(result)-1; i < j; i, j = i+1, j-1 {
+		result[i], result[j] = result[j], result[i]
+	}
+	return result, rows.Err()
+}
+
 // PruneShares deletes shares older than the given duration.
 func (db *DB) PruneShares(maxAge time.Duration) (int64, error) {
 	cutoff := time.Now().Add(-maxAge).Unix()

@@ -16,9 +16,15 @@
   let rotX = 0.50;   // ~29° tilt — NA prominent, FirePool in upper face of globe
   let rotY = 3.72;   // Vancouver/FirePool centred horizontally (π/2 - FP_LNG)
 
-  // Mouse drag
+  // Mouse drag — horizontal drag rotates (rotY), vertical drag tilts (rotX).
   let dragging = false;
   let lastMouseX = 0;
+  let lastMouseY = 0;
+  // Clamp tilt so the globe can't flip past its poles (±~80°).
+  const MAX_TILT = 1.4;
+  function clampTilt(v: number): number {
+    return Math.max(-MAX_TILT, Math.min(MAX_TILT, v));
+  }
 
   // ─── Theme accent ─────────────────────────────────────────────────────────
   let accentR = 57, accentG = 255, accentB = 20; // nuclear green default
@@ -35,6 +41,19 @@
   const FP_LAT = 49.28 * Math.PI / 180;
   const FP_LNG = -123.12 * Math.PI / 180;
   const FP_COLOR = '#ffd700';
+
+  // Pool label on the globe — the coinbase scriptSig tag (e.g. "/TheVault/"),
+  // trimmed to something that fits next to the dot. Falls back to "POOL"
+  // until config loads or if no tag is configured.
+  let poolLabel = 'POOL';
+  async function loadPoolLabel() {
+    try {
+      const { GetConfig } = await import('../../../../wailsjs/go/appcore/App');
+      const cfg = await GetConfig();
+      const tag = (cfg?.mining?.coinbaseTag || '').trim();
+      poolLabel = tag ? tag.replace(/^\/+|\/+$/g, '') || 'POOL' : 'POOL';
+    } catch { /* keep default */ }
+  }
 
   // ─── Miner state ──────────────────────────────────────────────────────────
   interface MinerDot {
@@ -243,13 +262,22 @@
   }
 
   // ─── Draw ─────────────────────────────────────────────────────────────────
+  // Decorative sidebar animation — always mounted, so it's capped well below
+  // display refresh rate (and skipped entirely while the window is hidden/
+  // minimized) to keep idle CPU/GPU use low across the whole app, not just
+  // the Dashboard page.
   let lastTime = 0;
+  const FRAME_INTERVAL_MS = 1000 / 30;
 
   function drawGlobe(ts: number) {
+    animFrameId = requestAnimationFrame(drawGlobe);
+    if (document.hidden) return;
+    if (ts - lastTime < FRAME_INTERVAL_MS) return;
+
     const dt = Math.min((ts - lastTime) / 1000, 0.05);
     lastTime = ts;
 
-    if (!ctx) { animFrameId = requestAnimationFrame(drawGlobe); return; }
+    if (!ctx) return;
 
     ctx.clearRect(0, 0, W, H);
 
@@ -427,7 +455,7 @@
       if (W > 120) {
         ctx.font = `bold ${Math.max(7, R * 0.13)}px monospace`;
         ctx.fillStyle = FP_COLOR;
-        ctx.fillText('POOL', fp.x + 6, fp.y - 5);
+        ctx.fillText(poolLabel, fp.x + 6, fp.y - 5);
       }
     }
 
@@ -454,8 +482,6 @@
         ctx.fillText(miner.label, mp.x + 5, mp.y + 4);
       }
     }
-
-    animFrameId = requestAnimationFrame(drawGlobe);
   }
 
   // ─── Resize ───────────────────────────────────────────────────────────────
@@ -519,18 +545,32 @@
     ro.observe(container);
 
     loadAtlas();
+    loadPoolLabel();
     updateMiners();
     minerPollId = setInterval(updateMiners, 5000);
 
     const accentInterval = setInterval(refreshAccent, 2000);
 
-    // Share-accepted event → fire a pulse from that miner
+    // Share-accepted event → fire a pulse from that miner. Skip entirely while
+    // the window is minimized/backgrounded (rAF is throttled/suspended then,
+    // so anything queued here would just sit until restore and all animate/
+    // burst at once — "shares saving up"). This is purely decorative; real
+    // share counts are tracked elsewhere and unaffected.
     const offShare = EventsOn('stratum:share-accepted', (data: { minerId: string; difficulty: number }) => {
+      if (document.hidden) return;
       const miner = miners.get(data.minerId);
       if (!miner) return;
       pulses.push({ lat0: miner.lat, lng0: miner.lng, t: 0, spd: 0.22 + Math.random() * 0.1, r: miner.r, g: miner.g, b: miner.b });
       if (pulses.length > 40) pulses.splice(0, pulses.length - 40);
     });
+
+    // Belt-and-suspenders: clear any in-flight pulses the instant the window
+    // goes hidden, in case a share landed in the brief window before the
+    // check above took effect. Nothing to animate while hidden anyway.
+    const onVisibilityChange = () => {
+      if (document.hidden) pulses = [];
+    };
+    document.addEventListener('visibilitychange', onVisibilityChange);
 
     // Miner connected: place at random position with unique color
     const offConnect = EventsOn('stratum:miner-connected', (m: any) => {
@@ -563,6 +603,7 @@
       clearInterval(accentInterval);
       clearInterval(minerPollId);
       cancelAnimationFrame(animFrameId);
+      document.removeEventListener('visibilitychange', onVisibilityChange);
       cleanupFns.forEach(fn => fn());
     };
   });
@@ -574,18 +615,22 @@
   });
 
   // ─── Mouse interaction ────────────────────────────────────────────────────
-  function onMousedown(e: MouseEvent) { dragging = true; lastMouseX = e.clientX; }
+  function onMousedown(e: MouseEvent) { dragging = true; lastMouseX = e.clientX; lastMouseY = e.clientY; }
   function onMousemove(e: MouseEvent) {
     if (!dragging) return;
     rotY += (e.clientX - lastMouseX) * 0.008;
+    rotX = clampTilt(rotX - (e.clientY - lastMouseY) * 0.008);
     lastMouseX = e.clientX;
+    lastMouseY = e.clientY;
   }
   function onMouseup() { dragging = false; }
-  function onTouchstart(e: TouchEvent) { dragging = true; lastMouseX = e.touches[0].clientX; }
+  function onTouchstart(e: TouchEvent) { dragging = true; lastMouseX = e.touches[0].clientX; lastMouseY = e.touches[0].clientY; }
   function onTouchmove(e: TouchEvent) {
     if (!dragging) return;
     rotY += (e.touches[0].clientX - lastMouseX) * 0.008;
+    rotX = clampTilt(rotX - (e.touches[0].clientY - lastMouseY) * 0.008);
     lastMouseX = e.touches[0].clientX;
+    lastMouseY = e.touches[0].clientY;
   }
   function onTouchend() { dragging = false; }
 </script>

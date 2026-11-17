@@ -26,6 +26,42 @@ export namespace appcore {
 	        this.efficiency = source["efficiency"];
 	    }
 	}
+	export class LastShareInfo {
+	    header: string;
+	    nonce: string;
+	    hash: string;
+	    difficulty: number;
+	    time: number;
+	    worker: string;
+	
+	    static createFrom(source: any = {}) {
+	        return new LastShareInfo(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.header = source["header"];
+	        this.nonce = source["nonce"];
+	        this.hash = source["hash"];
+	        this.difficulty = source["difficulty"];
+	        this.time = source["time"];
+	        this.worker = source["worker"];
+	    }
+	}
+	export class ShareBarPoint {
+	    time: number;
+	    difficulty: number;
+	
+	    static createFrom(source: any = {}) {
+	        return new ShareBarPoint(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.time = source["time"];
+	        this.difficulty = source["difficulty"];
+	    }
+	}
 
 }
 
@@ -323,6 +359,10 @@ export namespace miner {
 	    blockChance: number;
 	    stratumRunning: boolean;
 	    blockHeight: number;
+	    stratumUptimeSec: number;
+	    sharesPerSecond: number;
+	    coinId: string;
+	    coinSymbol: string;
 	    miningMode: string;
 	    upstreamDiff: number;
 	    proxySharesFwd: number;
@@ -360,6 +400,10 @@ export namespace miner {
 	        this.blockChance = source["blockChance"];
 	        this.stratumRunning = source["stratumRunning"];
 	        this.blockHeight = source["blockHeight"];
+	        this.stratumUptimeSec = source["stratumUptimeSec"];
+	        this.sharesPerSecond = source["sharesPerSecond"];
+	        this.coinId = source["coinId"];
+	        this.coinSymbol = source["coinSymbol"];
 	        this.miningMode = source["miningMode"];
 	        this.upstreamDiff = source["upstreamDiff"];
 	        this.proxySharesFwd = source["proxySharesFwd"];
@@ -406,6 +450,7 @@ export namespace miner {
 	export class HashratePoint {
 	    t: number;
 	    h: number;
+	    s: number;
 	
 	    static createFrom(source: any = {}) {
 	        return new HashratePoint(source);
@@ -415,6 +460,7 @@ export namespace miner {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.t = source["t"];
 	        this.h = source["h"];
+	        this.s = source["s"];
 	    }
 	}
 	export class MinerInfo {

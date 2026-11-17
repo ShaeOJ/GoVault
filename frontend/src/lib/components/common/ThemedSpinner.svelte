@@ -33,26 +33,26 @@
     <path d="M12 1v3M12 20v3M1 12h3M20 12h3M4.22 4.22l2.12 2.12M17.66 17.66l2.12 2.12M4.22 19.78l2.12-2.12M17.66 6.34l2.12-2.12"
       stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
     <circle cx="12" cy="12" r="9" stroke="currentColor" stroke-width="1.5" fill="none" opacity="0.25"/>
-  {:else if currentTheme === 'bitcoin'}
-    <!-- Coin-like dashed ring with ₿ center -->
-    <circle cx="12" cy="12" r="10" stroke="currentColor" stroke-width="2" stroke-dasharray="5 3" stroke-linecap="round" opacity="0.85"/>
-    <circle cx="12" cy="12" r="5" stroke="currentColor" stroke-width="1" opacity="0.2" fill="none"/>
-    <text x="12" y="16" text-anchor="middle" fill="currentColor" font-size="10" font-weight="bold" opacity="0.7">₿</text>
-  {:else if currentTheme === 'monochrome'}
+  {:else if currentTheme === 'synthwave'}
+    <!-- Retro sun: half-disc crossed by horizontal bars -->
+    <path d="M4 14a8 8 0 0 1 16 0z" fill="currentColor" opacity="0.5"/>
+    <line x1="4.5" y1="11" x2="19.5" y2="11" stroke="currentColor" stroke-width="1.3" opacity="0.8"/>
+    <line x1="3.3" y1="14" x2="20.7" y2="14" stroke="currentColor" stroke-width="1.3" opacity="0.8"/>
+    <circle cx="12" cy="14" r="10" stroke="currentColor" stroke-width="1.5" opacity="0.2" fill="none"/>
+  {:else if currentTheme === 'mono'}
     <!-- Blinking terminal cursor -->
     <rect x="10" y="3" width="4" height="18" rx="1" fill="currentColor" opacity="0.85"/>
-  {:else if currentTheme === 'steampunk'}
-    <!-- Pressure gauge arc with needle -->
-    <path d="M4 18a9.5 9.5 0 0 1 16 0" stroke="currentColor" stroke-width="2" fill="none" opacity="0.3" stroke-linecap="round"/>
-    <path d="M6 16a7 7 0 0 1 12 0" stroke="currentColor" stroke-width="1.5" fill="none" opacity="0.15" stroke-linecap="round"/>
-    <!-- Tick marks -->
-    <line x1="4" y1="18" x2="5.5" y2="17" stroke="currentColor" stroke-width="1.5" opacity="0.5"/>
-    <line x1="7" y1="11" x2="8.2" y2="12" stroke="currentColor" stroke-width="1.5" opacity="0.5"/>
-    <line x1="12" y1="8.5" x2="12" y2="10" stroke="currentColor" stroke-width="1.5" opacity="0.5"/>
-    <line x1="17" y1="11" x2="15.8" y2="12" stroke="currentColor" stroke-width="1.5" opacity="0.5"/>
-    <line x1="20" y1="18" x2="18.5" y2="17" stroke="currentColor" stroke-width="1.5" opacity="0.5"/>
-    <!-- Needle -->
-    <line x1="12" y1="18" x2="8" y2="11" stroke="currentColor" stroke-width="2" stroke-linecap="round" opacity="0.9"/>
+  {:else if currentTheme === 'light'}
+    <!-- Sun with rays -->
+    <circle cx="12" cy="12" r="5" fill="currentColor" opacity="0.85"/>
+    <line x1="12" y1="1" x2="12" y2="4" stroke="currentColor" stroke-width="2" stroke-linecap="round" opacity="0.6"/>
+    <line x1="12" y1="20" x2="12" y2="23" stroke="currentColor" stroke-width="2" stroke-linecap="round" opacity="0.6"/>
+    <line x1="1" y1="12" x2="4" y2="12" stroke="currentColor" stroke-width="2" stroke-linecap="round" opacity="0.6"/>
+    <line x1="20" y1="12" x2="23" y2="12" stroke="currentColor" stroke-width="2" stroke-linecap="round" opacity="0.6"/>
+    <line x1="4.2" y1="4.2" x2="6.3" y2="6.3" stroke="currentColor" stroke-width="2" stroke-linecap="round" opacity="0.6"/>
+    <line x1="17.7" y1="17.7" x2="19.8" y2="19.8" stroke="currentColor" stroke-width="2" stroke-linecap="round" opacity="0.6"/>
+    <line x1="4.2" y1="19.8" x2="6.3" y2="17.7" stroke="currentColor" stroke-width="2" stroke-linecap="round" opacity="0.6"/>
+    <line x1="17.7" y1="6.3" x2="19.8" y2="4.2" stroke="currentColor" stroke-width="2" stroke-linecap="round" opacity="0.6"/>
     <circle cx="12" cy="18" r="2" fill="currentColor" opacity="0.6"/>
   {:else}
     <!-- Fallback: simple arc spinner -->

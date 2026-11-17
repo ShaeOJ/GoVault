@@ -27,3 +27,4 @@ build/bin/data/
 # OS files
 .DS_Store
 Thumbs.db
+build/headless/

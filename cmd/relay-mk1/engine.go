@@ -543,7 +543,7 @@ func (e *Engine) wireStratumCallbacks() {
 			e.db.DisconnectMiner(id, time.Now().Unix())
 		}
 	}
-	e.stratum.OnShareAccepted = func(minerID string, sessionDiff, actualDiff float64) {
+	e.stratum.OnShareAccepted = func(minerID string, sessionDiff, actualDiff float64, nonce, header, hash string) {
 		e.registry.RecordShare(minerID, actualDiff, true)
 		e.stats.RecordShare(minerID, sessionDiff, true)
 		e.stats.RecordBestDifficulty(actualDiff)
@@ -1035,9 +1035,10 @@ func (e *Engine) statsLoop() {
 			// stats are pulled by the dashboard via /api/stats; nothing to push.
 		case <-hashrate.C:
 			hr := e.stats.EstimateHashrate()
-			e.stats.RecordHashrate(hr)
+			shareRate := e.stats.EstimateShareRate()
+			e.stats.RecordHashrate(hr, shareRate)
 			if e.db != nil {
-				e.db.InsertHashrate(time.Now().Unix(), hr)
+				e.db.InsertHashrate(time.Now().Unix(), hr, shareRate)
 			}
 			for _, m := range e.registry.GetAll() {
 				e.registry.UpdateHashrate(m.ID, e.stats.EstimateMinerHashrate(m.ID))

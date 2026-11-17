@@ -8,18 +8,22 @@
       S T R A T U M   T E R M I N A L  ·  by ASICpool
 ```
 
-# GoVault — Your Private Mining Vault
+# TheVault — Your Private Mining Vault
 
 > **Point your machinery at your own node. Keep the block. Keep the reward.**
 > A solo-mining stratum terminal for the home operator who refuses to hand their hashrate to some pool operator in a bunker somewhere.
 
 No middlemen. No custody. No pool fees. Just you, your hardware, and the chain — wrapped in a native desktop app you can double-click.
 
+**[Download the latest build →](https://vault.undergroundroots.ca)**
+
+> **Naming note:** the app is branded **TheVault** in the UI, installer, and on the download page above. The repo, Go module, and built executable are still named `GoVault`/`govault` for historical reasons — same project, same code, just a newer coat of paint. Currently **Beta v1.0.0**.
+
 ---
 
 ## ▚ WHAT IT IS
 
-GoVault is a **Stratum V1 mining server** packaged as a single-file native desktop app (Go core + Svelte UI, built with [Wails](https://wails.io)). It runs two ways:
+TheVault is a **Stratum V1 mining server** packaged as a single-file native desktop app (Go core + Svelte UI, built with [Wails](https://wails.io)). It runs two ways:
 
 - **SOLO** — plug into your own full node and build every block yourself. Every hash goes toward finding *your* block.
 - **RELAY (proxy)** — no node? Forward your whole fleet to an upstream solo pool (**ASICpool** presets built in) over one clean connection, with optional per-miner pass-through.
@@ -34,19 +38,17 @@ Built for the small stuff — Bitaxes, NerdMiners, NerdQAxe boards, and the rest
 - **📡 Auto-discovery** — finds AxeOS miners on your LAN automatically, with power/thermal telemetry.
 - **🎚 Variable difficulty** — tuned for the full home range, from NerdMiner (~0.001) to big ASICs.
 - **📊 Live dashboard** — real-time hashrate charts, best-share tracking, share counters, network stats.
-- **🎨 6 cathode themes** — Nuclear, TRON, Vault-Tec, Crimson, Ultraviolet, Plasma.
+- **🎨 5 cathode themes** — Vault-Tec, Nuclear, TRON, Synthwave, Mono.
 - **💾 Portable by design** — config, SQLite DB, logs, and WebView2 data all live in a `data/` folder *next to the exe*. Copy the folder, take your vault with you.
 - **🔄 In-app updater** — checks GitHub releases and updates itself in place.
-- **🪟🍎🐧 Native everywhere** — Windows, macOS, Linux (incl. ARM64 / Raspberry Pi), plus a headless edge-node build.
+- **🪟 Native desktop GUI on Windows**, plus a **headless build for Windows, Linux (incl. ARM64 / Raspberry Pi), and macOS** — same dashboard, served over HTTP.
 
 ## ▚ INSTALL
 
-Grab the latest from **[Releases](https://github.com/ShaeOJ/GoVault/releases/latest)**:
+Grab the latest from **[Releases](https://github.com/ShaeOJ/GoVault/releases/latest)** or **[vault.undergroundroots.ca](https://vault.undergroundroots.ca)**:
 
-- **Windows** — `GoVault-amd64-installer.exe` (installer) or `GoVault-windows-amd64.exe` (portable)
-- **macOS** — `GoVault-macos-arm64.zip` (Apple Silicon) / `GoVault-macos-amd64.zip` (Intel)
-- **Linux** — `GoVault-linux-amd64` / `GoVault-linux-arm64`
-- **Headless** — `govault-headless-*` (HTTP + SSE dashboard, no GUI libs)
+- **Windows (full desktop GUI)** — `TheVault-amd64-installer.exe` (installer) or the portable `.exe`
+- **Windows / Linux (incl. ARM64 / Raspberry Pi) / macOS (Intel + Apple Silicon) — headless** — `TheVault-headless-*`: same mining core and the same dashboard, served over HTTP instead of a native window. This is the only way to run TheVault on Linux/macOS today — the GUI build depends on Wails' native WebView bindings, which currently only cross-compile from a Windows host; a native macOS/Linux GUI build would need to be built *on* that platform.
 
 ## ▚ BUILD FROM SOURCE
 
@@ -63,7 +65,7 @@ wails dev              # live dev with hot reload
 
 ## ▚ CONFIGURATION
 
-On first launch GoVault writes its config, database, and logs to a **`data/` folder beside the executable** (portable). Override with `GOVAULT_CONFIG_FILE` / `GOVAULT_DATA_DIR` for appliance/headless setups.
+On first launch TheVault writes its config, database, and logs to a **`data/` folder beside the executable** (portable). Override with `GOVAULT_CONFIG_FILE` / `GOVAULT_DATA_DIR` for appliance/headless setups.
 
 | Setting | Default | Description |
 |---------|---------|-------------|
@@ -94,7 +96,7 @@ Go · Svelte 4 · Wails v2 · TailwindCSS · Chart.js · SQLite (pure-Go `modern
 
 ## ▚ LICENSE
 
-GoVault is licensed under the [GNU General Public License v3.0](LICENSE) — free to use, modify, and distribute under the terms of the GPL v3.
+TheVault is licensed under the [GNU General Public License v3.0](LICENSE) — free to use, modify, and distribute under the terms of the GPL v3.
 
 ```
   // mine like it's yours, because it is //

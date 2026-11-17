@@ -58,6 +58,10 @@ export function GetHashrateHistory(arg1) {
   return window['go']['appcore']['App']['GetHashrateHistory'](arg1);
 }
 
+export function GetLastShare() {
+  return window['go']['appcore']['App']['GetLastShare']();
+}
+
 export function GetMinerHashrateHistory(arg1) {
   return window['go']['appcore']['App']['GetMinerHashrateHistory'](arg1);
 }
@@ -80,6 +84,10 @@ export function GetProxyDiagnostics() {
 
 export function GetRecentLogs(arg1) {
   return window['go']['appcore']['App']['GetRecentLogs'](arg1);
+}
+
+export function GetShareBars() {
+  return window['go']['appcore']['App']['GetShareBars']();
 }
 
 export function GetStratumURL() {

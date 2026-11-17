@@ -19,15 +19,23 @@ func Defaults() *Config {
 			BanDurationMinutes:    10,
 			InvalidShareThreshold: 0.50, // ban after >50% rejected in window
 			InvalidShareWindow:    10,   // evaluate over last 10 shares
-			MaxMsgPerSec:          20,   // 20 msg/s sustained, 50-burst
-			MaxMsgBurst:           50,
+			// MaxMsgPerSec/MaxMsgBurst sized for a single high-hashrate ASIC (a
+			// 200+ TH/s device at a diff of ~1000 submits ~50 shares/sec), not just
+			// the small devices a default install is first tested with. Combined
+			// with the proxy-mode per-session vardiff (see proxyRetargetLocked in
+			// internal/stratum/session.go), which actively raises a fast miner's
+			// diff to curb its own message rate, this is a safety margin for the
+			// first few seconds after a big device connects, before that retarget
+			// has had a chance to react — not the primary defense.
+			MaxMsgPerSec:          50,
+			MaxMsgBurst:           150,
 			MaxLineSizeKB:         8,    // 8 KB max JSON line
 			NTimeMaxDriftSec:      7200, // ±2 hours
 		},
 		Mining: MiningConfig{
 			Coin:          "btc",
 			PayoutAddress: "",
-			CoinbaseTag:   "/GoVault/",
+			CoinbaseTag:   "/TheVault/",
 		},
 		Vardiff: VardiffConfig{
 			MinDiff:         0.001,
@@ -44,6 +52,10 @@ func Defaults() *Config {
 			DBMaxSizeMB:     250, // cap DB at 250 MB; oldest shares pruned + vacuumed beyond this
 		},
 		Proxy: ProxyConfig{
+			// asicpool.space (Canadian, 0% fee, solo) as the default upstream so a
+			// fresh install already has a working pool — WorkerName (the user's own
+			// payout address) is left blank; it's wallet-specific and can't default.
+			URL:      "asicpool.space:4333",
 			Password: "x",
 		},
 		// Proxy is the default for fresh installs — most home users point GoVault

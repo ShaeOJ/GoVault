@@ -16,6 +16,11 @@ import (
 	"govault/internal/upstream"
 )
 
+// idleDisconnectTimeout is the backstop inactivity window before a session
+// with no received data is force-disconnected. See the call site for why
+// this is generous rather than tight.
+const idleDisconnectTimeout = 30 * time.Minute
+
 // Session represents a single miner connection.
 type Session struct {
 	ID           string
@@ -140,12 +145,33 @@ func (s *Session) Handle() {
 					s.server.log.Warnf("stratum", "auth timeout for %s, disconnecting", s.conn.RemoteAddr())
 					return
 				}
-				// True inactivity (no data at all for 5 min) → disconnect
-				if time.Since(s.lastActivity) > 5*time.Minute {
+				// True inactivity → disconnect. This is a backstop for dead
+				// sockets that somehow slip past TCP keepalive (see
+				// SetKeepAlivePeriod in acceptLoop) — it is NOT meant to judge
+				// whether the miner is "doing its job". A low-hashrate device
+				// at a high session difficulty (e.g. a second, weaker miner
+				// sharing a proxy-mode connection whose diff is dictated by
+				// the upstream pool, not retuned per-worker) can easily go
+				// several minutes between qualifying shares with the TCP
+				// connection perfectly healthy. Disconnecting it here just
+				// causes a reconnect loop ("keeps going offline") with no
+				// benefit, since keepalive already reaps genuinely dead
+				// sockets within ~90s. Kept long and generous rather than
+				// removed outright, as a safety net for edge cases keepalive
+				// misses (e.g. some NAT/firewall setups).
+				if time.Since(s.lastActivity) > idleDisconnectTimeout {
 					return
 				}
 				// Idle vardiff: halve difficulty if no qualifying shares arrived.
 				// Skip in proxy mode — upstream pool controls difficulty entirely.
+				// (A per-session local retarget was tried here and reverted: many
+				// ASIC firmwares don't actually re-filter their own submissions
+				// when set_difficulty changes mid-session, so the retarget math —
+				// which assumes raising the diff throttles the real submission
+				// rate — just chases a signal that was never real, oscillating
+				// the session's reported diff/hashrate wildly. See git history
+				// for the attempt; MaxMsgPerSec/MaxMsgBurst in Settings is the
+				// supported way to raise the rate-limit headroom instead.)
 				if s.authorized && s.vardiffState != nil && !s.server.proxyMode {
 					s.diffMu.Lock()
 					curDiff := s.currentDiff
@@ -908,7 +934,7 @@ func (s *Session) handleSubmit(req *Request) {
 	s.diffMu.Unlock()
 
 	if s.server.OnShareAccepted != nil {
-		s.server.OnShareAccepted(s.ID, hashrateDiff, result.Difficulty)
+		s.server.OnShareAccepted(s.ID, hashrateDiff, result.Difficulty, sub.Nonce, result.Header, result.Hash)
 	}
 
 	// Proxy mode: instrument and forward qualifying shares upstream

@@ -57,6 +57,7 @@ func (h *SSEHost) Emit(event string, data ...interface{}) {
 }
 
 func (h *SSEHost) Minimise()   {} // no window when headless
+func (h *SSEHost) Hide()       {}
 func (h *SSEHost) Show()       {}
 func (h *SSEHost) Unminimise() {}
 

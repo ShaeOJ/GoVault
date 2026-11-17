@@ -160,6 +160,9 @@ func (db *DB) migrate() error {
 	// Add session_diff column (safe for existing DBs — ignores "duplicate column" error)
 	db.conn.Exec(`ALTER TABLE shares ADD COLUMN session_diff REAL NOT NULL DEFAULT 0`)
 
+	// Add shares_per_sec column to hashrate_history (safe for existing DBs)
+	db.conn.Exec(`ALTER TABLE hashrate_history ADD COLUMN shares_per_sec REAL NOT NULL DEFAULT 0`)
+
 	// Composite index for per-miner hashrate history queries
 	db.conn.Exec(`CREATE INDEX IF NOT EXISTS idx_shares_miner_ts ON shares(miner_id, timestamp)`)
 

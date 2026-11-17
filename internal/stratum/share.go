@@ -36,6 +36,11 @@ type ShareResult struct {
 	Difficulty float64
 	BlockHash  string
 	BlockHex   string
+	// Header/Hash are always populated (not just on BlockFound) so callers can
+	// show nonce/header detail for every accepted share, e.g. a "last share"
+	// dashboard panel. Hash is in display (reversed) byte order.
+	Header string
+	Hash   string
 }
 
 // ShareValidator validates submitted shares against job data.
@@ -128,6 +133,8 @@ func (sv *ShareValidator) ValidateShare(extranonce1 string, sub ShareSubmission)
 	result := &ShareResult{
 		Valid:      true,
 		Difficulty: actualDiff,
+		Header:     hex.EncodeToString(header),
+		Hash:       hex.EncodeToString(hashReversed),
 	}
 
 	// Check if this meets the network target (block found!)
