@@ -8,16 +8,12 @@ import (
 
 	"govault/internal/appcore"
 
-	"github.com/getlantern/systray"
 	"github.com/wailsapp/wails/v2"
 	"github.com/wailsapp/wails/v2/pkg/options"
 	"github.com/wailsapp/wails/v2/pkg/options/assetserver"
 	"github.com/wailsapp/wails/v2/pkg/options/windows"
 	"github.com/wailsapp/wails/v2/pkg/runtime"
 )
-
-//go:embed build/windows/icon.ico
-var trayIcon []byte
 
 // webviewDataDir keeps WebView2's user-data folder LOCAL to the executable
 // (<exe>/data/webview2) instead of Wails' default %APPDATA%\<exeName>\EBWebView.
@@ -71,32 +67,6 @@ func main() {
 	app := appcore.NewApp()
 	go runTray(app)
 	runWails(app)
-}
-
-func runTray(app *appcore.App) {
-	systray.Run(func() {
-		systray.SetIcon(trayIcon)
-		systray.SetTitle("TheVault")
-		systray.SetTooltip("TheVault")
-
-		showItem := systray.AddMenuItem("Show TheVault", "Show the main window")
-		systray.AddSeparator()
-		quitItem := systray.AddMenuItem("Quit", "Quit TheVault")
-
-		go func() {
-			for {
-				select {
-				case <-showItem.ClickedCh:
-					app.ShowWindow()
-				case <-quitItem.ClickedCh:
-					app.Shutdown()
-				}
-			}
-		}()
-	}, func() {
-		// Nothing extra to do — appcore.App.OnShutdown (wired as Wails' own
-		// OnShutdown hook in runWails) already handles stopping mining/DB/etc.
-	})
 }
 
 func runWails(app *appcore.App) {
